@@ -1,0 +1,192 @@
+// Real deps wiring Appwrite Server SDK + LiveKit. The LiveKit apiSecret is read
+// only here from env and never returned or logged (Req 3.7).
+import { Client, Databases, Permission, Query, Role } from "node-appwrite";
+import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
+import {
+  buildInterviewRoomMetadataFromDraft,
+  SurveyDraftSchema,
+  type SurveyDraft,
+} from "@merism/contracts";
+import type { IssueDeps, LinkRecord, SessionInit } from "./handler.js";
+
+const DB = "merism";
+
+interface Env {
+  APPWRITE_ENDPOINT: string;
+  APPWRITE_PROJECT_ID: string;
+  APPWRITE_API_KEY: string;
+  LIVEKIT_URL: string;
+  LIVEKIT_API_KEY: string;
+  LIVEKIT_API_SECRET: string;
+}
+
+function req(k: string): string {
+  const v = process.env[k];
+  if (!v) throw new Error(`missing env ${k}`);
+  return v;
+}
+
+function requireEnv(): Env {
+  return {
+    APPWRITE_ENDPOINT: req("APPWRITE_ENDPOINT"),
+    APPWRITE_PROJECT_ID: req("APPWRITE_PROJECT_ID"),
+    APPWRITE_API_KEY: req("APPWRITE_API_KEY"),
+    LIVEKIT_URL: req("LIVEKIT_URL"),
+    LIVEKIT_API_KEY: req("LIVEKIT_API_KEY"),
+    LIVEKIT_API_SECRET: req("LIVEKIT_API_SECRET"),
+  };
+}
+
+function parseJson<T>(raw: unknown, fallback: T): T {
+  if (typeof raw !== "string" || raw.length === 0) {
+    return fallback;
+  }
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+export function createRealDeps(): IssueDeps {
+  const env = requireEnv();
+  const client = new Client()
+    .setEndpoint(env.APPWRITE_ENDPOINT)
+    .setProject(env.APPWRITE_PROJECT_ID)
+    .setKey(env.APPWRITE_API_KEY);
+  const db = new Databases(client);
+  const httpUrl = env.LIVEKIT_URL.replace(/^ws/, "http");
+  const rooms = new RoomServiceClient(httpUrl, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET);
+
+  return {
+    livekitUrl: env.LIVEKIT_URL,
+    now: () => Date.now(),
+
+    async findLink(token: string): Promise<LinkRecord | null> {
+      const res = await db.listDocuments(DB, "interview_links", [
+        Query.equal("token", token),
+        Query.limit(1),
+      ]);
+      const doc = res.documents[0] as any;
+      if (!doc) return null;
+      const survey = (await db.getDocument(DB, "surveys", doc.surveyId)) as any;
+      const project = (await db.getDocument(DB, "projects", survey.projectId)) as any;
+      return {
+        $id: doc.$id,
+        surveyId: doc.surveyId,
+        ownerUserId: project.ownerUserId,
+        mode: doc.mode,
+        maxUses: doc.maxUses,
+        usedCount: doc.usedCount ?? 0,
+        expiresAt: doc.expiresAt,
+      };
+    },
+
+    async createSession(sessionId: string, data: SessionInit): Promise<boolean> {
+      try {
+        await db.createDocument(
+          DB,
+          "interview_sessions",
+          sessionId,
+          {
+            surveyId: data.surveyId,
+            linkId: data.linkId,
+            state: "created",
+            livekitRoom: data.livekitRoom,
+            intervieweeAlias: data.intervieweeAlias,
+          },
+          [Permission.read(Role.user(data.ownerUserId))],
+        );
+        return true;
+      } catch (e: any) {
+        if (e?.code === 409) return false; // slot already claimed
+        throw e;
+      }
+    },
+
+    async deleteSession(sessionId: string): Promise<void> {
+      await db.deleteDocument(DB, "interview_sessions", sessionId);
+    },
+
+    async setUsedCount(linkId: string, count: number): Promise<void> {
+      await db.updateDocument(DB, "interview_links", linkId, { usedCount: count });
+    },
+
+    async getSurveyMeta(surveyId: string): Promise<{ surveyId: string; title: string }> {
+      const s = (await db.getDocument(DB, "surveys", surveyId)) as any;
+      return { surveyId, title: s.title };
+    },
+
+    async createRoom(room: string, metadata: string): Promise<void> {
+      const baseMetadata = parseJson<{ sessionId?: string; surveyId?: string }>(metadata, {});
+      let finalMetadata = metadata;
+
+      if (baseMetadata.sessionId && baseMetadata.surveyId) {
+        const survey = (await db.getDocument(DB, "surveys", baseMetadata.surveyId)) as any;
+        const sectionsRes = await db.listDocuments(DB, "survey_sections", [
+          Query.equal("surveyId", baseMetadata.surveyId),
+        ]);
+        const questionsRes = await db.listDocuments(DB, "question_blocks", [
+          Query.equal("surveyId", baseMetadata.surveyId),
+        ]);
+        const draft = SurveyDraftSchema.parse({
+          title: survey.title,
+          researchGoal: parseJson<{ researchGoal?: string }>(survey.flowConfig, {}).researchGoal ?? "",
+          targetAudience:
+            parseJson<{ targetAudience?: string }>(survey.flowConfig, {}).targetAudience ?? "",
+          introScript: parseJson<{ introScript?: string }>(survey.flowConfig, {}).introScript ?? "",
+          sections: sectionsRes.documents
+            .sort((a: any, b: any) => a.order - b.order)
+            .map((section: any) => ({
+              title: section.title,
+              objective: section.description || section.sectionInstruction || "",
+              questions: questionsRes.documents
+                .filter((question: any) => question.sectionId === section.$id)
+                .sort((a: any, b: any) => a.orderInSection - b.orderInSection)
+                .map((question: any) => {
+                  const config = parseJson<{ options?: string[] }>(question.config, {});
+                  const probeConfig = parseJson<{ level?: string; instruction?: string }>(
+                    question.probeConfig,
+                    {},
+                  );
+                  return {
+                    questionText: question.prompt,
+                    questionType: question.type,
+                    probeLevel:
+                      probeConfig.level === "deep" || probeConfig.level === "follow_up"
+                        ? probeConfig.level
+                        : "none",
+                    probeInstruction: probeConfig.instruction ?? "",
+                    options: config.options ?? [],
+                  };
+                }),
+            })),
+        });
+
+        finalMetadata = JSON.stringify(
+          buildInterviewRoomMetadataFromDraft({
+            surveyId: baseMetadata.surveyId,
+            sessionId: baseMetadata.sessionId,
+            draft,
+          }),
+        );
+      }
+
+      await rooms.createRoom({ name: room, metadata: finalMetadata });
+    },
+
+    async deleteRoom(room: string): Promise<void> {
+      await rooms.deleteRoom(room);
+    },
+
+    async signToken(args): Promise<string> {
+      const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
+        identity: args.identity,
+        ttl: args.ttlSeconds,
+        metadata: args.metadata,
+      });
+      at.addGrant({ roomJoin: true, room: args.room, canPublish: true, canSubscribe: true });
+      return at.toJwt();
+    },
+  };
+}

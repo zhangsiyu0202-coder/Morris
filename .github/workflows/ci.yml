@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  js:
+    name: lint / typecheck / build / test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+
+  python:
+    name: pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: bash scripts/test-py.sh
+
+  scope-guard:
+    name: scope guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm scope-guard
+
+  e2e:
+    name: playwright
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -F @merism/web exec playwright install --with-deps chromium
+      - run: pnpm -F @merism/web build
+      - run: pnpm e2e
+
+  integration:
+    name: stack / schema:verify / smoke
+    runs-on: ubuntu-latest
+    env:
+      APPWRITE_ENDPOINT: http://localhost:8080/v1
+      APPWRITE_PROJECT_ID: ${{ secrets.APPWRITE_PROJECT_ID }}
+      APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
+      LIVEKIT_URL: ws://localhost:7880
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: devsecret-change-me-min-32-chars-long
+      QWEN_API_KEY: ci
+      DEEPSEEK_API_KEY: ci
+      STT_PROVIDER_KEY: ci
+      TTS_PROVIDER_KEY: ci
+      MERISM_LIVE_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Start stack
+        run: |
+          printenv | grep -E '^(APPWRITE_|LIVEKIT_|QWEN_|DEEPSEEK_|STT_|TTS_|_APP_)' > .env || true
+          SMOKE_SKIP_STACK=0 bash scripts/stack-up.sh
+      - name: Apply + verify schema
+        if: env.APPWRITE_API_KEY != ''
+        run: |
+          pnpm schema:apply
+          pnpm schema:verify
+      - name: Smoke + live property tests
+        if: env.APPWRITE_API_KEY != ''
+        run: |
+          SMOKE_SKIP_STACK=1 bash scripts/smoke.sh
+          pnpm test:properties
+      - name: Upload stack logs on failure
+        if: failure()
+        run: docker compose -f infra/docker/docker-compose.yml logs > docker-compose.log || true
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: docker-compose-logs
+          path: docker-compose.log

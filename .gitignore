@@ -1,0 +1,34 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+.next/
+out/
+storybook-static/
+*.tsbuildinfo
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.hypothesis/
+
+# infra data volumes
+infra/docker/.appwrite/
+infra/docker/.livekit/
+appwrite_data/
+livekit_data/
+
+# test / tooling
+coverage/
+playwright-report/
+test-results/
+.DS_Store

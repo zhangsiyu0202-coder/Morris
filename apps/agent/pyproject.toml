@@ -1,0 +1,34 @@
+[project]
+name = "merism-agent"
+version = "0.0.0"
+description = "MerismV2 LiveKit Agent Worker (Supervisor/TaskGroup host)"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.9",
+    "httpx>=0.27",
+    "appwrite>=6.0",
+]
+
+# Heavy realtime deps are an extra so the foundation/tests stay fast to install.
+# Install with: uv sync --extra realtime  (required to actually run the agent).
+[project.optional-dependencies]
+realtime = [
+    "livekit-agents>=1.5.15,<1.6",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "hypothesis>=6.100",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["*_test.py", "test_*.py"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agent"]

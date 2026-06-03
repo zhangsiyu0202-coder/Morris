@@ -1,0 +1,33 @@
+{
+  "name": "merism-v2",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "dev": "pnpm -F @merism/web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r --if-present lint",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "vitest run",
+    "test:properties": "vitest run tests/properties",
+    "test:py": "bash scripts/test-py.sh",
+    "smoke": "bash scripts/smoke.sh",
+    "e2e": "pnpm -F @merism/web e2e",
+    "schema:apply": "pnpm -F @merism/appwrite-schema apply",
+    "schema:verify": "pnpm -F @merism/appwrite-schema verify",
+    "scope-guard": "tsx scripts/scope-guard.ts",
+    "stack:up": "bash scripts/stack-up.sh",
+    "stack:down": "bash scripts/stack-down.sh",
+    "stack:reset": "bash scripts/stack-reset.sh"
+  },
+  "devDependencies": {
+    "@merism/contracts": "workspace:*",
+    "@types/node": "^22.10.2",
+    "fast-check": "^3.23.2",
+    "livekit-server-sdk": "^2.9.0",
+    "node-appwrite": "^14.1.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
