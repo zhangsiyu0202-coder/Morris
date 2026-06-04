@@ -104,8 +104,8 @@ function StimulusImage({ url, large }: { url?: string; large?: boolean }) {
           crossOrigin="anonymous"
           onLoad={() => setStatus("loaded")}
           onError={() => setStatus("error")}
-          className={`w-full rounded-sm object-contain ${
-            large ? "max-h-[80vh]" : "max-h-[60vh]"
+          className={`h-auto max-w-full rounded-sm object-contain ${
+            large ? "w-full" : "w-auto max-h-[60vh]"
           } ${status === "loaded" ? "opacity-100" : "opacity-0"}`}
         />
       )}
@@ -138,7 +138,7 @@ function StimulusLightbox({ stimulus, onClose }: { stimulus: Stimulus; onClose: 
       onClick={(event) => {
         if (event.target === ref.current) onClose()
       }}
-      className="m-auto w-[min(92vw,960px)] rounded-lg bg-ink-0 p-0 shadow-lg backdrop:bg-ink-900/60"
+      className="m-auto flex max-h-[90vh] w-[min(92vw,960px)] flex-col overflow-hidden rounded-lg bg-ink-0 p-0 shadow-lg backdrop:bg-ink-900/60"
     >
       <div className="flex items-center justify-between border-b border-ink-100 px-5 py-3">
         <span className="text-caption font-medium uppercase tracking-wider text-ink-400">
@@ -153,7 +153,7 @@ function StimulusLightbox({ stimulus, onClose }: { stimulus: Stimulus; onClose: 
           关闭
         </button>
       </div>
-      <div className="flex items-center justify-center p-5">
+      <div className="flex min-h-0 flex-1 items-start justify-center overflow-y-auto p-5">
         <StimulusBody stimulus={stimulus} large />
       </div>
     </dialog>
