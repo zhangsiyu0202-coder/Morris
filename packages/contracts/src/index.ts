@@ -21,6 +21,7 @@ export type {
   IssueLivekitTokenRequest,
   IssueLivekitTokenResponse,
   ProbeResult,
+  ProbeRound,
   QuestionTaskConfig,
   QuestionTaskResult,
   SectionTaskGroupConfig,

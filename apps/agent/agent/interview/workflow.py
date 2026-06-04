@@ -178,8 +178,13 @@ def collected_answers_map(state: InterviewWorkflowState) -> dict[str, dict[str, 
                 entry["probe"] = {
                     "level": result.probe.level,
                     "probeInstruction": result.probe.probeInstruction,
-                    "probeQuestion": result.probe.probeQuestion,
-                    "answer": result.probe.respondentAnswer,
+                    "rounds": [
+                        {
+                            "probeQuestion": round_.probeQuestion,
+                            "answer": round_.respondentAnswer,
+                        }
+                        for round_ in result.probe.rounds
+                    ],
                 }
             answers[question_id] = entry
     return answers

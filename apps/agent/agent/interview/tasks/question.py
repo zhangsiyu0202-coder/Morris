@@ -1,20 +1,35 @@
 """Generic question task for a configured interview question."""
 from __future__ import annotations
 
-from agent.contracts import ProbeResult, QuestionTaskConfig, QuestionTaskResult
+from agent.contracts import (
+    ProbeResult,
+    ProbeRound,
+    QuestionTaskConfig,
+    QuestionTaskResult,
+)
 
 
 def build_question_instructions(question: QuestionTaskConfig) -> str:
     probe = question.probeConfig
     probe_text = ""
     if probe is not None:
+        guidance = probe.instruction.strip() or "（无特定指引，自行判断如何深入。）"
         probe_text = f"""
 
-Probe instructions:
+Probing (this question is always probed):
 - Probe level: {probe.level}
-- Probe guidance: {probe.instruction}
+- Probe guidance: {guidance}
 - Maximum probe rounds: {probe.maxRounds}
-- If you ask a probe, record the original answer and the probe exchange with record_answer_with_probe.
+- You MUST ask at least one probe before finishing this question — never jump
+  straight to the next question. That feels robotic and loses the human touch.
+- After each probe exchange, call record_probe_round with the probe question and
+  the respondent's answer to it.
+- You MAY stop probing early once you feel the answer is fully explored — you do
+  not have to use all {probe.maxRounds} rounds.
+- You may never exceed {probe.maxRounds} probe rounds. Once you reach the limit,
+  finish the question.
+- When you are done, call complete_question with the consolidated answer to the
+  main question.
 """
 
     stimulus_text = ""
@@ -31,12 +46,8 @@ Question type: {question.questionType}
 Question content: {question.questionContent}
 {stimulus_text}
 Ask the question naturally and keep the interview conversational.
-When the respondent has answered, call exactly one result tool:
-- record_answer if there was no probe.
-- record_answer_with_probe if you asked a probe.
-
-Do not invent fields outside the tool arguments. Do not expose internal task names.
 {probe_text}
+Do not invent fields outside the tool arguments. Do not expose internal task names.
 """
 
 
@@ -46,10 +57,18 @@ def create_question_task_class():
     class LiveKitQuestionTask(AgentTask[QuestionTaskResult]):
         def __init__(self, question: QuestionTaskConfig, chat_ctx=None) -> None:
             self.question = question
+            # Accumulates each probe exchange so we can enforce the round ceiling
+            # deterministically rather than trusting the LLM to count.
+            self._rounds: list[ProbeRound] = []
             super().__init__(
                 instructions=build_question_instructions(question),
                 chat_ctx=chat_ctx,
             )
+
+        @property
+        def _max_rounds(self) -> int:
+            probe = self.question.probeConfig
+            return probe.maxRounds if probe is not None else 0
 
         async def on_enter(self) -> None:
             await self.session.generate_reply(
@@ -57,26 +76,56 @@ def create_question_task_class():
             )
 
         @function_tool()
-        async def record_answer(self, respondent_answer: str) -> None:
-            """Record the respondent's answer when no probe was asked."""
-            self.complete(
-                QuestionTaskResult(
-                    questionType=self.question.questionType,
-                    questionContent=self.question.questionContent,
-                    respondentAnswer=respondent_answer,
-                    probe=None,
+        async def record_probe_round(
+            self,
+            probe_question: str,
+            probe_respondent_answer: str,
+        ) -> str:
+            """Record one probe exchange (a follow-up question and its answer).
+
+            Returns guidance on whether more probing is allowed. The probe-round
+            ceiling is enforced here: rounds beyond the maximum are not recorded.
+            """
+            if self._max_rounds <= 0:
+                return (
+                    "This question is not configured for probing. "
+                    "Call complete_question now."
                 )
+
+            # Hard upper bound: refuse to record beyond maxRounds.
+            if len(self._rounds) >= self._max_rounds:
+                return (
+                    f"Probe limit of {self._max_rounds} already reached. "
+                    "Do not ask another probe — call complete_question now."
+                )
+
+            self._rounds.append(
+                ProbeRound(
+                    probeQuestion=probe_question,
+                    respondentAnswer=probe_respondent_answer,
+                )
+            )
+            used = len(self._rounds)
+
+            if used >= self._max_rounds:
+                return (
+                    f"Recorded probe {used}/{self._max_rounds}. "
+                    "Probe limit reached — call complete_question now."
+                )
+            return (
+                f"Recorded probe {used}/{self._max_rounds}. "
+                "Ask another probe if useful, or call complete_question to finish."
             )
 
         @function_tool()
-        async def record_answer_with_probe(
-            self,
-            respondent_answer: str,
-            probe_question: str,
-            probe_respondent_answer: str,
-        ) -> None:
-            """Record the respondent's answer plus the probe exchange."""
+        async def complete_question(self, respondent_answer: str) -> str | None:
+            """Finish this question with the consolidated answer to the main question.
+
+            Enforces the lower bound: when probing is configured you must record at
+            least one probe round before completing.
+            """
             probe_config = self.question.probeConfig
+
             if probe_config is None:
                 self.complete(
                     QuestionTaskResult(
@@ -86,7 +135,14 @@ def create_question_task_class():
                         probe=None,
                     )
                 )
-                return
+                return None
+
+            # Lower bound: at least one probe is required for the human touch.
+            if not self._rounds:
+                return (
+                    "You must ask at least one probe before finishing. "
+                    "Ask a follow-up question and call record_probe_round first."
+                )
 
             self.complete(
                 QuestionTaskResult(
@@ -96,10 +152,10 @@ def create_question_task_class():
                     probe=ProbeResult(
                         level=probe_config.level,
                         probeInstruction=probe_config.instruction,
-                        probeQuestion=probe_question,
-                        respondentAnswer=probe_respondent_answer,
+                        rounds=list(self._rounds),
                     ),
                 )
             )
+            return None
 
     return LiveKitQuestionTask

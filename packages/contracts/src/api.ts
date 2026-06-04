@@ -204,11 +204,18 @@ export const InterviewWorkflowConfigSchema = z.object({
   sections: z.array(SectionTaskGroupConfigSchema).min(1),
 });
 
+// A single probe exchange: the AI's follow-up question and the answer to it.
+export const ProbeRoundSchema = z.object({
+  probeQuestion: z.string(),
+  respondentAnswer: z.string(),
+});
+
+// Every question is probed at least once. `rounds` holds each probe exchange,
+// capped at the question's maxRounds ceiling. The AI may stop earlier.
 export const ProbeResultSchema = z.object({
   level: z.enum(["standard", "deep"]),
   probeInstruction: z.string(),
-  probeQuestion: z.string(),
-  respondentAnswer: z.string(),
+  rounds: z.array(ProbeRoundSchema).min(1),
 });
 
 export const QuestionTaskResultSchema = z.object({
@@ -438,6 +445,7 @@ export type AnalysisReportOutput = z.infer<typeof AnalysisReportOutputSchema>;
 export type QuestionTaskConfig = z.infer<typeof QuestionTaskConfigSchema>;
 export type SectionTaskGroupConfig = z.infer<typeof SectionTaskGroupConfigSchema>;
 export type InterviewWorkflowConfig = z.infer<typeof InterviewWorkflowConfigSchema>;
+export type ProbeRound = z.infer<typeof ProbeRoundSchema>;
 export type ProbeResult = z.infer<typeof ProbeResultSchema>;
 export type QuestionTaskResult = z.infer<typeof QuestionTaskResultSchema>;
 export type SectionTaskGroupResult = z.infer<typeof SectionTaskGroupResultSchema>;

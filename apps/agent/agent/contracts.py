@@ -200,11 +200,15 @@ class InterviewWorkflowConfig(BaseModel):  # zod: InterviewWorkflowConfigSchema
     sections: list[SectionTaskGroupConfig]
 
 
+class ProbeRound(BaseModel):  # zod: ProbeRoundSchema
+    probeQuestion: str
+    respondentAnswer: str
+
+
 class ProbeResult(BaseModel):  # zod: ProbeResultSchema
     level: ProbeLevel
     probeInstruction: str
-    probeQuestion: str
-    respondentAnswer: str
+    rounds: list[ProbeRound] = Field(default_factory=list)
 
 
 class QuestionTaskResult(BaseModel):  # zod: QuestionTaskResultSchema

@@ -7,6 +7,7 @@ from agent.contracts import (
     InterviewRuntimeSection,
     InterviewRuntimeStudy,
     ProbeResult,
+    ProbeRound,
     QuestionTaskResult,
 )
 from agent.interview.workflow import (
@@ -128,8 +129,10 @@ def test_recording_results_drives_completion_and_answers_map():
             probe=ProbeResult(
                 level="deep",
                 probeInstruction="Dig deeper",
-                probeQuestion="Why two?",
-                respondentAnswer="Long mornings",
+                rounds=[
+                    ProbeRound(probeQuestion="Why two?", respondentAnswer="Long mornings"),
+                    ProbeRound(probeQuestion="Always two?", respondentAnswer="Most days"),
+                ],
             ),
         ),
     )
@@ -139,4 +142,5 @@ def test_recording_results_drives_completion_and_answers_map():
     assert set(answers.keys()) == {"q1", "q2"}
     assert answers["q1"]["answer"] == "I drink coffee"
     assert answers["q1"]["source"] == "voice"
-    assert answers["q2"]["probe"]["probeQuestion"] == "Why two?"
+    assert len(answers["q2"]["probe"]["rounds"]) == 2
+    assert answers["q2"]["probe"]["rounds"][0]["probeQuestion"] == "Why two?"
