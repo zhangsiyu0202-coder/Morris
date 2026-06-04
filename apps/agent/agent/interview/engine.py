@@ -79,11 +79,13 @@ class InterviewEngine:
 
     def _build_session(self) -> Any:
         from livekit.agents import AgentSession
+        from livekit.plugins import silero
 
         return AgentSession(
             stt=build_stt(self._settings.speech),
             tts=build_tts(self._settings.speech),
             llm=build_llm(self._settings.llm),
+            vad=silero.VAD.load(),
         )
 
     def _wire_transcription(self, session: Any) -> None:
@@ -109,7 +111,7 @@ class InterviewEngine:
         try:
             session.on("conversation_item_added", on_item)
         except Exception as error:  # noqa: BLE001 - event wiring is best-effort
-            self._log.warn("could not subscribe to transcription events", error=str(error))
+            self._log.warn("could not register transcription listener", error=str(error))
 
     @staticmethod
     def _extract_text(item: Any) -> str:
