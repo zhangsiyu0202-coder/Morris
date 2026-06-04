@@ -1,6 +1,12 @@
 import { streamText, convertToModelMessages, tool, stepCountIs, type UIMessage } from "ai";
+import { createDeepSeek } from "@ai-sdk/deepseek";
 import { z } from "zod";
 import { STUDIES, searchSnippets, analyzeStudy } from "@/lib/agent-data";
+
+// DeepSeek 官方直连。key 存于 AI_GATEWAY_API_KEY(实为 DeepSeek 官方 key),回退到 DEEPSEEK_API_KEY。
+const deepseek = createDeepSeek({
+  apiKey: process.env.DEEPSEEK_API_KEY ?? process.env.AI_GATEWAY_API_KEY,
+});
 
 // Node runtime required for AI SDK (never edge).
 export const runtime = "nodejs";
@@ -69,7 +75,7 @@ export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json();
 
   const result = streamText({
-    model: "deepseek/deepseek-v3.2",
+    model: deepseek("deepseek-chat"),
     system: SYSTEM,
     messages: await convertToModelMessages(messages),
     tools,

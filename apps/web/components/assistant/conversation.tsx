@@ -5,6 +5,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { ArrowUp, Loader2, Sparkles } from "lucide-react";
 import { ToolResult } from "./tool-results";
+import { Markdown } from "./markdown";
 
 const TOOL_PENDING_LABEL: Record<string, string> = {
   createStudyDraft: "正在拟定调研草稿…",
@@ -89,11 +90,7 @@ export function Conversation({
                   <div className="flex flex-col gap-2">
                     {message.parts.map((part, i) => {
                       if (part.type === "text") {
-                        return part.text ? (
-                          <p key={i} className="whitespace-pre-wrap font-reading text-body leading-7 text-ink-800">
-                            {part.text}
-                          </p>
-                        ) : null;
+                        return part.text ? <Markdown key={i}>{part.text}</Markdown> : null;
                       }
                       if (part.type.startsWith("tool-")) {
                         const toolName = part.type.slice(5);
