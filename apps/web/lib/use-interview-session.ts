@@ -19,6 +19,8 @@ export interface InterviewSession {
   isLast: boolean;
   /** Submit the respondent's structured answer and advance. */
   submitAnswer: (answer: InterviewAnswerPayload) => void;
+  /** Preview-only: jump to a specific question (not used in production). */
+  jumpTo: (target: number) => void;
 }
 
 /**
@@ -56,6 +58,13 @@ export function useInterviewSession(): InterviewSession {
     [questions.length],
   );
 
+  const jumpTo = useCallback(
+    (target: number) => {
+      setIndex(Math.max(0, Math.min(target, questions.length)));
+    },
+    [questions.length],
+  );
+
   return {
     state,
     question,
@@ -63,5 +72,6 @@ export function useInterviewSession(): InterviewSession {
     total: questions.length,
     isLast,
     submitAnswer,
+    jumpTo,
   };
 }

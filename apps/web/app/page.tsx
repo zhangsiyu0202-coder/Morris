@@ -2,9 +2,18 @@
 
 import { useInterviewSession } from "@/lib/use-interview-session"
 import { QuestionCard } from "@/components/interview/question-card"
+import { MOCK_RUNTIME_QUESTIONS } from "@/lib/mock-session"
+
+const RESPONSE_MODE_LABELS: Record<string, string> = {
+  voice_only: "纯语音",
+  single_select: "单选",
+  multi_select: "多选",
+  scale: "量表",
+  ranking: "排序",
+}
 
 export default function InterviewPage() {
-  const { question, index, total, submitAnswer } = useInterviewSession()
+  const { question, index, total, submitAnswer, jumpTo } = useInterviewSession()
   const progress = total > 0 ? Math.round((index / total) * 100) : 0
 
   return (
@@ -23,14 +32,38 @@ export default function InterviewPage() {
         />
       </div>
 
+      <PreviewSwitcher active={index} onSelect={jumpTo} />
+
       <div className="mx-auto w-full max-w-2xl px-4 py-10 sm:py-16">
-        {question ? (
-          <QuestionCard question={question} onSubmit={submitAnswer} />
-        ) : (
-          <CompletionCard />
-        )}
+        {question ? <QuestionCard question={question} onSubmit={submitAnswer} /> : <CompletionCard />}
       </div>
     </main>
+  )
+}
+
+/**
+ * Preview-only control to inspect each responseMode renderer.
+ * This belongs to the local fixture host, not the production portal.
+ */
+function PreviewSwitcher({ active, onSelect }: { active: number; onSelect: (target: number) => void }) {
+  return (
+    <div className="mx-auto flex w-full max-w-2xl flex-wrap items-center gap-2 px-4 pt-6">
+      <span className="text-caption uppercase tracking-wider text-ink-400">预览题型</span>
+      {MOCK_RUNTIME_QUESTIONS.map((q, i) => (
+        <button
+          key={q.questionId}
+          type="button"
+          onClick={() => onSelect(i)}
+          className={`rounded-full border px-3 py-1 text-caption transition-colors ${
+            active === i
+              ? "border-ink-900 bg-ink-900 text-ink-0"
+              : "border-ink-200 bg-ink-0 text-ink-600 hover:border-ink-400"
+          }`}
+        >
+          {RESPONSE_MODE_LABELS[q.responseMode] ?? q.responseMode}
+        </button>
+      ))}
+    </div>
   )
 }
 
