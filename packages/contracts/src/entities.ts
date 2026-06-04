@@ -60,12 +60,16 @@ export const SurveySectionSchema = z.object({
   sectionInstruction: z.string().optional(),
 });
 
-export const ProbeLevel = z.enum(["light", "medium", "deep"]);
+export const ProbeLevel = z.enum(["standard", "deep"]);
 
 export const ProbeConfigSchema = z.object({
   level: ProbeLevel,
-  instruction: z.string().min(1),
-  maxRounds: z.number().int().positive().default(1),
+  // Free-form guidance handed to the LLM. Empty means "no specific guidance —
+  // probe at your own discretion".
+  instruction: z.string().default(""),
+  // Hard ceiling on probe rounds. The agent may stop earlier; it must never
+  // exceed this. standard defaults to 3, deep to 5.
+  maxRounds: z.number().int().positive().default(3),
 });
 
 export const StimulusType = z.enum(["image", "video", "text"]);

@@ -36,11 +36,9 @@ def _now_iso() -> str:
 
 
 def _probe_level_from_task(question: QuestionTaskConfig) -> StudyProbeLevel:
-    if question.probeConfig is None:
-        return "none"
-    if question.probeConfig.level == "deep":
+    if question.probeConfig is not None and question.probeConfig.level == "deep":
         return "deep"
-    return "follow_up"
+    return "standard"
 
 
 def runtime_questions_from_workflow(
@@ -81,6 +79,7 @@ def _questions_from_section(section: SectionTaskGroupConfig) -> list[InterviewRu
                 probeInstruction=question.probeConfig.instruction if question.probeConfig else "",
                 options=[],
                 responseMode=QuestionTypeToResponseMode[question.questionType],
+                stimulus=question.stimulus,
             )
         )
     return questions

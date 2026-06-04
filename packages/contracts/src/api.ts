@@ -45,15 +45,18 @@ export const StudyQuestionTypeSchema = z.enum([
   "ranking",
 ]);
 
-export const StudyProbeLevelSchema = z.enum(["none", "follow_up", "deep"]);
+// Every question is probed; the only choice is how deep. `standard` probes
+// 1-3 rounds, `deep` probes more (up to its maxRounds ceiling).
+export const StudyProbeLevelSchema = z.enum(["standard", "deep"]);
 
 export const SurveyDraftQuestionSchema = z
   .object({
     questionText: z.string().min(1),
     questionType: StudyQuestionTypeSchema,
-    probeLevel: StudyProbeLevelSchema.default("none"),
+    probeLevel: StudyProbeLevelSchema.default("standard"),
     probeInstruction: z.string().default(""),
     options: z.array(z.string().min(1)).default([]),
+    stimulus: StimulusSchema.optional(),
   })
   .superRefine((question, ctx) => {
     if (
@@ -64,17 +67,6 @@ export const SurveyDraftQuestionSchema = z
         code: z.ZodIssueCode.custom,
         message: "choice-based questions require at least two options",
         path: ["options"],
-      });
-    }
-
-    if (
-      (question.probeLevel === "follow_up" || question.probeLevel === "deep") &&
-      !question.probeInstruction.trim()
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "probe instruction is required when probing is enabled",
-        path: ["probeInstruction"],
       });
     }
   });
@@ -112,6 +104,7 @@ export const InterviewRuntimeQuestionSchema = z.object({
   probeInstruction: z.string(),
   options: z.array(z.string().min(1)).default([]),
   responseMode: InterviewResponseModeSchema,
+  stimulus: StimulusSchema.optional(),
 });
 
 export const InterviewRuntimeSectionSchema = z.object({
@@ -211,11 +204,18 @@ export const InterviewWorkflowConfigSchema = z.object({
   sections: z.array(SectionTaskGroupConfigSchema).min(1),
 });
 
-export const ProbeResultSchema = z.object({
-  level: z.enum(["light", "medium", "deep"]),
-  probeInstruction: z.string(),
+// A single probe exchange: the AI's follow-up question and the answer to it.
+export const ProbeRoundSchema = z.object({
   probeQuestion: z.string(),
   respondentAnswer: z.string(),
+});
+
+// Every question is probed at least once. `rounds` holds each probe exchange,
+// capped at the question's maxRounds ceiling. The AI may stop earlier.
+export const ProbeResultSchema = z.object({
+  level: z.enum(["standard", "deep"]),
+  probeInstruction: z.string(),
+  rounds: z.array(ProbeRoundSchema).min(1),
 });
 
 export const QuestionTaskResultSchema = z.object({
@@ -307,18 +307,22 @@ const QUESTION_TYPE_TO_RESPONSE_MODE: Record<
   ranking: "ranking",
 };
 
+// Default round ceilings per depth. These are starting points; the authoritative
+// control is the maxRounds number itself, which a researcher can fine-tune.
+const PROBE_DEFAULT_MAX_ROUNDS = {
+  standard: 3,
+  deep: 5,
+} as const;
+
+// Every question is probed, so this always returns a config (never undefined).
 function mapProbeLevelToProbeConfig(
   probeLevel: z.infer<typeof StudyProbeLevelSchema>,
   probeInstruction: string,
 ) {
-  if (probeLevel === "none") {
-    return undefined;
-  }
-
   return {
-    level: probeLevel === "follow_up" ? "medium" : "deep",
+    level: probeLevel,
     instruction: probeInstruction,
-    maxRounds: probeLevel === "follow_up" ? 1 : 2,
+    maxRounds: PROBE_DEFAULT_MAX_ROUNDS[probeLevel],
   } as const;
 }
 
@@ -349,6 +353,7 @@ export function buildInterviewRuntimeStudy(input: BuildInterviewRuntimeStudyInpu
           probeInstruction: question.probeInstruction,
           options: question.options,
           responseMode: QUESTION_TYPE_TO_RESPONSE_MODE[question.questionType],
+          stimulus: question.stimulus,
         })),
       };
     }),
@@ -440,6 +445,7 @@ export type AnalysisReportOutput = z.infer<typeof AnalysisReportOutputSchema>;
 export type QuestionTaskConfig = z.infer<typeof QuestionTaskConfigSchema>;
 export type SectionTaskGroupConfig = z.infer<typeof SectionTaskGroupConfigSchema>;
 export type InterviewWorkflowConfig = z.infer<typeof InterviewWorkflowConfigSchema>;
+export type ProbeRound = z.infer<typeof ProbeRoundSchema>;
 export type ProbeResult = z.infer<typeof ProbeResultSchema>;
 export type QuestionTaskResult = z.infer<typeof QuestionTaskResultSchema>;
 export type SectionTaskGroupResult = z.infer<typeof SectionTaskGroupResultSchema>;

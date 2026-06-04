@@ -21,7 +21,7 @@ QuestionType = Literal[
     "ranking",
     "info",
 ]
-ProbeLevel = Literal["light", "medium", "deep"]
+ProbeLevel = Literal["standard", "deep"]
 StimulusType = Literal["image", "video", "text"]
 StudyQuestionType = Literal[
     "open_ended",
@@ -31,7 +31,7 @@ StudyQuestionType = Literal[
     "nps",
     "ranking",
 ]
-StudyProbeLevel = Literal["none", "follow_up", "deep"]
+StudyProbeLevel = Literal["standard", "deep"]
 InterviewResponseMode = Literal[
     "voice_only",
     "single_select",
@@ -76,8 +76,8 @@ class SurveySection(BaseModel):  # zod: SurveySectionSchema
 
 class ProbeConfig(BaseModel):  # zod: ProbeConfigSchema
     level: ProbeLevel
-    instruction: str
-    maxRounds: int = 1
+    instruction: str = ""
+    maxRounds: int = 3
 
 
 class Stimulus(BaseModel):  # zod: StimulusSchema
@@ -99,9 +99,10 @@ class QuestionTaskConfig(BaseModel):  # zod: QuestionTaskConfigSchema
 class SurveyDraftQuestion(BaseModel):  # zod: SurveyDraftQuestionSchema
     questionText: str
     questionType: StudyQuestionType
-    probeLevel: StudyProbeLevel = "none"
+    probeLevel: StudyProbeLevel = "standard"
     probeInstruction: str = ""
     options: list[str] = Field(default_factory=list)
+    stimulus: Stimulus | None = None
 
 
 class SurveyDraftSection(BaseModel):  # zod: SurveyDraftSectionSchema
@@ -129,6 +130,7 @@ class InterviewRuntimeQuestion(BaseModel):  # zod: InterviewRuntimeQuestionSchem
     probeInstruction: str
     options: list[str] = Field(default_factory=list)
     responseMode: InterviewResponseMode
+    stimulus: Stimulus | None = None
 
 
 class InterviewRuntimeSection(BaseModel):  # zod: InterviewRuntimeSectionSchema
@@ -198,11 +200,15 @@ class InterviewWorkflowConfig(BaseModel):  # zod: InterviewWorkflowConfigSchema
     sections: list[SectionTaskGroupConfig]
 
 
+class ProbeRound(BaseModel):  # zod: ProbeRoundSchema
+    probeQuestion: str
+    respondentAnswer: str
+
+
 class ProbeResult(BaseModel):  # zod: ProbeResultSchema
     level: ProbeLevel
     probeInstruction: str
-    probeQuestion: str
-    respondentAnswer: str
+    rounds: list[ProbeRound] = Field(default_factory=list)
 
 
 class QuestionTaskResult(BaseModel):  # zod: QuestionTaskResultSchema
