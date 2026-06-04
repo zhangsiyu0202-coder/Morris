@@ -79,14 +79,14 @@ def test_survey_draft_shape_for_editor_runtime_bridge():
                     {
                         "questionText": "Tell me about your first month using the product.",
                         "questionType": "open_ended",
-                        "probeLevel": "follow_up",
+                        "probeLevel": "standard",
                         "probeInstruction": "Ask what moment made the product click.",
                     }
                 ],
             }
         ],
     )
-    assert draft.sections[0].questions[0].probeLevel == "follow_up"
+    assert draft.sections[0].questions[0].probeLevel == "standard"
 
 
 def test_interview_runtime_study_shape_for_frontend_agent_bridge():
@@ -109,7 +109,7 @@ def test_interview_runtime_study_shape_for_frontend_agent_bridge():
                         "orderInSection": 0,
                         "questionText": "Tell me about your first month using the product.",
                         "questionType": "open_ended",
-                        "probeLevel": "follow_up",
+                        "probeLevel": "standard",
                         "probeInstruction": "Ask what moment made the product click.",
                         "responseMode": "voice_only",
                     }
@@ -170,14 +170,14 @@ def test_question_instructions_include_probe_only_when_configured():
         questionType="text",
         questionContent="Why did you react that way?",
         probeConfig={
-            "level": "medium",
+            "level": "standard",
             "instruction": "Ask for a concrete example if needed.",
-            "maxRounds": 2,
+            "maxRounds": 3,
         },
     )
 
     assert "Probe instructions" not in build_question_instructions(plain)
-    assert "Probe level: medium" in build_question_instructions(probed)
+    assert "Probe level: standard" in build_question_instructions(probed)
 
 
 def test_mask_secret_hides_value():

@@ -21,7 +21,7 @@ from agent.interview.workflow import (
 )
 
 
-def _question(qid: str, *, probe: str = "none") -> InterviewRuntimeQuestion:
+def _question(qid: str, *, probe: str = "standard") -> InterviewRuntimeQuestion:
     return InterviewRuntimeQuestion(
         questionId=qid,
         sectionId="sec1",
@@ -30,7 +30,7 @@ def _question(qid: str, *, probe: str = "none") -> InterviewRuntimeQuestion:
         questionText=f"Tell me about {qid}",
         questionType="open_ended",
         probeLevel=probe,  # type: ignore[arg-type]
-        probeInstruction="Dig deeper" if probe != "none" else "",
+        probeInstruction="Dig deeper",
         options=[],
         responseMode="voice_only",
     )
@@ -55,17 +55,20 @@ def _study(*questions: InterviewRuntimeQuestion) -> InterviewRuntimeStudy:
 
 
 def test_workflow_config_from_study_maps_probe_levels():
-    study = _study(_question("q1", probe="deep"), _question("q2", probe="none"))
+    study = _study(_question("q1", probe="deep"), _question("q2", probe="standard"))
     config = workflow_config_from_study(study, session_id="s1")
 
     assert config.sessionId == "s1"
     assert config.surveyId == "sv1"
     assert len(config.sections) == 1
     section = config.sections[0]
+    # Every question is probed; deep allows more rounds than standard.
     assert section.questions[0].probeConfig is not None
     assert section.questions[0].probeConfig.level == "deep"
-    # "none" probe level produces no probe config
-    assert section.questions[1].probeConfig is None
+    assert section.questions[0].probeConfig.maxRounds == 5
+    assert section.questions[1].probeConfig is not None
+    assert section.questions[1].probeConfig.level == "standard"
+    assert section.questions[1].probeConfig.maxRounds == 3
 
 
 def test_workflow_config_from_metadata_prefers_explicit_config():

@@ -29,22 +29,19 @@ from agent.contracts import (
     StudyProbeLevel,
 )
 
-# Study probe level -> task probe config level + default max rounds.
-_PROBE_LEVEL_MAP: dict[StudyProbeLevel, tuple[str, int]] = {
-    "none": ("light", 0),
-    "follow_up": ("medium", 1),
-    "deep": ("deep", 2),
+# Default probe-round ceilings per depth. Every question is probed; the only
+# choice is how deep. The authoritative control is maxRounds itself.
+_PROBE_DEFAULT_MAX_ROUNDS: dict[StudyProbeLevel, int] = {
+    "standard": 3,
+    "deep": 5,
 }
 
 
-def _probe_config_from_study(level: StudyProbeLevel, instruction: str) -> ProbeConfig | None:
-    if level == "none":
-        return None
-    mapped_level, max_rounds = _PROBE_LEVEL_MAP[level]
+def _probe_config_from_study(level: StudyProbeLevel, instruction: str) -> ProbeConfig:
     return ProbeConfig(
-        level=cast(ProbeLevel, mapped_level),
+        level=cast(ProbeLevel, level),
         instruction=instruction,
-        maxRounds=max_rounds,
+        maxRounds=_PROBE_DEFAULT_MAX_ROUNDS[level],
     )
 
 
