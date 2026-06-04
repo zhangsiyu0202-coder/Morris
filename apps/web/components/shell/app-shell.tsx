@@ -3,8 +3,10 @@
 import { usePathname } from "next/navigation";
 import { Sidebar } from "./sidebar";
 
-// 不显示主菜单的全屏路由(受访者端访谈页等外部页面)。
-// "/" 与 "/interview" 均为受访端,不挂内部主菜单。
+// 不显示主菜单的全屏路由(受访者端访谈页)。
+// "/" 与 "/interview" 均为受访者端访谈页,面向外部受访者,
+// 不能挂研究者主菜单(会泄露内部 studies 并破坏受访体验)。
+// 其余全部研究者工作台页面共用主菜单。
 const FULLSCREEN_ROUTES = ["/", "/interview"];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
