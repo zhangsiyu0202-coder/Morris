@@ -1,28 +1,27 @@
 "use client"
 
-import type { InterviewRuntimeOption } from "@merism/contracts"
 import { OptionRow } from "./option-row"
 
 interface MultiSelectProps {
-  options: InterviewRuntimeOption[]
+  options: string[]
   value: string[]
   onChange: (next: string[]) => void
 }
 
 export function MultiSelect({ options, value, onChange }: MultiSelectProps) {
-  function toggle(optionId: string) {
-    if (value.includes(optionId)) {
-      onChange(value.filter((id) => id !== optionId))
+  function toggle(option: string) {
+    if (value.includes(option)) {
+      onChange(value.filter((item) => item !== option))
     } else {
-      onChange([...value, optionId])
+      onChange([...value, option])
     }
   }
 
   return (
     <div className="flex flex-col gap-2.5">
       {options.map((option) => (
-        <OptionRow key={option.id} multi selected={value.includes(option.id)} onSelect={() => toggle(option.id)}>
-          {option.label}
+        <OptionRow key={option} multi selected={value.includes(option)} onSelect={() => toggle(option)}>
+          {option}
         </OptionRow>
       ))}
     </div>

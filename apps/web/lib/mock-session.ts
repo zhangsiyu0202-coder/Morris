@@ -54,7 +54,13 @@ export const MOCK_RUNTIME_QUESTIONS: InterviewRuntimeQuestion[] = [
     questionType: "nps",
     probeLevel: "follow_up",
     probeInstruction: "追问打分背后的主要原因。",
-    options: [],
+    options: [
+      "1 - 完全不会推荐",
+      "2 - 不太会推荐",
+      "3 - 中立",
+      "4 - 比较会推荐",
+      "5 - 强烈推荐",
+    ],
     responseMode: "scale",
   },
   {

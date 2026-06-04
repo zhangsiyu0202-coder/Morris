@@ -10,9 +10,10 @@ interface OptionRowProps {
 }
 
 /**
- * Single stacked option row used by single-select, multi-select and scale
- * controls. Matches the reference layout: full-width row, leading
- * radio/checkbox indicator, label text, subtle hover + selected states.
+ * Single stacked option row used by single-select, multi-select and scale.
+ * Mauve Quiet: white row on mauve-50 hover; selected state gains an ink-900
+ * outline + mauve-100 fill (color never carries meaning alone — the filled
+ * indicator does). Full-width, leading radio/checkbox indicator, label text.
  */
 export function OptionRow({ selected, multi = false, onSelect, children }: OptionRowProps) {
   return (
@@ -21,23 +22,23 @@ export function OptionRow({ selected, multi = false, onSelect, children }: Optio
       role={multi ? "checkbox" : "radio"}
       aria-checked={selected}
       onClick={onSelect}
-      className={`flex w-full items-center gap-3 rounded-lg border px-4 py-3.5 text-left transition-colors ${
+      className={`flex w-full items-center gap-3 rounded border px-4 py-3.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink-900 focus-visible:ring-offset-2 focus-visible:ring-offset-mauve-50 ${
         selected
-          ? "border-primary bg-primary/8 text-foreground"
-          : "border-border bg-card text-foreground hover:border-primary/40 hover:bg-muted/60"
+          ? "border-ink-900 bg-mauve-100 text-ink-900"
+          : "border-ink-200 bg-ink-0 text-ink-900 hover:bg-mauve-50"
       }`}
     >
       <span
         aria-hidden="true"
         className={`flex size-5 shrink-0 items-center justify-center border transition-colors ${
           multi ? "rounded-[5px]" : "rounded-full"
-        } ${selected ? "border-primary bg-primary" : "border-muted-foreground/40 bg-transparent"}`}
+        } ${selected ? "border-ink-900 bg-ink-900" : "border-ink-400 bg-transparent"}`}
       >
         {selected ? (
           multi ? (
             <CheckIcon />
           ) : (
-            <span className="size-2 rounded-full bg-primary-foreground" />
+            <span className="size-2 rounded-full bg-ink-0" />
           )
         ) : null}
       </span>
@@ -51,11 +52,10 @@ function CheckIcon() {
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
       <path
         d="M2.5 6.2L4.8 8.5L9.5 3.5"
-        stroke="currentColor"
+        stroke="#ffffff"
         strokeWidth="1.6"
         strokeLinecap="round"
         strokeLinejoin="round"
-        className="text-primary-foreground"
       />
     </svg>
   )
