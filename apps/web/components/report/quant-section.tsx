@@ -60,7 +60,7 @@ function ChoiceChart({ stat }: { stat: Extract<QuestionStat, { kind: "choice" }>
           <Tooltip
             cursor={{ fill: "var(--color-mauve-50)" }}
             contentStyle={tooltipStyle}
-            formatter={(v: number, _n, p) => [`${v} 人 · ${(p.payload as { pct: number }).pct}%`, "选择"]}
+            formatter={(v, _n, p) => [`${Number(v)} 人 · ${(p.payload as { pct: number }).pct}%`, "选择"]}
           />
           <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={22}>
             {stat.data.map((_, i) => (
@@ -88,7 +88,7 @@ function RatingChart({ stat }: { stat: Extract<QuestionStat, { kind: "rating" }>
           <Tooltip
             cursor={{ fill: "var(--color-mauve-50)" }}
             contentStyle={tooltipStyle}
-            formatter={(v: number) => [`${v} 人`, "评分"]}
+            formatter={(v) => [`${Number(v)} 人`, "评分"]}
           />
           <Bar dataKey="count" radius={[4, 4, 0, 0]} barSize={36}>
             {stat.data.map((d, i) => (

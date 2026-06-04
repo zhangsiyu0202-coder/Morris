@@ -42,7 +42,7 @@ function SentimentDonut({ data }: { data: SentimentDatum[] }) {
           <PieChart>
             <Tooltip
               contentStyle={tooltipStyle}
-              formatter={(v: number, n) => [`${v} 人`, SENTIMENT_LABEL[n as SentimentDatum["sentiment"]]]}
+              formatter={(v, n) => [`${Number(v)} 人`, SENTIMENT_LABEL[n as SentimentDatum["sentiment"]]]}
             />
             <Pie data={data} dataKey="count" nameKey="sentiment" innerRadius={42} outerRadius={64} paddingAngle={2}>
               {data.map((d) => (
