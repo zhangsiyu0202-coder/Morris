@@ -81,6 +81,7 @@ def _questions_from_section(section: SectionTaskGroupConfig) -> list[InterviewRu
                 probeInstruction=question.probeConfig.instruction if question.probeConfig else "",
                 options=[],
                 responseMode=QuestionTypeToResponseMode[question.questionType],
+                stimulus=question.stimulus,
             )
         )
     return questions

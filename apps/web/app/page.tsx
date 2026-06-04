@@ -1,7 +1,7 @@
 "use client"
 
 import { useInterviewSession } from "@/lib/use-interview-session"
-import { QuestionCard } from "@/components/interview/question-card"
+import { QuestionStage } from "@/components/interview/question-stage"
 import { MOCK_RUNTIME_QUESTIONS } from "@/lib/mock-session"
 
 const RESPONSE_MODE_LABELS: Record<string, string> = {
@@ -34,8 +34,12 @@ export default function InterviewPage() {
 
       <PreviewSwitcher active={index} onSelect={jumpTo} />
 
-      <div className="mx-auto w-full max-w-2xl px-4 py-10 sm:py-16">
-        {question ? <QuestionCard question={question} onSubmit={submitAnswer} /> : <CompletionCard />}
+      <div className="w-full px-4 py-10 sm:py-16">
+        {question ? (
+          <QuestionStage question={question} onSubmit={submitAnswer} />
+        ) : (
+          <CompletionCard />
+        )}
       </div>
     </main>
   )
@@ -69,10 +73,12 @@ function PreviewSwitcher({ active, onSelect }: { active: number; onSelect: (targ
 
 function CompletionCard() {
   return (
-    <section className="rounded-lg border border-ink-200 bg-ink-0 p-8 text-center shadow-sm">
-      <p className="text-caption font-medium uppercase tracking-wider text-ink-400">AI Interviewer</p>
-      <h1 className="mt-3 text-display-lg font-display text-ink-900">访谈到此结束</h1>
-      <p className="mt-3 text-body-sm text-ink-600">感谢你的参与，你的回答已经记录。</p>
-    </section>
+    <div className="mx-auto w-full max-w-2xl">
+      <section className="rounded-lg border border-ink-200 bg-ink-0 p-8 text-center shadow-sm">
+        <p className="text-caption font-medium uppercase tracking-wider text-ink-400">AI Interviewer</p>
+        <h1 className="mt-3 text-display-lg font-display text-ink-900">访谈到此结束</h1>
+        <p className="mt-3 text-body-sm text-ink-600">感谢你的参与，你的回答已经记录。</p>
+      </section>
+    </div>
   )
 }

@@ -102,6 +102,7 @@ class SurveyDraftQuestion(BaseModel):  # zod: SurveyDraftQuestionSchema
     probeLevel: StudyProbeLevel = "none"
     probeInstruction: str = ""
     options: list[str] = Field(default_factory=list)
+    stimulus: Stimulus | None = None
 
 
 class SurveyDraftSection(BaseModel):  # zod: SurveyDraftSectionSchema
@@ -129,6 +130,7 @@ class InterviewRuntimeQuestion(BaseModel):  # zod: InterviewRuntimeQuestionSchem
     probeInstruction: str
     options: list[str] = Field(default_factory=list)
     responseMode: InterviewResponseMode
+    stimulus: Stimulus | None = None
 
 
 class InterviewRuntimeSection(BaseModel):  # zod: InterviewRuntimeSectionSchema

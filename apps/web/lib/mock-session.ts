@@ -26,12 +26,17 @@ export const MOCK_RUNTIME_QUESTIONS: InterviewRuntimeQuestion[] = [
     sectionId: "section-1",
     sectionTitle: "整体印象",
     orderInSection: 1,
-    questionText: "在下面这些场景里，你觉得现有工具最常掉链子的是哪一个？",
+    questionText: "看完这则广告，你从中 get 到的主要信息是什么？再选一个最贴近的场景。",
     questionType: "single_choice",
     probeLevel: "follow_up",
-    probeInstruction: "追问为什么选这个场景。",
+    probeInstruction: "追问广告里哪一处让 ta 产生这个印象。",
     options: ["跨时区排会", "文件版本同步", "异步消息跟进", "视频会议质量"],
     responseMode: "single_select",
+    stimulus: {
+      id: "stimulus-ad-1",
+      type: "image",
+      url: "/stimuli/collab-ad.png",
+    },
   },
   {
     questionId: "question-2-1",
@@ -44,6 +49,11 @@ export const MOCK_RUNTIME_QUESTIONS: InterviewRuntimeQuestion[] = [
     probeInstruction: "",
     options: ["智能会议纪要", "自动任务分派", "跨工具搜索", "权限与安全", "离线可用"],
     responseMode: "multi_select",
+    stimulus: {
+      id: "stimulus-copy-1",
+      type: "text",
+      text: "「把团队所有工具，收进一个安静的工作空间。」\n\n— 不再被通知淹没，不再来回切换标签页。\n— 会议纪要自动生成，任务自动认领。\n— 一个搜索框，找遍所有文件、消息和待办。",
+    },
   },
   {
     questionId: "question-2-2",

@@ -54,6 +54,7 @@ export const SurveyDraftQuestionSchema = z
     probeLevel: StudyProbeLevelSchema.default("none"),
     probeInstruction: z.string().default(""),
     options: z.array(z.string().min(1)).default([]),
+    stimulus: StimulusSchema.optional(),
   })
   .superRefine((question, ctx) => {
     if (
@@ -112,6 +113,7 @@ export const InterviewRuntimeQuestionSchema = z.object({
   probeInstruction: z.string(),
   options: z.array(z.string().min(1)).default([]),
   responseMode: InterviewResponseModeSchema,
+  stimulus: StimulusSchema.optional(),
 });
 
 export const InterviewRuntimeSectionSchema = z.object({
@@ -349,6 +351,7 @@ export function buildInterviewRuntimeStudy(input: BuildInterviewRuntimeStudyInpu
           probeInstruction: question.probeInstruction,
           options: question.options,
           responseMode: QUESTION_TYPE_TO_RESPONSE_MODE[question.questionType],
+          stimulus: question.stimulus,
         })),
       };
     }),
