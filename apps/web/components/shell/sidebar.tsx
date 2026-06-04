@@ -86,7 +86,7 @@ export function Sidebar() {
               onClick={() => setCollapsed(true)}
               aria-label="折叠侧边栏"
               title="折叠侧边栏"
-              className="grid size-7 shrink-0 place-items-center rounded-md text-ink-400 transition-colors hover:bg-mauve-50 hover:text-ink-700"
+              className="grid size-7 shrink-0 place-items-center rounded-md text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700"
             >
               <ChevronsLeft className="size-4" strokeWidth={2} />
             </button>
@@ -130,7 +130,7 @@ export function Sidebar() {
                 className={`group flex h-9 items-center rounded-md text-left transition-colors ${
                   collapsed ? "justify-center px-0" : "gap-3 px-3"
                 } ${
-                  selected ? "bg-mauve-100" : "hover:bg-mauve-50"
+                  selected ? "bg-mauve-100" : "hover:bg-ink-100"
                 }`}
               >
                 <span
@@ -154,7 +154,7 @@ export function Sidebar() {
           <button
             type="button"
             title={collapsed ? "Add new study" : undefined}
-            className={`flex h-9 items-center rounded-md text-ink-400 transition-colors hover:bg-mauve-50 hover:text-ink-700 ${
+            className={`flex h-9 items-center rounded-md text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700 ${
               collapsed ? "justify-center px-0" : "gap-3 px-3"
             }`}
           >
@@ -202,7 +202,7 @@ function NavLink({
       aria-current={active ? "page" : undefined}
       className={`flex h-9 items-center rounded-md transition-colors ${
         collapsed ? "justify-center px-0" : "gap-3 px-3"
-      } ${active ? "bg-mauve-100 text-ink-900" : "text-ink-700 hover:bg-mauve-50"}`}
+      } ${active ? "bg-mauve-100 text-ink-900" : "text-ink-700 hover:bg-ink-100"}`}
     >
       <Icon
         className={`size-[18px] shrink-0 ${active ? "text-ink-900" : "text-ink-400"}`}
