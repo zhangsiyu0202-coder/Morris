@@ -64,6 +64,19 @@
   --shadow-md: 0 8px 16px rgba(167, 133, 133, 0.12);
   --shadow-lg: 0 16px 32px rgba(167, 133, 133, 0.14);
   --shadow-popover: 0 4px 24px rgba(167, 133, 133, 0.18);
+
+  /* Chart palette — ink/mauve monochrome ramp for neutral distributions.
+   * Kept quiet to match the design system; only sentiment introduces hue. */
+  --color-chart-1: #1e293b; /* ink-800 — primary series */
+  --color-chart-2: #a78585; /* mauve-400 — secondary series */
+  --color-chart-3: #64748b; /* ink-400 — tertiary series */
+  --color-chart-4: #475569; /* ink-600 — quaternary series */
+  --color-chart-5: #d7cfd9; /* mauve-200 — faint series */
+
+  /* Sentiment / NPS semantics — low-saturation so they read calm. */
+  --color-positive: #4f9d8b; /* muted teal-green */
+  --color-neutral: #a78585; /* mauve-400 */
+  --color-negative: #c0744f; /* muted terracotta */
 }
 
 html {
