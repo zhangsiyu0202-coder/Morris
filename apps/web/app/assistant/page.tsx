@@ -17,7 +17,7 @@ const SUGGESTIONS = [
 
 export default function AssistantPage() {
   return (
-    <main className="flex h-dvh bg-mauve-50">
+    <div className="flex h-full bg-mauve-50">
       <aside className="hidden w-80 shrink-0 flex-col border-r border-mauve-200 bg-ink-0 p-6 lg:flex">
         <h1 className="font-display text-display-lg text-ink-900">研究助手</h1>
         <p className="mt-2 font-ui text-body-sm leading-6 text-ink-400">
@@ -44,6 +44,6 @@ export default function AssistantPage() {
       <section className="flex min-w-0 flex-1 flex-col">
         <Conversation suggestions={SUGGESTIONS} />
       </section>
-    </main>
+    </div>
   );
 }

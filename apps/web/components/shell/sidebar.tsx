@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -54,11 +54,22 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [activeStudy, setActiveStudy] = useState("st_travel");
 
+  // 恢复上次的折叠/展开偏好。
+  useEffect(() => {
+    const saved = localStorage.getItem("sidebar:collapsed");
+    if (saved !== null) setCollapsed(saved === "1");
+  }, []);
+
+  const toggleCollapsed = (next: boolean) => {
+    setCollapsed(next);
+    localStorage.setItem("sidebar:collapsed", next ? "1" : "0");
+  };
+
   return (
     <aside
       data-collapsed={collapsed}
       // 白底为主;右侧用 inset 阴影代替边框(无投影、无外框)
-      className="flex h-screen flex-col bg-ink-0 shadow-[inset_-1px_0_0_var(--color-ink-100)] transition-[width] duration-200 ease-out"
+      className="flex h-full flex-col bg-ink-0 shadow-[inset_-1px_0_0_var(--color-ink-100)] transition-[width] duration-200 ease-out"
       style={{ width: collapsed ? 68 : 264 }}
     >
       {/* 头部:项目名 + 折叠切换 */}
@@ -66,7 +77,7 @@ export function Sidebar() {
         {collapsed ? (
           <button
             type="button"
-            onClick={() => setCollapsed(false)}
+            onClick={() => toggleCollapsed(false)}
             aria-label="展开侧边栏"
             title="展开侧边栏"
             className="mx-auto grid size-9 place-items-center rounded-md bg-mauve-100 font-ui text-body-sm font-semibold text-ink-900 transition-colors hover:bg-mauve-200"
@@ -83,7 +94,7 @@ export function Sidebar() {
             </span>
             <button
               type="button"
-              onClick={() => setCollapsed(true)}
+              onClick={() => toggleCollapsed(true)}
               aria-label="折叠侧边栏"
               title="折叠侧边栏"
               className="grid size-7 shrink-0 place-items-center rounded-md text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700"

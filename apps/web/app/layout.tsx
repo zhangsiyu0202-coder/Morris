@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Inclusive_Sans, Istok_Web, Inika, Inknut_Antiqua } from "next/font/google";
 import "./globals.css";
 import { AssistantDock } from "@/components/assistant/assistant-dock";
+import { AppShell } from "@/components/shell/app-shell";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -60,7 +61,7 @@ export default function RootLayout({
       className={`bg-mauve-50 ${inter.variable} ${inclusive.variable} ${istok.variable} ${inika.variable} ${inknut.variable}`}
     >
       <body className="font-ui antialiased">
-        {children}
+        <AppShell>{children}</AppShell>
         <AssistantDock />
       </body>
     </html>
