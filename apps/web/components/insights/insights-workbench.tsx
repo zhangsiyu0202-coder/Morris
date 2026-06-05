@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -13,8 +13,7 @@ import {
   X,
   Trash2,
 } from "lucide-react";
-import type { GeneratedInsight } from "@/lib/insights";
-import { useInsights, addInsight, removeInsight } from "@/lib/insights-store";
+import { createInsight, deleteInsight, type InsightListItem } from "@/lib/actions/insights";
 
 type StudyOption = {
   id: string;
@@ -36,10 +35,32 @@ const STATUS_LABEL: Record<StudyOption["status"], string> = {
   closed: "已结束",
 };
 
-export function InsightsWorkbench({ studies }: { studies: StudyOption[] }) {
+const CONFIDENCE_LABEL: Record<string, string> = {
+  high: "高置信度",
+  medium: "中等置信度",
+  low: "低置信度",
+};
+
+export function InsightsWorkbench({
+  studies,
+  cards,
+}: {
+  studies: StudyOption[];
+  cards: InsightListItem[];
+}) {
   const router = useRouter();
-  const cards = useInsights();
   const [createOpen, setCreateOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+
+  function handleDelete(id: string) {
+    setDeletingId(id);
+    startTransition(async () => {
+      await deleteInsight(id);
+      router.refresh();
+      setDeletingId(null);
+    });
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6 sm:py-10">
@@ -75,7 +96,7 @@ export function InsightsWorkbench({ studies }: { studies: StudyOption[] }) {
           </span>
           <p className="font-ui text-body-sm font-medium text-ink-800">还没有洞察</p>
           <p className="max-w-xs font-ui text-caption leading-5 text-ink-400">
-            点击「New insight」,选择一项调研并提出问题,一键生成洞察。
+            点击「New insight」,选择一项调研并提出问题,一键生成深度分析。
           </p>
         </button>
       ) : (
@@ -83,27 +104,40 @@ export function InsightsWorkbench({ studies }: { studies: StudyOption[] }) {
           {cards.map((card) => (
             <div
               key={card.id}
-              className="group relative flex flex-col gap-3 rounded bg-mauve-50 px-5 py-5 shadow-[0_2px_4px_rgba(167,133,133,0.08)] transition-transform hover:-translate-y-0.5"
+              className="group relative flex flex-col rounded bg-mauve-50 shadow-[0_2px_4px_rgba(167,133,133,0.08)] transition-transform hover:-translate-y-0.5"
             >
               <button
                 type="button"
                 aria-label="删除洞察"
-                onClick={() => removeInsight(card.id)}
-                className="absolute right-3 top-3 flex size-7 items-center justify-center rounded text-ink-300 opacity-0 transition-all hover:bg-mauve-200 hover:text-ink-700 group-hover:opacity-100"
+                onClick={() => handleDelete(card.id)}
+                disabled={deletingId === card.id}
+                className="absolute right-3 top-3 z-10 flex size-7 items-center justify-center rounded text-ink-300 opacity-0 transition-all hover:bg-mauve-200 hover:text-ink-700 group-hover:opacity-100 disabled:opacity-100"
               >
-                <Trash2 size={14} />
+                {deletingId === card.id ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Trash2 size={14} />
+                )}
               </button>
-              <Link href={`/insights/${card.id}`} className="flex flex-col gap-3">
-                <p className="line-clamp-1 pr-7 font-ui text-caption uppercase tracking-wide text-ink-400">
-                  {card.studyTitle}
+              <Link href={`/insights/${card.id}`} className="flex flex-1 flex-col gap-3 px-5 py-5">
+                <div className="flex items-center gap-2 pr-7">
+                  <p className="line-clamp-1 font-ui text-caption uppercase tracking-wide text-ink-400">
+                    {card.studyTitle}
+                  </p>
+                  <span className="ml-auto shrink-0 rounded-full bg-mauve-200 px-2 py-0.5 font-ui text-caption font-medium text-ink-700">
+                    {CONFIDENCE_LABEL[card.confidence] ?? card.confidence}
+                  </span>
+                </div>
+                <p className="line-clamp-2 font-ui text-body-sm font-medium leading-6 text-ink-500">
+                  {card.question}
                 </p>
                 <h2 className="line-clamp-2 font-display text-display-sm leading-tight text-ink-900 text-pretty">
-                  {card.insight.headline}
+                  {card.headline}
                 </h2>
                 <p className="line-clamp-3 font-ui text-body-sm leading-6 text-ink-600">
-                  {card.insight.summary}
+                  {card.summary}
                 </p>
-                <span className="mt-1 inline-flex items-center gap-1 font-ui text-caption font-medium text-ink-600">
+                <span className="mt-auto inline-flex items-center gap-1 pt-1 font-ui text-caption font-medium text-ink-600">
                   查看深度分析 <ArrowRight size={12} />
                 </span>
               </Link>
@@ -142,36 +176,19 @@ function CreateInsightModal({
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
 
-  const selectedStudy = studies.find((s) => s.id === studyId);
   const canGenerate = studyId && question.trim().length >= 2 && status !== "loading";
 
   async function generate() {
     if (!canGenerate) return;
     setStatus("loading");
     setErrorMsg("");
-    try {
-      const res = await fetch("/api/insights", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studyId, question: question.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setErrorMsg(data?.error ?? "洞察生成失败,请稍后重试。");
-        setStatus("error");
-        return;
-      }
-      const saved = addInsight({
-        studyId,
-        studyTitle: selectedStudy?.title ?? "",
-        question: question.trim(),
-        insight: data.insight as GeneratedInsight,
-      });
-      onCreated(saved.id);
-    } catch {
-      setErrorMsg("网络异常,请检查连接后重试。");
+    const result = await createInsight({ studyId, question: question.trim() });
+    if ("error" in result) {
+      setErrorMsg(result.error);
       setStatus("error");
+      return;
     }
+    onCreated(result.id);
   }
 
   return (
@@ -238,7 +255,7 @@ function CreateInsightModal({
         >
           {status === "loading" ? (
             <>
-              <Loader2 size={15} className="animate-spin" /> 生成中…
+              <Loader2 size={15} className="animate-spin" /> 结合会话深入分析中…
             </>
           ) : (
             <>

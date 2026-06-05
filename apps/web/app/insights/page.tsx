@@ -1,17 +1,24 @@
 import { InsightsWorkbench } from "@/components/insights/insights-workbench";
 import { listStudyOptions } from "@/lib/insights";
+import { listInsights } from "@/lib/actions/insights";
 
 export const metadata = {
   title: "研究洞察 · Insights",
-  description: "选择已完成的调研,提出聚焦问题,基于真实访谈数据生成结构化洞察。",
+  description: "选择已完成的调研,提出聚焦问题,基于真实访谈数据生成深度分析报告。",
 };
 
-export default function InsightsPage() {
-  const studies = listStudyOptions();
+// 始终读取最新数据(洞察会被创建/删除)。
+export const dynamic = "force-dynamic";
+
+export default async function InsightsPage() {
+  const [studies, cards] = await Promise.all([
+    Promise.resolve(listStudyOptions()),
+    listInsights(),
+  ]);
 
   return (
     <main className="min-h-dvh bg-ink-0">
-      <InsightsWorkbench studies={studies} />
+      <InsightsWorkbench studies={studies} cards={cards} />
     </main>
   );
 }
