@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   Home,
   MessageSquare,
-  Lightbulb,
+  Sparkles,
   PieChart,
   Bookmark,
   Settings,
@@ -25,7 +25,7 @@ type NavItem = {
 const NAV: NavItem[] = [
   { label: "Home", href: "/", icon: Home },
   { label: "Conversations", href: "/interview", icon: MessageSquare },
-  { label: "Insights", href: "/assistant", icon: Lightbulb },
+  { label: "Assistant", href: "/assistant", icon: Sparkles },
   { label: "Reports", href: "/report", icon: PieChart },
   { label: "Bookmarks", href: "#bookmarks", icon: Bookmark },
   { label: "Project Settings", href: "#settings", icon: Settings },
