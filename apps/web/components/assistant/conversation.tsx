@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { ArrowUp, Loader2, Sparkles } from "lucide-react";
+import { ArrowUp, Loader2, Sparkles, AlertTriangle, RotateCcw } from "lucide-react";
 import { ToolResult } from "./tool-results";
 import { Markdown } from "./markdown";
 
@@ -29,7 +29,7 @@ export function Conversation({
   compact?: boolean;
 }) {
   const [input, setInput] = useState("");
-  const { messages, sendMessage, status } = useChat({
+  const { messages, sendMessage, status, error, regenerate, clearError } = useChat({
     transport: new DefaultChatTransport({ api: "/api/assistant" }),
   });
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -117,6 +117,28 @@ export function Conversation({
             <div className="inline-flex items-center gap-2 font-ui text-body-sm text-ink-400">
               <Loader2 size={14} className="animate-spin" />
               思考中…
+            </div>
+          )}
+
+          {status === "error" && (
+            <div className="flex items-start gap-2 rounded-md border border-mauve-200 bg-mauve-50 px-3 py-2.5">
+              <span className="mt-0.5 shrink-0" style={{ color: "var(--color-negative)" }}>
+                <AlertTriangle size={14} />
+              </span>
+              <div className="flex-1">
+                <p className="font-ui text-body-sm leading-6 text-ink-800">
+                  {error?.message?.trim() ? error.message : "出了点问题,请重试。"}
+                </p>
+                <button
+                  onClick={() => {
+                    clearError();
+                    regenerate();
+                  }}
+                  className="mt-1.5 inline-flex items-center gap-1.5 font-ui text-body-sm font-medium text-ink-600 transition-colors hover:text-ink-900"
+                >
+                  <RotateCcw size={13} /> 重试
+                </button>
+              </div>
             </div>
           )}
         </div>

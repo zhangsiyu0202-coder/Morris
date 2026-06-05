@@ -1,4 +1,4 @@
-import { FileText, Search, BarChart3, Layers, ArrowRight } from "lucide-react";
+import { FileText, Search, BarChart3, Layers, ArrowRight, AlertTriangle } from "lucide-react";
 import { SentimentTag } from "@/components/report/shared";
 
 function ToolCard({
@@ -160,7 +160,27 @@ export function StudyListCard({ data }: { data: StudyList }) {
   );
 }
 
+function ToolErrorCard({ message }: { message: string }) {
+  return (
+    <div className="mt-2 flex items-start gap-2 rounded-md border border-mauve-200 bg-mauve-50 px-3 py-2.5">
+      <span className="mt-0.5 shrink-0" style={{ color: "var(--color-negative)" }}>
+        <AlertTriangle size={14} />
+      </span>
+      <div>
+        <p className="font-ui text-caption font-medium uppercase tracking-wide text-ink-400">工具执行失败</p>
+        <p className="mt-0.5 font-ui text-body-sm leading-6 text-ink-800">{message}</p>
+      </div>
+    </div>
+  );
+}
+
 export function ToolResult({ toolName, output }: { toolName: string; output: unknown }) {
+  // 统一拦截工具失败态:任意工具返回 { error: true, message } 时渲染错误卡。
+  if (output && typeof output === "object" && (output as { error?: boolean }).error === true) {
+    const message = (output as { message?: string }).message ?? "该操作未能完成,请重试。";
+    return <ToolErrorCard message={message} />;
+  }
+
   switch (toolName) {
     case "createStudyDraft":
       return <StudyDraftCard data={output as StudyDraft} />;
