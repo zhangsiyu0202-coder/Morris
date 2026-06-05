@@ -54,7 +54,7 @@ export function InsightDetail({
 
       <div className="mt-8 flex flex-col gap-8">
         {/* 结论在先:直接回答 + 置信度 */}
-        <section className="rounded-lg bg-mauve-100 px-6 py-5">
+        <section className="rounded bg-mauve-100 px-6 py-5">
           <div className="flex items-center gap-2">
             <Sparkles size={15} className="text-ink-500" />
             <span className="font-ui text-caption font-medium uppercase tracking-wide text-ink-500">
@@ -80,7 +80,7 @@ export function InsightDetail({
           <h2 className="font-display text-h3 text-ink-900">逐维度论证</h2>
           <div className="mt-4 flex flex-col gap-5">
             {report.themes.map((t, i) => (
-              <article key={i} className="rounded-lg border border-mauve-200 px-5 py-4">
+              <article key={i} className="rounded border border-mauve-200 px-5 py-4">
                 <div className="flex items-baseline gap-2.5">
                   <span className="font-data text-body-sm text-ink-300">
                     {String(i + 1).padStart(2, "0")}
@@ -95,7 +95,7 @@ export function InsightDetail({
                     {t.quotes.map((q, qi) => (
                       <li
                         key={qi}
-                        className="flex gap-2 rounded-md bg-mauve-50 px-3 py-2 font-ui text-body-sm italic leading-6 text-ink-600"
+                        className="flex gap-2 rounded bg-mauve-50 px-3 py-2 font-ui text-body-sm italic leading-6 text-ink-600"
                       >
                         <Quote size={13} className="mt-1 shrink-0 text-ink-300" />
                         <span>{q}</span>
@@ -117,7 +117,7 @@ export function InsightDetail({
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               {report.divergences.map((d, i) => (
-                <div key={i} className="rounded-lg border border-mauve-200 bg-mauve-50 px-4 py-3">
+                <div key={i} className="rounded border border-mauve-200 bg-mauve-50 px-4 py-3">
                   <p className="font-ui text-caption font-medium uppercase tracking-wide text-ink-400">
                     {d.group}
                   </p>
@@ -136,7 +136,7 @@ export function InsightDetail({
           </div>
           <div className="mt-4 flex flex-col gap-3">
             {report.actions.map((a, i) => (
-              <div key={i} className="flex gap-3 rounded-lg border border-mauve-200 px-4 py-3">
+              <div key={i} className="flex gap-3 rounded border border-mauve-200 px-4 py-3">
                 <span
                   className={`mt-0.5 h-fit shrink-0 rounded px-2 py-0.5 font-data text-caption font-semibold ${
                     PRIORITY_STYLE[a.priority] ?? "bg-mauve-100 text-ink-600"
