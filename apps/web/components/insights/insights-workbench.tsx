@@ -1,7 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Lightbulb, Sparkles, Loader2, AlertTriangle, ArrowRight, Quote } from "lucide-react";
+import {
+  Lightbulb,
+  Sparkles,
+  Loader2,
+  AlertTriangle,
+  ArrowRight,
+  Quote,
+  Plus,
+  X,
+} from "lucide-react";
 import type { GeneratedInsight } from "@/lib/insights";
 
 type StudyOption = {
@@ -9,6 +18,14 @@ type StudyOption = {
   title: string;
   status: "draft" | "live" | "closed";
   responses: number;
+};
+
+// 一张已生成的洞察卡:洞察内容 + 生成时的上下文。
+type InsightCard = {
+  id: string;
+  studyTitle: string;
+  question: string;
+  insight: GeneratedInsight;
 };
 
 const SUGGESTED_QUESTIONS = [
@@ -25,11 +42,108 @@ const STATUS_LABEL: Record<StudyOption["status"], string> = {
 };
 
 export function InsightsWorkbench({ studies }: { studies: StudyOption[] }) {
+  const [cards, setCards] = useState<InsightCard[]>([]);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [activeCard, setActiveCard] = useState<InsightCard | null>(null);
+
+  return (
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6 sm:py-10">
+      {/* 标题区 + 新建按钮 */}
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-col gap-2">
+          <span className="inline-flex w-fit items-center gap-1.5 rounded bg-mauve-100 px-2.5 py-1 font-ui text-caption font-medium uppercase tracking-wide text-ink-600">
+            <Lightbulb size={13} /> Insights
+          </span>
+          <h1 className="font-display text-display-lg text-ink-900 text-balance">研究洞察</h1>
+          <p className="font-ui text-body-sm leading-6 text-ink-400">
+            基于真实访谈数据生成的结构化洞察,每一张卡片对应一个聚焦问题。
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setCreateOpen(true)}
+          className="inline-flex h-10 shrink-0 items-center gap-2 rounded bg-ink-900 px-4 font-ui text-body-sm font-medium text-ink-0 transition-opacity hover:opacity-90"
+        >
+          <Plus size={15} /> New insight
+        </button>
+      </header>
+
+      {/* 卡片网格 / 空状态 */}
+      {cards.length === 0 ? (
+        <button
+          type="button"
+          onClick={() => setCreateOpen(true)}
+          className="flex flex-col items-center justify-center gap-3 rounded border border-dashed border-mauve-200 bg-mauve-50 px-6 py-16 text-center transition-colors hover:bg-mauve-100"
+        >
+          <span className="flex size-11 items-center justify-center rounded-full bg-mauve-100 text-ink-600">
+            <Sparkles size={20} />
+          </span>
+          <p className="font-ui text-body-sm font-medium text-ink-800">还没有洞察</p>
+          <p className="max-w-xs font-ui text-caption leading-5 text-ink-400">
+            点击「New insight」,选择一项调研并提出问题,一键生成结构化洞察。
+          </p>
+        </button>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {cards.map((card) => (
+            <button
+              key={card.id}
+              type="button"
+              onClick={() => setActiveCard(card)}
+              className="flex flex-col gap-3 rounded bg-mauve-50 px-5 py-5 text-left shadow-[0_2px_4px_rgba(167,133,133,0.08)] transition-transform hover:-translate-y-0.5"
+            >
+              <p className="line-clamp-1 font-ui text-caption uppercase tracking-wide text-ink-400">
+                {card.studyTitle}
+              </p>
+              <h2 className="line-clamp-2 font-display text-display-sm leading-tight text-ink-900 text-pretty">
+                {card.insight.headline}
+              </h2>
+              <p className="line-clamp-3 font-ui text-body-sm leading-6 text-ink-600">
+                {card.insight.summary}
+              </p>
+              <span className="mt-auto inline-flex items-center gap-1 font-ui text-caption font-medium text-ink-600">
+                查看详情 <ArrowRight size={12} />
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* 创建 modal */}
+      {createOpen && (
+        <CreateInsightModal
+          studies={studies}
+          onClose={() => setCreateOpen(false)}
+          onCreated={(card) => {
+            setCards((prev) => [card, ...prev]);
+            setCreateOpen(false);
+            setActiveCard(card);
+          }}
+        />
+      )}
+
+      {/* 详情 modal */}
+      {activeCard && (
+        <InsightDetailModal card={activeCard} onClose={() => setActiveCard(null)} />
+      )}
+    </div>
+  );
+}
+
+/* ---------- 创建 modal:含原表单 ---------- */
+function CreateInsightModal({
+  studies,
+  onClose,
+  onCreated,
+}: {
+  studies: StudyOption[];
+  onClose: () => void;
+  onCreated: (card: InsightCard) => void;
+}) {
   const [studyId, setStudyId] = useState(studies[0]?.id ?? "");
   const [question, setQuestion] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
-  const [insight, setInsight] = useState<GeneratedInsight | null>(null);
 
   const selectedStudy = studies.find((s) => s.id === studyId);
   const canGenerate = studyId && question.trim().length >= 2 && status !== "loading";
@@ -38,7 +152,6 @@ export function InsightsWorkbench({ studies }: { studies: StudyOption[] }) {
     if (!canGenerate) return;
     setStatus("loading");
     setErrorMsg("");
-    setInsight(null);
     try {
       const res = await fetch("/api/insights", {
         method: "POST",
@@ -51,8 +164,12 @@ export function InsightsWorkbench({ studies }: { studies: StudyOption[] }) {
         setStatus("error");
         return;
       }
-      setInsight(data.insight as GeneratedInsight);
-      setStatus("idle");
+      onCreated({
+        id: `ins_${Date.now()}`,
+        studyTitle: selectedStudy?.title ?? "",
+        question: question.trim(),
+        insight: data.insight as GeneratedInsight,
+      });
     } catch {
       setErrorMsg("网络异常,请检查连接后重试。");
       setStatus("error");
@@ -60,20 +177,8 @@ export function InsightsWorkbench({ studies }: { studies: StudyOption[] }) {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8 sm:px-6 sm:py-10">
-      {/* 标题区 */}
-      <header className="flex flex-col gap-2">
-        <span className="inline-flex w-fit items-center gap-1.5 rounded bg-mauve-100 px-2.5 py-1 font-ui text-caption font-medium uppercase tracking-wide text-ink-600">
-          <Lightbulb size={13} /> Insights
-        </span>
-        <h1 className="font-display text-display-lg text-ink-900 text-balance">研究洞察</h1>
-        <p className="font-ui text-body-sm leading-6 text-ink-400">
-          选择一项已完成的调研,提出聚焦问题,基于真实访谈数据一键生成结构化洞察。
-        </p>
-      </header>
-
-      {/* 输入卡 */}
-      <section className="flex flex-col gap-4 rounded bg-mauve-50 px-5 py-5 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
+    <ModalShell title="生成新洞察" onClose={onClose}>
+      <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
           <label htmlFor="study" className="font-ui text-body-sm font-medium text-ink-800">
             选择调研
@@ -118,6 +223,15 @@ export function InsightsWorkbench({ studies }: { studies: StudyOption[] }) {
           </div>
         </div>
 
+        {status === "error" && (
+          <div className="flex items-start gap-2 rounded border border-mauve-200 bg-mauve-100 px-4 py-3">
+            <span className="mt-0.5 shrink-0" style={{ color: "var(--color-negative)" }}>
+              <AlertTriangle size={15} />
+            </span>
+            <p className="flex-1 font-ui text-body-sm leading-6 text-ink-800">{errorMsg}</p>
+          </div>
+        )}
+
         <button
           type="button"
           onClick={generate}
@@ -134,66 +248,86 @@ export function InsightsWorkbench({ studies }: { studies: StudyOption[] }) {
             </>
           )}
         </button>
-      </section>
+      </div>
+    </ModalShell>
+  );
+}
 
-      {/* 错误态 */}
-      {status === "error" && (
-        <div className="flex items-start gap-2 rounded border border-mauve-200 bg-mauve-50 px-4 py-3">
-          <span className="mt-0.5 shrink-0" style={{ color: "var(--color-negative)" }}>
-            <AlertTriangle size={15} />
-          </span>
-          <div className="flex-1">
-            <p className="font-ui text-body-sm leading-6 text-ink-800">{errorMsg}</p>
-            <button
-              onClick={generate}
-              className="mt-1.5 inline-flex items-center gap-1.5 font-ui text-body-sm font-medium text-ink-600 transition-colors hover:text-ink-900"
-            >
-              重试 <ArrowRight size={13} />
-            </button>
-          </div>
+/* ---------- 详情 modal:展示完整洞察 ---------- */
+function InsightDetailModal({ card, onClose }: { card: InsightCard; onClose: () => void }) {
+  const { insight } = card;
+  return (
+    <ModalShell title="洞察详情" onClose={onClose}>
+      <div className="flex flex-col gap-5">
+        <p className="font-ui text-caption uppercase tracking-wide text-ink-400">
+          基于「{card.studyTitle}」· {card.question}
+        </p>
+        <div className="flex flex-col gap-2">
+          <h2 className="font-display text-display-md leading-tight text-ink-900 text-pretty">
+            {insight.headline}
+          </h2>
+          <p className="font-ui text-body-sm leading-6 text-ink-600">{insight.summary}</p>
         </div>
-      )}
 
-      {/* 结果卡 */}
-      {insight && (
-        <article className="flex flex-col gap-5 rounded bg-mauve-50 px-5 py-5 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
-          {selectedStudy && (
-            <p className="font-ui text-caption uppercase tracking-wide text-ink-400">
-              基于「{selectedStudy.title}」生成
-            </p>
-          )}
-          <div className="flex flex-col gap-2">
-            <h2 className="font-display text-display-md leading-tight text-ink-900 text-pretty">
-              {insight.headline}
-            </h2>
-            <p className="font-ui text-body-sm leading-6 text-ink-600">{insight.summary}</p>
-          </div>
+        <div className="flex flex-col gap-3">
+          <h3 className="font-ui text-body-sm font-semibold text-ink-800">关键发现</h3>
+          {insight.keyPoints.map((kp, i) => (
+            <div key={i} className="flex flex-col gap-1.5 rounded bg-mauve-100 px-4 py-3">
+              <p className="font-ui text-body-sm font-medium leading-6 text-ink-900">{kp.point}</p>
+              <p className="flex items-start gap-1.5 font-ui text-caption leading-5 text-ink-600">
+                <span className="mt-0.5 shrink-0 text-ink-400">
+                  <Quote size={12} />
+                </span>
+                {kp.evidence}
+              </p>
+            </div>
+          ))}
+        </div>
 
-          <div className="flex flex-col gap-3">
-            <h3 className="font-ui text-body-sm font-semibold text-ink-800">关键发现</h3>
-            {insight.keyPoints.map((kp, i) => (
-              <div key={i} className="flex flex-col gap-1.5 rounded bg-mauve-100 px-4 py-3">
-                <p className="font-ui text-body-sm font-medium leading-6 text-ink-900">
-                  {kp.point}
-                </p>
-                <p className="flex items-start gap-1.5 font-ui text-caption leading-5 text-ink-600">
-                  <span className="mt-0.5 shrink-0 text-ink-400">
-                    <Quote size={12} />
-                  </span>
-                  {kp.evidence}
-                </p>
-              </div>
-            ))}
-          </div>
+        <div className="flex flex-col gap-1.5 border-t border-mauve-200 pt-4">
+          <h3 className="font-ui text-body-sm font-semibold text-ink-800">建议</h3>
+          <p className="font-ui text-body-sm leading-6 text-ink-600">{insight.recommendation}</p>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
 
-          <div className="flex flex-col gap-1.5 border-t border-mauve-200 pt-4">
-            <h3 className="font-ui text-body-sm font-semibold text-ink-800">建议</h3>
-            <p className="font-ui text-body-sm leading-6 text-ink-600">
-              {insight.recommendation}
-            </p>
-          </div>
-        </article>
-      )}
+/* ---------- 通用 modal 外壳 ---------- */
+function ModalShell({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink-900/40 px-4 py-8 sm:py-12"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-2xl rounded bg-ink-0 shadow-[0_8px_32px_rgba(60,40,50,0.18)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-mauve-200 px-5 py-4">
+          <h2 className="font-ui text-body font-semibold text-ink-900">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="关闭"
+            className="flex size-8 items-center justify-center rounded text-ink-400 transition-colors hover:bg-mauve-100 hover:text-ink-800"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="px-5 py-5">{children}</div>
+      </div>
     </div>
   );
 }
