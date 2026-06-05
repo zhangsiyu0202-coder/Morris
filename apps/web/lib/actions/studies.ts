@@ -85,7 +85,7 @@ export async function createStudy(title: string): Promise<string> {
     guide: { sections: [] },
     introScript: "",
   });
-  revalidatePath("/");
+  revalidatePath("/home");
   return id;
 }
 
@@ -109,7 +109,7 @@ export async function updateStudyMeta(
       updatedAt: new Date(),
     })
     .where(eq(study.id, id));
-  revalidatePath("/");
+  revalidatePath("/home");
   revalidatePath(`/studies/${id}`);
 }
 
@@ -119,7 +119,7 @@ export async function saveGuide(id: string, guide: Guide): Promise<void> {
     .update(study)
     .set({ guide, updatedAt: new Date() })
     .where(eq(study.id, id));
-  revalidatePath("/");
+  revalidatePath("/home");
   revalidatePath(`/studies/${id}`);
 }
 
@@ -129,12 +129,12 @@ export async function updateStudyStatus(id: string, status: StudyStatus): Promis
     .update(study)
     .set({ status, updatedAt: new Date() })
     .where(eq(study.id, id));
-  revalidatePath("/");
+  revalidatePath("/home");
   revalidatePath(`/studies/${id}`);
 }
 
 /** 删除 study。 */
 export async function deleteStudy(id: string): Promise<void> {
   await db.delete(study).where(eq(study.id, id));
-  revalidatePath("/");
+  revalidatePath("/home");
 }

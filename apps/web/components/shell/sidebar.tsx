@@ -24,7 +24,7 @@ type NavItem = {
 };
 
 const NAV: NavItem[] = [
-  { label: "Home", href: "/", icon: Home },
+  { label: "Home", href: "/home", icon: Home },
   { label: "Conversations", href: "/interview", icon: MessageSquare },
   { label: "Insights", href: "/insights", icon: Lightbulb },
   { label: "Morris AI", href: "/assistant", icon: Sparkles },
@@ -54,7 +54,6 @@ const STUDIES: StudyItem[] = [
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const [activeStudy, setActiveStudy] = useState("st_travel");
 
   // 恢复上次的折叠/展开偏好。
   useEffect(() => {
@@ -132,12 +131,11 @@ export function Sidebar() {
 
         <div className="flex flex-col gap-0.5 overflow-y-auto px-2 pb-2">
           {STUDIES.map((s) => {
-            const selected = activeStudy === s.id;
+            const selected = pathname === `/studies/${s.id}`;
             return (
-              <button
+              <Link
                 key={s.id}
-                type="button"
-                onClick={() => setActiveStudy(s.id)}
+                href={`/studies/${s.id}`}
                 title={collapsed ? s.title : undefined}
                 aria-current={selected ? "true" : undefined}
                 className={`group flex h-9 items-center rounded-md text-left transition-colors ${
@@ -159,13 +157,13 @@ export function Sidebar() {
                     {s.title}
                   </span>
                 )}
-              </button>
+              </Link>
             );
           })}
 
-          {/* 功能按钮:新增 study */}
-          <button
-            type="button"
+          {/* 功能按钮:新增 study(回到首页新建) */}
+          <Link
+            href="/home"
             title={collapsed ? "Add new study" : undefined}
             className={`flex h-9 items-center rounded-md text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700 ${
               collapsed ? "justify-center px-0" : "gap-3 px-3"
@@ -173,7 +171,7 @@ export function Sidebar() {
           >
             <Plus className="size-[18px] shrink-0" strokeWidth={2} />
             {!collapsed && <span className="font-ui text-body-sm">Add new study</span>}
-          </button>
+          </Link>
         </div>
       </div>
 
