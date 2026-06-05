@@ -5,8 +5,8 @@ function ConfidenceBar({ value }: { value: number }) {
   const pct = Math.round(value * 100)
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1 flex-1 overflow-hidden rounded-full bg-ink-0">
-        <div className="h-full rounded-full bg-ink-700" style={{ width: `${pct}%` }} />
+      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-ink-0">
+        <div className="h-full rounded-full bg-ink-900" style={{ width: `${pct}%` }} />
       </div>
       <span className="font-data text-caption tabular-nums text-ink-400">{`置信 ${pct}%`}</span>
     </div>
