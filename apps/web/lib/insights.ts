@@ -28,6 +28,48 @@ export const insightSchema = z.object({
 
 export type GeneratedInsight = z.infer<typeof insightSchema>;
 
+/**
+ * 深度分析报告契约 —— 用于洞察详情页。
+ *
+ * 与「卡片洞察(insightSchema)」是快速结论不同,这里是针对同一个自定义问题、
+ * 结合该 study 会话内容做的「重新深入分析」:它要呈现立场分歧、内在张力、
+ * 分群证据与分优先级的行动建议。也与 Report(信息汇总)刻意区分 —— 这是
+ * 围绕「一个问题」的论证型报告,而非整体数据汇总。
+ */
+export const insightReportSchema = z.object({
+  directAnswer: z.string().describe("用 2-3 句直接、明确地回答这个问题,给出立场"),
+  confidence: z.enum(["high", "medium", "low"]).describe("基于现有数据对该结论的置信度"),
+  confidenceReason: z.string().describe("一句话说明置信度判断依据,如样本量/一致性"),
+  themes: z
+    .array(
+      z.object({
+        title: z.string().describe("一个分析维度/角度的标题"),
+        analysis: z.string().describe("围绕该维度对会话内容的深入分析,3-4 句"),
+        quotes: z.array(z.string()).describe("1-3 条支撑该维度的受访者原话"),
+      }),
+    )
+    .describe("3-4 个分析维度,逐层拆解这个问题"),
+  divergences: z
+    .array(
+      z.object({
+        group: z.string().describe("持该观点的人群/立场描述"),
+        stance: z.string().describe("该群体的核心主张"),
+      }),
+    )
+    .describe("2-3 组受访者之间的观点分歧或对立立场"),
+  actions: z
+    .array(
+      z.object({
+        priority: z.enum(["P0", "P1", "P2"]).describe("优先级"),
+        action: z.string().describe("具体可执行的行动建议"),
+        rationale: z.string().describe("为什么这么做,关联到上面的分析"),
+      }),
+    )
+    .describe("3-4 条分优先级的行动建议"),
+});
+
+export type InsightReport = z.infer<typeof insightReportSchema>;
+
 // 供前端下拉选择的调研列表(只暴露需要的字段)。
 export function listStudyOptions() {
   return STUDIES.map((s) => ({

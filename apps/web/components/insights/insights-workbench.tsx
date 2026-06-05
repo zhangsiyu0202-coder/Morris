@@ -1,31 +1,26 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Lightbulb,
   Sparkles,
   Loader2,
   AlertTriangle,
   ArrowRight,
-  Quote,
   Plus,
   X,
+  Trash2,
 } from "lucide-react";
 import type { GeneratedInsight } from "@/lib/insights";
+import { useInsights, addInsight, removeInsight } from "@/lib/insights-store";
 
 type StudyOption = {
   id: string;
   title: string;
   status: "draft" | "live" | "closed";
   responses: number;
-};
-
-// 一张已生成的洞察卡:洞察内容 + 生成时的上下文。
-type InsightCard = {
-  id: string;
-  studyTitle: string;
-  question: string;
-  insight: GeneratedInsight;
 };
 
 const SUGGESTED_QUESTIONS = [
@@ -42,9 +37,9 @@ const STATUS_LABEL: Record<StudyOption["status"], string> = {
 };
 
 export function InsightsWorkbench({ studies }: { studies: StudyOption[] }) {
-  const [cards, setCards] = useState<InsightCard[]>([]);
+  const router = useRouter();
+  const cards = useInsights();
   const [createOpen, setCreateOpen] = useState(false);
-  const [activeCard, setActiveCard] = useState<InsightCard | null>(null);
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6 sm:py-10">
@@ -56,7 +51,7 @@ export function InsightsWorkbench({ studies }: { studies: StudyOption[] }) {
           </span>
           <h1 className="font-display text-display-lg text-ink-900 text-balance">研究洞察</h1>
           <p className="font-ui text-body-sm leading-6 text-ink-400">
-            基于真实访谈数据生成的结构化洞察,每一张卡片对应一个聚焦问题。
+            每一张卡片对应一个聚焦问题,点击进入可查看结合会话内容的深度分析报告。
           </p>
         </div>
         <button
@@ -80,31 +75,39 @@ export function InsightsWorkbench({ studies }: { studies: StudyOption[] }) {
           </span>
           <p className="font-ui text-body-sm font-medium text-ink-800">还没有洞察</p>
           <p className="max-w-xs font-ui text-caption leading-5 text-ink-400">
-            点击「New insight」,选择一项调研并提出问题,一键生成结构化洞察。
+            点击「New insight」,选择一项调研并提出问题,一键生成洞察。
           </p>
         </button>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {cards.map((card) => (
-            <button
+            <div
               key={card.id}
-              type="button"
-              onClick={() => setActiveCard(card)}
-              className="flex flex-col gap-3 rounded bg-mauve-50 px-5 py-5 text-left shadow-[0_2px_4px_rgba(167,133,133,0.08)] transition-transform hover:-translate-y-0.5"
+              className="group relative flex flex-col gap-3 rounded bg-mauve-50 px-5 py-5 shadow-[0_2px_4px_rgba(167,133,133,0.08)] transition-transform hover:-translate-y-0.5"
             >
-              <p className="line-clamp-1 font-ui text-caption uppercase tracking-wide text-ink-400">
-                {card.studyTitle}
-              </p>
-              <h2 className="line-clamp-2 font-display text-display-sm leading-tight text-ink-900 text-pretty">
-                {card.insight.headline}
-              </h2>
-              <p className="line-clamp-3 font-ui text-body-sm leading-6 text-ink-600">
-                {card.insight.summary}
-              </p>
-              <span className="mt-auto inline-flex items-center gap-1 font-ui text-caption font-medium text-ink-600">
-                查看详情 <ArrowRight size={12} />
-              </span>
-            </button>
+              <button
+                type="button"
+                aria-label="删除洞察"
+                onClick={() => removeInsight(card.id)}
+                className="absolute right-3 top-3 flex size-7 items-center justify-center rounded text-ink-300 opacity-0 transition-all hover:bg-mauve-200 hover:text-ink-700 group-hover:opacity-100"
+              >
+                <Trash2 size={14} />
+              </button>
+              <Link href={`/insights/${card.id}`} className="flex flex-col gap-3">
+                <p className="line-clamp-1 pr-7 font-ui text-caption uppercase tracking-wide text-ink-400">
+                  {card.studyTitle}
+                </p>
+                <h2 className="line-clamp-2 font-display text-display-sm leading-tight text-ink-900 text-pretty">
+                  {card.insight.headline}
+                </h2>
+                <p className="line-clamp-3 font-ui text-body-sm leading-6 text-ink-600">
+                  {card.insight.summary}
+                </p>
+                <span className="mt-1 inline-flex items-center gap-1 font-ui text-caption font-medium text-ink-600">
+                  查看深度分析 <ArrowRight size={12} />
+                </span>
+              </Link>
+            </div>
           ))}
         </div>
       )}
@@ -114,17 +117,11 @@ export function InsightsWorkbench({ studies }: { studies: StudyOption[] }) {
         <CreateInsightModal
           studies={studies}
           onClose={() => setCreateOpen(false)}
-          onCreated={(card) => {
-            setCards((prev) => [card, ...prev]);
+          onCreated={(id) => {
             setCreateOpen(false);
-            setActiveCard(card);
+            router.push(`/insights/${id}`);
           }}
         />
-      )}
-
-      {/* 详情 modal */}
-      {activeCard && (
-        <InsightDetailModal card={activeCard} onClose={() => setActiveCard(null)} />
       )}
     </div>
   );
@@ -138,7 +135,7 @@ function CreateInsightModal({
 }: {
   studies: StudyOption[];
   onClose: () => void;
-  onCreated: (card: InsightCard) => void;
+  onCreated: (id: string) => void;
 }) {
   const [studyId, setStudyId] = useState(studies[0]?.id ?? "");
   const [question, setQuestion] = useState("");
@@ -164,12 +161,13 @@ function CreateInsightModal({
         setStatus("error");
         return;
       }
-      onCreated({
-        id: `ins_${Date.now()}`,
+      const saved = addInsight({
+        studyId,
         studyTitle: selectedStudy?.title ?? "",
         question: question.trim(),
         insight: data.insight as GeneratedInsight,
       });
+      onCreated(saved.id);
     } catch {
       setErrorMsg("网络异常,请检查连接后重试。");
       setStatus("error");
@@ -248,46 +246,6 @@ function CreateInsightModal({
             </>
           )}
         </button>
-      </div>
-    </ModalShell>
-  );
-}
-
-/* ---------- 详情 modal:展示完整洞察 ---------- */
-function InsightDetailModal({ card, onClose }: { card: InsightCard; onClose: () => void }) {
-  const { insight } = card;
-  return (
-    <ModalShell title="洞察详情" onClose={onClose}>
-      <div className="flex flex-col gap-5">
-        <p className="font-ui text-caption uppercase tracking-wide text-ink-400">
-          基于「{card.studyTitle}」· {card.question}
-        </p>
-        <div className="flex flex-col gap-2">
-          <h2 className="font-display text-display-md leading-tight text-ink-900 text-pretty">
-            {insight.headline}
-          </h2>
-          <p className="font-ui text-body-sm leading-6 text-ink-600">{insight.summary}</p>
-        </div>
-
-        <div className="flex flex-col gap-3">
-          <h3 className="font-ui text-body-sm font-semibold text-ink-800">关键发现</h3>
-          {insight.keyPoints.map((kp, i) => (
-            <div key={i} className="flex flex-col gap-1.5 rounded bg-mauve-100 px-4 py-3">
-              <p className="font-ui text-body-sm font-medium leading-6 text-ink-900">{kp.point}</p>
-              <p className="flex items-start gap-1.5 font-ui text-caption leading-5 text-ink-600">
-                <span className="mt-0.5 shrink-0 text-ink-400">
-                  <Quote size={12} />
-                </span>
-                {kp.evidence}
-              </p>
-            </div>
-          ))}
-        </div>
-
-        <div className="flex flex-col gap-1.5 border-t border-mauve-200 pt-4">
-          <h3 className="font-ui text-body-sm font-semibold text-ink-800">建议</h3>
-          <p className="font-ui text-body-sm leading-6 text-ink-600">{insight.recommendation}</p>
-        </div>
       </div>
     </ModalShell>
   );
