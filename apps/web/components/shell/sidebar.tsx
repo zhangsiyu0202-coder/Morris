@@ -26,8 +26,8 @@ type NavItem = {
 const NAV: NavItem[] = [
   { label: "Home", href: "/", icon: Home },
   { label: "Conversations", href: "/interview", icon: MessageSquare },
-  { label: "Insights", href: "/assistant", icon: Lightbulb },
-  { label: "Assistant", href: "/assistant", icon: Sparkles },
+  { label: "Insights", href: "/insights", icon: Lightbulb },
+  { label: "Morris AI", href: "/assistant", icon: Sparkles },
   { label: "Reports", href: "/report", icon: PieChart },
   { label: "Bookmarks", href: "#bookmarks", icon: Bookmark },
   { label: "Project Settings", href: "#settings", icon: Settings },
