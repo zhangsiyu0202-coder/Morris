@@ -21,7 +21,7 @@ export function HighlightsSection({ insights }: { insights: Insight[] }) {
         {insights.map((insight) => (
           <article
             key={insight.id}
-            className="flex flex-col gap-2.5 rounded-lg bg-mauve-50 px-4 py-4 shadow-[0_2px_4px_rgba(167,133,133,0.08)]"
+            className="flex flex-col gap-2.5 rounded bg-mauve-50 px-4 py-4 shadow-[0_2px_4px_rgba(167,133,133,0.08)]"
           >
             <div className="flex items-start gap-2">
               <Lightbulb className="mt-0.5 size-4 shrink-0 text-mauve-500" aria-hidden="true" />

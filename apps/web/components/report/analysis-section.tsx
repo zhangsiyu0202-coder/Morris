@@ -7,7 +7,7 @@ import { SENTIMENT_COLOR, SENTIMENT_LABEL } from "./shared"
 function SentimentDonut({ data }: { data: SentimentDatum[] }) {
   const total = data.reduce((s, d) => s + d.count, 0)
   return (
-    <div className="flex flex-col gap-4 rounded-lg bg-mauve-50 px-5 py-5 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
+    <div className="flex flex-col gap-4 rounded bg-mauve-50 px-5 py-5 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
       <h3 className="text-body-sm font-semibold text-ink-800">整体情感分布</h3>
       <div className="flex items-center gap-5">
         <ResponsiveContainer width={120} height={120}>
@@ -45,7 +45,7 @@ function SentimentDonut({ data }: { data: SentimentDatum[] }) {
 function ThemeBars({ themes }: { themes: Theme[] }) {
   const max = Math.max(...themes.map((t) => t.mentions))
   return (
-    <div className="flex flex-col gap-4 rounded-lg bg-mauve-50 px-5 py-5 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
+    <div className="flex flex-col gap-4 rounded bg-mauve-50 px-5 py-5 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
       <h3 className="text-body-sm font-semibold text-ink-800">高频主题</h3>
       <ul className="flex flex-col gap-2.5">
         {themes.map((t) => (
