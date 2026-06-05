@@ -16,7 +16,7 @@ import { CHART_RAMP, highlightKeywords } from "./shared"
 
 function ChartFrame({ caption, children }: { caption: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-3 rounded-lg bg-ink-0 p-4">
+    <div className="flex flex-col gap-3 rounded-lg bg-mauve-100 p-4">
       <p className="text-caption leading-snug text-ink-500">{caption}</p>
       {children}
     </div>
@@ -118,7 +118,7 @@ function RatingPanel({ stat }: { stat: Extract<QuestionStat, { kind: "rating" }>
         {[...stat.data].reverse().map((d) => (
           <li key={d.score} className="flex items-center gap-3">
             <span className="w-4 shrink-0 font-data text-body-sm text-ink-600">{d.score}</span>
-            <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-mauve-100">
+            <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-ink-0">
               <div
                 className="h-full rounded-full"
                 style={{ width: `${(d.count / max) * 100}%`, background: "var(--color-chart-1)" }}
@@ -175,7 +175,7 @@ function NpsPanel({ stat }: { stat: Extract<QuestionStat, { kind: "nps" }> }) {
 function QuestionCard({ stat, index }: { stat: QuestionStat; index: number }) {
   const [expanded, setExpanded] = useState(index === 0)
   return (
-    <article className="overflow-hidden rounded-lg bg-mauve-100 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
+    <article className="overflow-hidden rounded-lg bg-mauve-50 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
@@ -210,7 +210,7 @@ function QuestionCard({ stat, index }: { stat: QuestionStat; index: number }) {
             {stat.kind === "choice" ? (
               <ThemeAccordion data={stat.data} />
             ) : (
-              <div className="flex h-full flex-col justify-center gap-2 rounded-lg bg-ink-0 p-4">
+              <div className="flex h-full flex-col justify-center gap-2 rounded-lg bg-mauve-100 p-4">
                 <p className="text-body-sm leading-relaxed text-ink-600">{stat.summary}</p>
               </div>
             )}

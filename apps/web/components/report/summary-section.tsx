@@ -2,7 +2,7 @@ import type { SurveyReport } from "@/lib/mock-report"
 
 function BigKpi({ value, label }: { value: string; label: string }) {
   return (
-    <div className="flex flex-col gap-1 rounded-lg bg-mauve-100 px-5 py-5 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
+    <div className="flex flex-col gap-1 rounded-lg bg-mauve-50 px-5 py-5 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
       <span className="font-data text-4xl font-semibold leading-none tracking-tight text-ink-900 sm:text-5xl">
         {value}
       </span>
@@ -26,7 +26,7 @@ export function SummarySection({ report }: { report: SurveyReport }) {
         <BigKpi value={String(report.studyCount)} label="关联研究" />
       </div>
 
-      <div className="rounded-lg bg-mauve-100 px-5 py-4 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
+      <div className="rounded-lg bg-mauve-50 px-5 py-4 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
         <h3 className="mb-3 text-body-sm font-semibold text-ink-800">访谈主题</h3>
         <ul className="grid gap-x-8 gap-y-2 md:grid-cols-2">
           {report.topics.map((topic, i) => (
