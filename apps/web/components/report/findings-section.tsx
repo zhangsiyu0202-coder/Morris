@@ -175,7 +175,7 @@ function NpsPanel({ stat }: { stat: Extract<QuestionStat, { kind: "nps" }> }) {
 function QuestionCard({ stat, index }: { stat: QuestionStat; index: number }) {
   const [expanded, setExpanded] = useState(index === 0)
   return (
-    <article className="overflow-hidden rounded-lg bg-mauve-200 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
+    <article className="overflow-hidden rounded-lg bg-mauve-100 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}

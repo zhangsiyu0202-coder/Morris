@@ -7,7 +7,7 @@ import { SENTIMENT_COLOR, SENTIMENT_LABEL } from "./shared"
 function SentimentDonut({ data }: { data: SentimentDatum[] }) {
   const total = data.reduce((s, d) => s + d.count, 0)
   return (
-    <div className="flex flex-col gap-4 rounded-lg bg-mauve-200 px-5 py-5 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
+    <div className="flex flex-col gap-4 rounded-lg bg-mauve-100 px-5 py-5 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
       <h3 className="text-body-sm font-semibold text-ink-800">整体情感分布</h3>
       <div className="flex items-center gap-5">
         <ResponsiveContainer width={120} height={120}>
@@ -45,7 +45,7 @@ function SentimentDonut({ data }: { data: SentimentDatum[] }) {
 function ThemeBars({ themes }: { themes: Theme[] }) {
   const max = Math.max(...themes.map((t) => t.mentions))
   return (
-    <div className="flex flex-col gap-4 rounded-lg bg-mauve-200 px-5 py-5 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
+    <div className="flex flex-col gap-4 rounded-lg bg-mauve-100 px-5 py-5 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
       <h3 className="text-body-sm font-semibold text-ink-800">高频主题</h3>
       <ul className="flex flex-col gap-2.5">
         {themes.map((t) => (
@@ -54,7 +54,7 @@ function ThemeBars({ themes }: { themes: Theme[] }) {
               <span className="text-body-sm text-ink-800">{t.label}</span>
               <span className="font-data text-caption tabular-nums text-ink-500">{`${t.mentions} 次 · ${t.pct}%`}</span>
             </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-mauve-100">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-ink-0">
               <div
                 className="h-full rounded-full"
                 style={{ width: `${(t.mentions / max) * 100}%`, background: SENTIMENT_COLOR[t.sentiment] }}

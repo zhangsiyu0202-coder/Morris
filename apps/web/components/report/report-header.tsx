@@ -18,7 +18,7 @@ export function ReportHeader({ report }: { report: SurveyReport }) {
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-mauve-200 px-4 py-3 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-mauve-100 px-4 py-3 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
         <div className="flex items-center gap-2.5">
           <Clock className="size-4 text-ink-400" aria-hidden="true" />
           <div className="flex flex-col leading-tight">
