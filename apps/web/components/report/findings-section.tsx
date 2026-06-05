@@ -16,7 +16,7 @@ import { CHART_RAMP, highlightKeywords } from "./shared"
 
 function ChartFrame({ caption, children }: { caption: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-mauve-200 bg-mauve-50/50 p-4">
+    <div className="flex flex-col gap-3 rounded-lg bg-ink-0 p-4">
       <p className="text-caption leading-snug text-ink-500">{caption}</p>
       {children}
     </div>
@@ -80,7 +80,7 @@ function ThemeAccordion({ data }: { data: ChoiceDatum[] }) {
       {data.map((d) => {
         const isOpen = open === d.label
         return (
-          <li key={d.label} className="border-b border-mauve-200 last:border-b-0">
+          <li key={d.label} className="border-b border-mauve-300 last:border-b-0">
             <button
               type="button"
               onClick={() => setOpen(isOpen ? null : d.label)}
@@ -175,7 +175,7 @@ function NpsPanel({ stat }: { stat: Extract<QuestionStat, { kind: "nps" }> }) {
 function QuestionCard({ stat, index }: { stat: QuestionStat; index: number }) {
   const [expanded, setExpanded] = useState(index === 0)
   return (
-    <article className="overflow-hidden rounded-lg border border-mauve-200 bg-ink-0 shadow-sm">
+    <article className="overflow-hidden rounded-lg bg-mauve-200 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
@@ -195,7 +195,7 @@ function QuestionCard({ stat, index }: { stat: QuestionStat; index: number }) {
       </button>
 
       {expanded ? (
-        <div className="grid gap-5 border-t border-mauve-100 px-5 py-5 lg:grid-cols-2">
+        <div className="grid gap-5 px-5 py-5 shadow-[inset_0_1px_0_var(--color-mauve-300)] lg:grid-cols-2">
           <ChartFrame caption={`报告问题：${stat.reportQuestion}`}>
             {stat.kind === "choice" ? (
               <ChoiceChart data={stat.data} />
@@ -210,7 +210,7 @@ function QuestionCard({ stat, index }: { stat: QuestionStat; index: number }) {
             {stat.kind === "choice" ? (
               <ThemeAccordion data={stat.data} />
             ) : (
-              <div className="flex h-full flex-col justify-center gap-2 rounded-lg bg-mauve-50/50 p-4">
+              <div className="flex h-full flex-col justify-center gap-2 rounded-lg bg-ink-0 p-4">
                 <p className="text-body-sm leading-relaxed text-ink-600">{stat.summary}</p>
               </div>
             )}

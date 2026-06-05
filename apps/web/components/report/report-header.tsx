@@ -18,7 +18,7 @@ export function ReportHeader({ report }: { report: SurveyReport }) {
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-mauve-200 bg-mauve-100/60 px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-mauve-200 px-4 py-3 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
         <div className="flex items-center gap-2.5">
           <Clock className="size-4 text-ink-400" aria-hidden="true" />
           <div className="flex flex-col leading-tight">
@@ -28,7 +28,7 @@ export function ReportHeader({ report }: { report: SurveyReport }) {
         </div>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md border border-mauve-300 bg-mauve-50 px-3 py-1.5 text-body-sm font-medium text-ink-700 transition-colors hover:bg-mauve-100"
+          className="inline-flex items-center gap-1.5 rounded-md bg-ink-0 px-3 py-1.5 text-body-sm font-medium text-ink-700 shadow-[inset_0_0_0_1px_var(--color-mauve-300)] transition-colors hover:bg-mauve-50"
         >
           <RefreshCw className="size-3.5" aria-hidden="true" />
           立即重新分析
