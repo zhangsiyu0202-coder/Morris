@@ -26,7 +26,7 @@ export function SummarySection({ report }: { report: SurveyReport }) {
         <BigKpi value={String(report.studyCount)} label="关联研究" />
       </div>
 
-      <div className="rounded bg-mauve-50 px-5 py-4 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
+      <div className="rounded bg-mauve-200 px-5 py-4 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
         <h3 className="mb-3 text-body-sm font-semibold text-ink-800">访谈主题</h3>
         <ul className="grid gap-x-8 gap-y-2 md:grid-cols-2">
           {report.topics.map((topic, i) => (
