@@ -1,0 +1,28 @@
+import { notFound } from "next/navigation";
+import { getStudy } from "@/lib/actions/studies";
+import { WorkspaceHeader } from "@/components/studies/workspace-header";
+import { WorkspaceTabs } from "@/components/studies/workspace-tabs";
+
+/**
+ * Study 工作台外壳:顶部标题栏 + Tab 导航,下方渲染各 Tab 子页。
+ * 数据通过 App Router 嵌套路由切换,不再用客户端 useState 开关。
+ */
+export default async function StudyWorkspaceLayout({
+  children,
+  params,
+}: {
+  children: React.ReactNode;
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const study = await getStudy(id);
+  if (!study) notFound();
+
+  return (
+    <div className="flex h-full flex-col bg-mauve-50">
+      <WorkspaceHeader title={study.title} status={study.status} lastSaved="2024-12-03 12:23" />
+      <WorkspaceTabs studyId={id} />
+      <div className="min-h-0 flex-1">{children}</div>
+    </div>
+  );
+}

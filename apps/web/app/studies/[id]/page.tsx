@@ -1,15 +1,10 @@
-import { notFound } from "next/navigation";
-import { getStudy } from "@/lib/actions/studies";
-import { GuideEditor } from "@/components/studies/guide-editor";
+import { redirect } from "next/navigation";
 
-export default async function StudyGuidePage({
+export default async function StudyIndexPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const study = await getStudy(id);
-  if (!study) notFound();
-
-  return <GuideEditor study={study} />;
+  redirect(`/studies/${id}/overview`);
 }
