@@ -62,11 +62,10 @@ services:
       _APP_DB_PASS: ${_APP_DB_PASS:-appwrite}
       _APP_EXECUTOR_SECRET: ${_APP_EXECUTOR_SECRET:-dev-executor-secret}
       _APP_EXECUTOR_HOST: http://appwrite-executor/v1
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost/v1/health/version"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
+    # No container healthcheck: Appwrite's /v1/health endpoints require an API
+    # key (return 401 unauthenticated), so a naive wget check reads as
+    # "unhealthy" even when the API serves fine. scripts/stack-up.sh polls
+    # readiness instead (any non-000 HTTP code = serving).
 
   appwrite-realtime:
     image: appwrite/appwrite:1.6.0
@@ -98,18 +97,15 @@ services:
     depends_on: [mariadb, redis]
     environment: *appwrite-env
 
-  appwrite-executor:
-    image: appwrite/appwrite:1.6.0
-    entrypoint: executor
-    restart: unless-stopped
-    volumes:
-      - appwrite_functions:/storage/functions
-      - appwrite_builds:/storage/builds
-      - /var/run/docker.sock:/var/run/docker.sock
-    depends_on: [appwrite, redis]
-    environment:
-      <<: *appwrite-env
-      _APP_EXECUTOR_RUNTIMES: ${_APP_EXECUTOR_RUNTIMES:-node-20.0}
+  # NOTE: The Appwrite Functions executor is intentionally omitted from this
+  # trimmed dev stack. In Appwrite 1.6 it is a separate apparatus
+  # (openruntimes/executor + openruntimes/proxy + a `runtimes` network), not the
+  # `appwrite/appwrite` image — the `executor` entrypoint does not exist there.
+  # Auth / Database / Storage all work without it. Interview sessions are written
+  # by the agent worker (apps/agent), not by Functions. Add the openruntimes
+  # executor+proxy here when deploying Appwrite Functions (issueLivekitToken,
+  # analyzeSession, analyzeSurvey) becomes in scope; see appwrite/appwrite
+  # docker-compose 1.6.0 for the canonical service definitions.
 
   livekit:
     image: livekit/livekit-server:v1.8
@@ -130,5 +126,4 @@ volumes:
   appwrite_uploads:
   appwrite_config:
   appwrite_functions:
-  appwrite_builds:
   livekit_data:
