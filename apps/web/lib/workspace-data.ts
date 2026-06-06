@@ -8,6 +8,9 @@ import {
   type TranscriptDetail,
   type RecruitMock,
 } from "@/lib/mock/workspace";
+import { getOwnerUserId } from "@/lib/owner";
+import { sessionsToOverview } from "@/lib/workspace-map";
+import { listSessions } from "@/lib/queries";
 
 /**
  * 工作台各视图的**服务端数据访问层(seam)**。
@@ -31,7 +34,15 @@ import {
  */
 
 export async function loadStudyOverview(studyId: string): Promise<WorkspaceOverview> {
-  return getMockOverview(studyId);
+  try {
+    const sessions = await listSessions(getOwnerUserId(), studyId);
+    // No sessions yet -> show the illustrative mock rather than an empty panel.
+    if (sessions.length === 0) return getMockOverview(studyId);
+    return sessionsToOverview(sessions);
+  } catch {
+    // appwrite_not_configured / not reachable -> mock (local dev without stack).
+    return getMockOverview(studyId);
+  }
 }
 
 export async function loadStudyResults(studyId: string): Promise<ResultsTable> {
