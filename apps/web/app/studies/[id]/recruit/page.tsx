@@ -1,5 +1,5 @@
 import { RecruitView } from "@/components/studies/recruit-view";
-import { getMockRecruit } from "@/lib/mock/workspace";
+import { loadStudyRecruit } from "@/lib/workspace-data";
 
 export default async function RecruitTabPage({
   params,
@@ -7,6 +7,6 @@ export default async function RecruitTabPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const recruit = getMockRecruit(id);
+  const recruit = await loadStudyRecruit(id);
   return <RecruitView recruit={recruit} />;
 }

@@ -1,5 +1,5 @@
 import { ResultsTableView } from "@/components/studies/results-table";
-import { getMockResults } from "@/lib/mock/workspace";
+import { loadStudyResults } from "@/lib/workspace-data";
 
 export default async function ResultsTabPage({
   params,
@@ -7,6 +7,6 @@ export default async function ResultsTabPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const table = getMockResults(id);
+  const table = await loadStudyResults(id);
   return <ResultsTableView studyId={id} table={table} />;
 }

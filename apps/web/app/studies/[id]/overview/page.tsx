@@ -1,5 +1,5 @@
 import { OverviewView } from "@/components/studies/overview-view";
-import { getMockOverview } from "@/lib/mock/workspace";
+import { loadStudyOverview } from "@/lib/workspace-data";
 
 export default async function OverviewTabPage({
   params,
@@ -7,6 +7,6 @@ export default async function OverviewTabPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const overview = getMockOverview(id);
+  const overview = await loadStudyOverview(id);
   return <OverviewView studyId={id} overview={overview} />;
 }

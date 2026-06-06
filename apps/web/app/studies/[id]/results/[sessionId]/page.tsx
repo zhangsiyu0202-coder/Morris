@@ -1,5 +1,5 @@
 import { TranscriptView } from "@/components/studies/transcript-view";
-import { getMockTranscript } from "@/lib/mock/workspace";
+import { loadStudyTranscript } from "@/lib/workspace-data";
 
 export default async function TranscriptPage({
   params,
@@ -7,6 +7,6 @@ export default async function TranscriptPage({
   params: Promise<{ id: string; sessionId: string }>;
 }) {
   const { id, sessionId } = await params;
-  const transcript = getMockTranscript(sessionId);
+  const transcript = await loadStudyTranscript(sessionId);
   return <TranscriptView studyId={id} transcript={transcript} />;
 }
