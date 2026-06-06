@@ -7,14 +7,30 @@ import {
   Sparkles,
   Loader2,
   Check,
-  ChevronUp,
-  ChevronDown,
+  GripVertical,
   DoorOpen,
   Star,
   AlignLeft,
   X,
   CornerDownRight,
 } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   QUESTION_TYPES,
   QUESTION_TYPE_LABELS,
@@ -104,15 +120,39 @@ export function GuideEditor({ study }: { study: StudyDetail }) {
     setSelection({ kind: "question", sid: sec.id, qid: sec.questions[0].id });
   };
 
-  const moveSection = (sid: string, dir: -1 | 1) =>
-    setGuideDirty((g) => {
-      const i = g.sections.findIndex((s) => s.id === sid);
-      const j = i + dir;
-      if (i < 0 || j < 0 || j >= g.sections.length) return g;
-      const next = [...g.sections];
-      [next[i], next[j]] = [next[j], next[i]];
-      return { sections: next };
-    });
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  // 拖拽排序:分节之间可重排;问题仅在所属分节内重排(不跨节移动)。
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
+
+    const aSecIdx = guide.sections.findIndex((s) => s.id === activeId);
+    if (aSecIdx >= 0) {
+      const oSecIdx = guide.sections.findIndex((s) => s.id === overId);
+      if (oSecIdx >= 0) {
+        setGuideDirty((g) => ({ sections: arrayMove(g.sections, aSecIdx, oSecIdx) }));
+      }
+      return;
+    }
+
+    const aSec = guide.sections.find((s) => s.questions.some((q) => q.id === activeId));
+    const oSec = guide.sections.find((s) => s.questions.some((q) => q.id === overId));
+    if (aSec && oSec && aSec.id === oSec.id) {
+      const from = aSec.questions.findIndex((q) => q.id === activeId);
+      const to = aSec.questions.findIndex((q) => q.id === overId);
+      setGuideDirty((g) => ({
+        sections: g.sections.map((s) =>
+          s.id === aSec.id ? { ...s, questions: arrayMove(s.questions, from, to) } : s,
+        ),
+      }));
+    }
+  };
 
   const updateQuestion = (sid: string, qid: string, patch: Partial<GuideQuestion>) =>
     setGuideDirty((g) => ({
@@ -141,19 +181,6 @@ export function GuideEditor({ study }: { study: StudyDetail }) {
     }));
     setSelection({ kind: "section", sid });
   };
-
-  const moveQuestion = (sid: string, qid: string, dir: -1 | 1) =>
-    setGuideDirty((g) => ({
-      sections: g.sections.map((s) => {
-        if (s.id !== sid) return s;
-        const i = s.questions.findIndex((q) => q.id === qid);
-        const j = i + dir;
-        if (i < 0 || j < 0 || j >= s.questions.length) return s;
-        const next = [...s.questions];
-        [next[i], next[j]] = [next[j], next[i]];
-        return { ...s, questions: next };
-      }),
-    }));
 
   // ---- AI ----
   const handleGenerate = () => {
@@ -273,46 +300,54 @@ export function GuideEditor({ study }: { study: StudyDetail }) {
               onClick={() => setSelection({ kind: "intro" })}
             />
 
-            {/* 分节与问题 */}
-            {guide.sections.map((section, si) => (
-              <div key={section.id} className="mt-3">
-                <SectionRow
-                  index={si}
-                  section={section}
-                  active={selection.kind === "section" && selection.sid === section.id}
-                  canUp={si > 0}
-                  canDown={si < guide.sections.length - 1}
-                  onClick={() => setSelection({ kind: "section", sid: section.id })}
-                  onUp={() => moveSection(section.id, -1)}
-                  onDown={() => moveSection(section.id, 1)}
-                />
-                <div className="mt-0.5 flex flex-col gap-0.5 pl-3">
-                  {section.questions.map((q, qi) => (
-                    <QuestionRowItem
-                      key={q.id}
-                      number={qi + 1}
-                      question={q}
-                      active={selection.kind === "question" && selection.qid === q.id}
-                      canUp={qi > 0}
-                      canDown={qi < section.questions.length - 1}
-                      onClick={() =>
-                        setSelection({ kind: "question", sid: section.id, qid: q.id })
-                      }
-                      onUp={() => moveQuestion(section.id, q.id, -1)}
-                      onDown={() => moveQuestion(section.id, q.id, 1)}
-                    />
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => addQuestion(section.id)}
-                    className="mt-0.5 flex h-8 items-center gap-1.5 rounded px-2 font-ui text-caption font-medium text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-600"
+            {/* 分节与问题(可拖拽排序) */}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={guide.sections.map((s) => s.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                {guide.sections.map((section, si) => (
+                  <SortableSection
+                    key={section.id}
+                    section={section}
+                    index={si}
+                    active={selection.kind === "section" && selection.sid === section.id}
+                    onClick={() => setSelection({ kind: "section", sid: section.id })}
                   >
-                    <Plus className="size-3.5" strokeWidth={2} />
-                    添加问题
-                  </button>
-                </div>
-              </div>
-            ))}
+                    <div className="mt-0.5 flex flex-col gap-0.5 pl-3">
+                      <SortableContext
+                        items={section.questions.map((q) => q.id)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        {section.questions.map((q, qi) => (
+                          <SortableQuestion
+                            key={q.id}
+                            number={qi + 1}
+                            question={q}
+                            active={selection.kind === "question" && selection.qid === q.id}
+                            onClick={() =>
+                              setSelection({ kind: "question", sid: section.id, qid: q.id })
+                            }
+                          />
+                        ))}
+                      </SortableContext>
+                      <button
+                        type="button"
+                        onClick={() => addQuestion(section.id)}
+                        className="mt-0.5 flex h-8 items-center gap-1.5 rounded px-2 font-ui text-caption font-medium text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-600"
+                      >
+                        <Plus className="size-3.5" strokeWidth={2} />
+                        添加问题
+                      </button>
+                    </div>
+                  </SortableSection>
+                ))}
+              </SortableContext>
+            </DndContext>
 
             <button
               type="button"
@@ -434,74 +469,84 @@ function BlockRow({
   );
 }
 
-function SectionRow({
+function SortableSection({
   index,
   section,
   active,
-  canUp,
-  canDown,
   onClick,
-  onUp,
-  onDown,
+  children,
 }: {
   index: number;
   section: GuideSection;
   active: boolean;
-  canUp: boolean;
-  canDown: boolean;
   onClick: () => void;
-  onUp: () => void;
-  onDown: () => void;
+  children: React.ReactNode;
 }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: section.id,
+  });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+
   return (
-    <div
-      className={`group flex items-center gap-2 rounded px-2.5 py-1.5 transition-colors ${
-        active ? "bg-mauve-100" : "hover:bg-ink-100"
-      }`}
-    >
-      <button type="button" onClick={onClick} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-        <span className="grid size-5 shrink-0 place-items-center rounded-full bg-mauve-200 font-ui text-[10px] font-semibold text-ink-900">
-          {index + 1}
-        </span>
-        <span
-          className={`min-w-0 flex-1 truncate font-ui text-caption font-semibold uppercase tracking-wide ${
-            active ? "text-ink-900" : "text-ink-600"
-          }`}
+    <div ref={setNodeRef} style={style} className={`mt-3 ${isDragging ? "opacity-60" : ""}`}>
+      <div
+        className={`group flex items-center gap-1 rounded px-1.5 py-1.5 transition-colors ${
+          active ? "bg-mauve-100" : "hover:bg-ink-100"
+        }`}
+      >
+        <DragHandle attributes={attributes} listeners={listeners} label="拖动排序分节" />
+        <button
+          type="button"
+          onClick={onClick}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
         >
-          {section.title || "未命名分节"}
-        </span>
-      </button>
-      <ReorderControls canUp={canUp} canDown={canDown} onUp={onUp} onDown={onDown} />
+          <span className="grid size-5 shrink-0 place-items-center rounded-full bg-mauve-200 font-ui text-[10px] font-semibold text-ink-900">
+            {index + 1}
+          </span>
+          <span
+            className={`min-w-0 flex-1 truncate font-ui text-caption font-semibold uppercase tracking-wide ${
+              active ? "text-ink-900" : "text-ink-600"
+            }`}
+          >
+            {section.title || "未命名分节"}
+          </span>
+        </button>
+      </div>
+      {children}
     </div>
   );
 }
 
-function QuestionRowItem({
+function SortableQuestion({
   number,
   question,
   active,
-  canUp,
-  canDown,
   onClick,
-  onUp,
-  onDown,
 }: {
   number: number;
   question: GuideQuestion;
   active: boolean;
-  canUp: boolean;
-  canDown: boolean;
   onClick: () => void;
-  onUp: () => void;
-  onDown: () => void;
 }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: question.id,
+  });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+
   return (
     <div
-      className={`group flex items-center gap-2 rounded px-2 py-1.5 transition-colors ${
-        active ? "bg-mauve-100" : "hover:bg-ink-100"
-      }`}
+      ref={setNodeRef}
+      style={style}
+      className={`group flex items-center gap-1 rounded px-1.5 py-1.5 transition-colors ${
+        isDragging ? "opacity-60" : ""
+      } ${active ? "bg-mauve-100" : "hover:bg-ink-100"}`}
     >
-      <button type="button" onClick={onClick} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+      <DragHandle attributes={attributes} listeners={listeners} label="拖动排序问题" />
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+      >
         <span
           className={`grid h-5 min-w-[28px] shrink-0 place-items-center rounded px-1 font-ui text-[10px] font-semibold ${
             active ? "bg-ink-900 text-ink-0" : "bg-ink-100 text-ink-400"
@@ -517,43 +562,30 @@ function QuestionRowItem({
           {question.questionText || `问题 ${number}`}
         </span>
       </button>
-      <ReorderControls canUp={canUp} canDown={canDown} onUp={onUp} onDown={onDown} />
     </div>
   );
 }
 
-function ReorderControls({
-  canUp,
-  canDown,
-  onUp,
-  onDown,
+/** 拖拽手柄:hover 时显现,承载 dnd-kit 的 listeners(键盘亦可操作)。 */
+function DragHandle({
+  attributes,
+  listeners,
+  label,
 }: {
-  canUp: boolean;
-  canDown: boolean;
-  onUp: () => void;
-  onDown: () => void;
+  attributes: React.HTMLAttributes<HTMLButtonElement>;
+  listeners: Record<string, unknown> | undefined;
+  label: string;
 }) {
   return (
-    <span className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100">
-      <button
-        type="button"
-        onClick={onUp}
-        disabled={!canUp}
-        aria-label="上移"
-        className="grid size-5 place-items-center rounded text-ink-400 transition-colors hover:bg-ink-200 hover:text-ink-600 disabled:opacity-30"
-      >
-        <ChevronUp className="size-3.5" strokeWidth={2} />
-      </button>
-      <button
-        type="button"
-        onClick={onDown}
-        disabled={!canDown}
-        aria-label="下移"
-        className="grid size-5 place-items-center rounded text-ink-400 transition-colors hover:bg-ink-200 hover:text-ink-600 disabled:opacity-30"
-      >
-        <ChevronDown className="size-3.5" strokeWidth={2} />
-      </button>
-    </span>
+    <button
+      type="button"
+      aria-label={label}
+      className="grid size-5 shrink-0 cursor-grab touch-none place-items-center rounded text-ink-400 opacity-0 transition-opacity hover:bg-ink-200 hover:text-ink-600 focus-visible:opacity-100 group-hover:opacity-100"
+      {...attributes}
+      {...listeners}
+    >
+      <GripVertical className="size-3.5" strokeWidth={2} />
+    </button>
   );
 }
 
