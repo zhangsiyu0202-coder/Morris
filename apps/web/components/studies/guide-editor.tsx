@@ -39,17 +39,16 @@ import {
   emptySection,
   emptyQuestion,
   countQuestions,
+  guideFromDraftSections,
+  draftSectionsFromGuide,
   type Guide,
   type GuideSection,
   type GuideQuestion,
   type QuestionType,
   type ProbeLevel,
 } from "@/lib/guide";
-import {
-  updateStudyMeta,
-  saveGuide,
-  type StudyDetail,
-} from "@/lib/actions/studies";
+import type { SurveyDraft } from "@merism/contracts";
+import { saveSurveyDraft } from "@/lib/actions/survey";
 import { generateGuide, expandSection } from "@/lib/actions/guide-ai";
 
 type SaveState = "idle" | "saving" | "saved";
@@ -70,12 +69,12 @@ const TYPE_BADGE: Record<QuestionType, string> = {
   ranking: "排",
 };
 
-export function GuideEditor({ study }: { study: StudyDetail }) {
-  const [title, setTitle] = useState(study.title);
-  const [researchGoal, setResearchGoal] = useState(study.researchGoal);
-  const [targetAudience, setTargetAudience] = useState(study.targetAudience);
-  const [introScript, setIntroScript] = useState(study.introScript);
-  const [guide, setGuide] = useState<Guide>(study.guide);
+export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: SurveyDraft }) {
+  const [title, setTitle] = useState(draft.title);
+  const [researchGoal, setResearchGoal] = useState(draft.researchGoal);
+  const [targetAudience, setTargetAudience] = useState(draft.targetAudience);
+  const [introScript, setIntroScript] = useState(draft.introScript);
+  const [guide, setGuide] = useState<Guide>(() => guideFromDraftSections(draft.sections));
 
   const [selection, setSelection] = useState<Selection>({ kind: "intro" });
   const [dirty, setDirty] = useState(false);
@@ -90,13 +89,19 @@ export function GuideEditor({ study }: { study: StudyDetail }) {
   const handleSave = useCallback(() => {
     setSaveState("saving");
     startTransition(async () => {
-      await updateStudyMeta(study.id, { title, researchGoal, targetAudience, introScript });
-      await saveGuide(study.id, guide);
+      const nextDraft: SurveyDraft = {
+        title: title.trim() || "未命名调研",
+        researchGoal,
+        targetAudience,
+        introScript,
+        sections: draftSectionsFromGuide(guide),
+      };
+      await saveSurveyDraft(surveyId, nextDraft);
       setDirty(false);
       setSaveState("saved");
       setTimeout(() => setSaveState("idle"), 1800);
     });
-  }, [study.id, title, researchGoal, targetAudience, introScript, guide]);
+  }, [surveyId, title, researchGoal, targetAudience, introScript, guide]);
 
   // ---- guide 变更帮助函数 ----
   const setGuideDirty = (updater: (g: Guide) => Guide) => {

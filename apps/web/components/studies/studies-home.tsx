@@ -13,7 +13,8 @@ import {
   FileBarChart,
 } from "lucide-react";
 import { STATUS_LABELS, type StudyStatus } from "@/lib/guide";
-import { createStudy, deleteStudy, type StudyCard } from "@/lib/actions/studies";
+import { createSurvey, deleteSurvey } from "@/lib/actions/survey";
+import type { SurveyListItem } from "@/lib/survey-read";
 import {
   getMockBookmarks,
   getMockHomeReports,
@@ -35,7 +36,7 @@ const STATUS_DOT: Record<StudyStatus, string> = {
  * 首页仪表盘(参考 Make 结构,重绘为 Mauve Quiet):
  * 顶部调研横向卡片(真实数据)+ 下方书签墙(mock)与报告预览(mock)。
  */
-export function StudiesHome({ studies }: { studies: StudyCard[] }) {
+export function StudiesHome({ studies }: { studies: SurveyListItem[] }) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const bookmarks = getMockBookmarks();
@@ -182,7 +183,7 @@ function StudyMiniCard({
   study,
   onDeleted,
 }: {
-  study: StudyCard;
+  study: SurveyListItem;
   onDeleted: () => void;
 }) {
   const [pending, startTransition] = useTransition();
@@ -192,7 +193,7 @@ function StudyMiniCard({
     e.stopPropagation();
     if (!confirm(`确定删除「${study.title}」?此操作不可撤销。`)) return;
     startTransition(async () => {
-      await deleteStudy(study.id);
+      await deleteSurvey(study.id);
       onDeleted();
     });
   };
@@ -255,7 +256,7 @@ function CreateDialog({
 
   const submit = () => {
     startTransition(async () => {
-      const id = await createStudy(title);
+      const id = await createSurvey(title);
       onCreated(id);
     });
   };

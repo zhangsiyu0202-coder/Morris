@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getStudy } from "@/lib/actions/studies";
+import { loadSurveyDraft } from "@/lib/survey-read";
 import { GuideEditor } from "@/components/studies/guide-editor";
 
 export default async function GuideTabPage({
@@ -8,8 +8,8 @@ export default async function GuideTabPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const study = await getStudy(id);
-  if (!study) notFound();
+  const loaded = await loadSurveyDraft(id);
+  if (!loaded) notFound();
 
-  return <GuideEditor study={study} />;
+  return <GuideEditor surveyId={loaded.surveyId} draft={loaded.draft} />;
 }

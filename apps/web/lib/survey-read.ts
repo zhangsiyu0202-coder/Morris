@@ -108,3 +108,46 @@ export async function loadSurveyDraft(surveyId: string): Promise<LoadedSurvey | 
     draft: assembleSurveyDraft(survey, sections, questions),
   };
 }
+
+export type SurveyMeta = { surveyId: string; title: string; status: EditorStatus };
+
+/** 轻量读取:只取 survey meta(标题/状态),供工作台 layout 顶栏使用。 */
+export async function loadSurveyMeta(surveyId: string): Promise<SurveyMeta | null> {
+  const owner = getOwnerUserId();
+  const database = getServerClient().databases;
+  let doc: Raw;
+  try {
+    doc = (await database.getDocument(DATABASE_ID, "surveys", surveyId)) as unknown as Raw;
+  } catch {
+    return null;
+  }
+  if (doc.ownerUserId !== owner) return null;
+  return { surveyId, title: String(doc.title ?? ""), status: toEditorStatus(doc.status) };
+}
+
+export type SurveyListItem = {
+  id: string;
+  title: string;
+  status: EditorStatus;
+  responses: number;
+};
+
+/** 列出当前 owner 的全部调研(首页/侧边栏用)。 */
+export async function listSurveysForOwner(): Promise<SurveyListItem[]> {
+  const owner = getOwnerUserId();
+  const database = getServerClient().databases;
+  const res = await database.listDocuments(DATABASE_ID, "surveys", [
+    Query.equal("ownerUserId", owner),
+    Query.orderDesc("updatedAt"),
+    Query.limit(100),
+  ]);
+  return res.documents.map((raw) => {
+    const d = raw as unknown as Raw;
+    return {
+      id: String(d.$id),
+      title: String(d.title ?? "未命名调研"),
+      status: toEditorStatus(d.status),
+      responses: 0,
+    };
+  });
+}

@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getStudy } from "@/lib/actions/studies";
+import { loadSurveyMeta } from "@/lib/survey-read";
 import { WorkspaceHeader } from "@/components/studies/workspace-header";
 import { WorkspaceTabs } from "@/components/studies/workspace-tabs";
 
@@ -15,12 +15,12 @@ export default async function StudyWorkspaceLayout({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const study = await getStudy(id);
-  if (!study) notFound();
+  const meta = await loadSurveyMeta(id);
+  if (!meta) notFound();
 
   return (
     <div className="flex h-full flex-col bg-mauve-50">
-      <WorkspaceHeader title={study.title} status={study.status} lastSaved="2024-12-03 12:23" />
+      <WorkspaceHeader title={meta.title} status={meta.status} lastSaved="刚刚" />
       <WorkspaceTabs studyId={id} />
       <div className="min-h-0 flex-1">{children}</div>
     </div>

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { SurveyDraft, SurveyDraftSection } from "@merism/contracts";
 
 /**
  * 访谈 Guide(提纲)的客户端契约。
@@ -129,4 +130,43 @@ export function normalizeGuide(raw: unknown): Guide {
     };
   }
   return { sections: [] };
+}
+
+/**
+ * 把 `@merism/contracts` 的 `SurveyDraft.sections`(无本地 id)转换为编辑态
+ * `Guide`(补本地 id 供 React key / 拖拽)。
+ */
+export function guideFromDraftSections(sections: SurveyDraft["sections"]): Guide {
+  return {
+    sections: sections.map((s) => ({
+      id: localId("s"),
+      title: s.title,
+      objective: s.objective,
+      questions: s.questions.map((q) => ({
+        id: localId("q"),
+        questionText: q.questionText,
+        questionType: q.questionType,
+        probeLevel: q.probeLevel,
+        probeInstruction: q.probeInstruction ?? "",
+        options: q.options ?? [],
+        allowSkip: q.allowSkip ?? false,
+      })),
+    })),
+  };
+}
+
+/** 把编辑态 `Guide` 转回 `SurveyDraft.sections`(剥离本地 id)。 */
+export function draftSectionsFromGuide(guide: Guide): SurveyDraftSection[] {
+  return guide.sections.map((s) => ({
+    title: s.title,
+    objective: s.objective,
+    questions: s.questions.map((q) => ({
+      questionText: q.questionText,
+      questionType: q.questionType,
+      probeLevel: q.probeLevel,
+      probeInstruction: q.probeInstruction,
+      options: q.options,
+      allowSkip: q.allowSkip,
+    })),
+  }));
 }
