@@ -1,5 +1,5 @@
 import { Clock, Download, RefreshCw } from "lucide-react"
-import type { SurveyReport } from "@/lib/mock-report"
+import type { SurveyReport } from "./shared"
 
 export function ReportHeader({ report }: { report: SurveyReport }) {
   return (

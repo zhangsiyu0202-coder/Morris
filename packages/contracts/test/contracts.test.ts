@@ -1,14 +1,19 @@
 import { describe, it, expect } from "vitest";
 import fc from "fast-check";
 import {
+  AnalysisReportSchema,
   buildInterviewRoomMetadataFromDraft,
   buildInterviewRuntimeStudy,
   buildInterviewWorkflowConfigFromDraft,
+  InsightSchema,
   InterviewWorkflowConfigSchema,
   IssueLivekitTokenRequestSchema,
   InterviewLinkSchema,
   QuestionTaskResultSchema,
+  SurveyAnalysisReportOutputSchema,
   SurveyDraftSchema,
+  SurveyQuestionStatSchema,
+  type SurveyAnalysisReportOutput,
 } from "@merism/contracts";
 
 describe("contracts: issueLivekitToken request", () => {
@@ -61,7 +66,7 @@ describe("contracts: LiveKit interview workflow", () => {
               questionType: "text",
               questionContent: "What is your first reaction?",
               probeConfig: {
-                level: "medium",
+                level: "standard",
                 instruction: "Ask one or two natural follow-ups if the answer is thin.",
                 maxRounds: 2,
               },
@@ -71,7 +76,7 @@ describe("contracts: LiveKit interview workflow", () => {
       ],
     });
 
-    expect(workflow.sections[0]?.questions[0]?.probeConfig?.level).toBe("medium");
+    expect(workflow.sections[0]?.questions[0]?.probeConfig?.level).toBe("standard");
   });
 
   it("keeps question task results minimal", () => {
@@ -101,7 +106,7 @@ describe("contracts: survey draft shape", () => {
             {
               questionText: "Tell me about the last time you ordered specialty coffee online.",
               questionType: "open_ended",
-              probeLevel: "follow_up",
+              probeLevel: "standard",
               probeInstruction: "Ask for context, decision factors, and any friction in the journey.",
             },
           ],
@@ -109,7 +114,7 @@ describe("contracts: survey draft shape", () => {
       ],
     });
 
-    expect(draft.sections[0]?.questions[0]?.probeLevel).toBe("follow_up");
+    expect(draft.sections[0]?.questions[0]?.probeLevel).toBe("standard");
   });
 
   it("rejects choice questions without enough options", () => {
@@ -127,33 +132,8 @@ describe("contracts: survey draft shape", () => {
               {
                 questionText: "Pick one.",
                 questionType: "single_choice",
-                probeLevel: "none",
+                probeLevel: "standard",
                 options: ["Only option"],
-              },
-            ],
-          },
-        ],
-      }).success,
-    ).toBe(false);
-  });
-
-  it("rejects missing probe instructions when probing is enabled", () => {
-    expect(
-      SurveyDraftSchema.safeParse({
-        title: "Probe validation",
-        researchGoal: "Check probe rules.",
-        targetAudience: "Researchers.",
-        introScript: "Hello.",
-        sections: [
-          {
-            title: "Section 1",
-            objective: "Collect detail.",
-            questions: [
-              {
-                questionText: "Describe your workflow.",
-                questionType: "open_ended",
-                probeLevel: "deep",
-                probeInstruction: "",
               },
             ],
           },
@@ -178,7 +158,7 @@ describe("contracts: survey draft shape", () => {
               {
                 questionText: "What comes to mind first when you think about this category?",
                 questionType: "open_ended",
-                probeLevel: "follow_up",
+                probeLevel: "standard",
                 probeInstruction: "Ask for a concrete recent example.",
               },
             ],
@@ -238,7 +218,7 @@ describe("contracts: survey draft shape", () => {
               {
                 questionText: "Tell me about a recent time you used the product.",
                 questionType: "open_ended",
-                probeLevel: "follow_up",
+                probeLevel: "standard",
                 probeInstruction: "Ask what they were trying to accomplish.",
               },
             ],
@@ -249,5 +229,149 @@ describe("contracts: survey draft shape", () => {
 
     expect(metadata.runtimeStudy?.sections[0]?.questions[0]?.questionId).toBe("question-1-1");
     expect(metadata.workflowConfig?.sections[0]?.questions[0]?.questionId).toBe("question-1-1");
+  });
+});
+
+describe("contracts: AnalysisReport scope invariants (ADR-0003 D1/D4)", () => {
+  it("rejects scope=session without sessionId", () => {
+    const result = AnalysisReportSchema.safeParse({
+      $id: "r1",
+      surveyId: "sv1",
+      scope: "session",
+      generatedAt: "2026-06-06T00:00:00.000Z",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects scope=survey without surveyId", () => {
+    const result = AnalysisReportSchema.safeParse({
+      $id: "r2",
+      sessionId: "sess1",
+      scope: "survey",
+      generatedAt: "2026-06-06T00:00:00.000Z",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects scope=survey carrying a sessionId", () => {
+    const result = AnalysisReportSchema.safeParse({
+      $id: "r3",
+      sessionId: "sess1",
+      surveyId: "sv1",
+      scope: "survey",
+      generatedAt: "2026-06-06T00:00:00.000Z",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts scope=session with sessionId only", () => {
+    const result = AnalysisReportSchema.safeParse({
+      $id: "r4",
+      sessionId: "sess1",
+      surveyId: "sv1",
+      scope: "session",
+      generatedAt: "2026-06-06T00:00:00.000Z",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts scope=survey with surveyId and no sessionId", () => {
+    const result = AnalysisReportSchema.safeParse({
+      $id: "r5",
+      surveyId: "sv1",
+      scope: "survey",
+      generatedAt: "2026-06-06T00:00:00.000Z",
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe("contracts: SurveyAnalysisReportOutput discriminated union", () => {
+  it("accepts a minimally complete survey-level report", () => {
+    const minimal: SurveyAnalysisReportOutput = {
+      surveyId: "sv1",
+      surveyTitle: "Test",
+      totalRespondents: 0,
+      completedRespondents: 0,
+      avgDurationLabel: "0:00",
+      lastUpdatedLabel: "just now",
+      topics: [],
+      questionStats: [],
+      sentimentBreakdown: [],
+      themes: [],
+      insights: [],
+      citations: [],
+      rendered: null,
+    };
+    expect(SurveyAnalysisReportOutputSchema.parse(minimal)).toEqual(minimal);
+  });
+
+  it("discriminates choice / rating / nps question stats", () => {
+    const stats = SurveyQuestionStatSchema.array().parse([
+      {
+        questionId: "q1",
+        questionText: "Pick one",
+        kind: "choice",
+        multi: false,
+        total: 10,
+        reportQuestion: "Which option?",
+        summary: "Most picked A.",
+        data: [{ label: "A", count: 7, pct: 70 }],
+      },
+      {
+        questionId: "q2",
+        questionText: "Score it",
+        kind: "rating",
+        total: 10,
+        average: 4.2,
+        scaleMax: 5,
+        reportQuestion: "How satisfied?",
+        summary: "Mostly happy.",
+        data: [{ score: 5, count: 6 }],
+      },
+      {
+        questionId: "q3",
+        questionText: "Recommend?",
+        kind: "nps",
+        total: 10,
+        score: 30,
+        promoters: 5,
+        passives: 3,
+        detractors: 2,
+        reportQuestion: "NPS",
+        summary: "Net positive.",
+      },
+    ]);
+    expect(stats[0]?.kind).toBe("choice");
+    expect(stats[1]?.kind).toBe("rating");
+    expect(stats[2]?.kind).toBe("nps");
+  });
+});
+
+describe("contracts: Insight entity (ADR-0003 D2)", () => {
+  it("accepts a fully-populated insight", () => {
+    const insight = InsightSchema.parse({
+      $id: "i1",
+      studyId: "st1",
+      studyTitle: "S",
+      question: "Why did people churn?",
+      headline: "Pricing is the leading driver",
+      summary: "Direct answer",
+      confidence: "high",
+      sampleSize: 12,
+      ownerUserId: "u1",
+      createdAt: "2026-06-06T00:00:00.000Z",
+      report: {
+        headline: "Pricing is the leading driver",
+        directAnswer: "Multiple respondents cited the new tier.",
+        confidence: "high",
+        confidenceReason: "12/15 quotes mention pricing.",
+        themes: [{ title: "Pricing", analysis: "...", quotes: ["..."] }],
+        divergences: [{ group: "power users", stance: "value-based" }],
+        actions: [{ priority: "P0", action: "...", rationale: "..." }],
+      },
+    });
+    expect(insight.confidence).toBe("high");
+    expect(insight.report.actions[0]?.priority).toBe("P0");
   });
 });

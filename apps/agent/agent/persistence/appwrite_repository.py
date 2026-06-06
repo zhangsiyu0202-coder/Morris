@@ -44,12 +44,35 @@ class DatabasesClient(Protocol):
     ) -> Any: ...
 
 
+@runtime_checkable
+class FunctionsClient(Protocol):
+    """Subset of the Appwrite ``Functions`` service the repository needs."""
+
+    def create_execution(self, function_id: str, body: str) -> Any: ...
+
+
 class InterviewRepository:
     """Persists session progress, completion, and transcripts to Appwrite."""
 
-    def __init__(self, databases: DatabasesClient, logger: Any) -> None:
+    # Function ids may be overridden via env (defaults match apps/functions
+    # directory names, which we deploy 1:1 to Appwrite).
+    DEFAULT_ANALYZE_SESSION_FN = "analyzeSession"
+    DEFAULT_ANALYZE_SURVEY_FN = "analyzeSurvey"
+
+    def __init__(
+        self,
+        databases: DatabasesClient,
+        logger: Any,
+        functions: FunctionsClient | None = None,
+        *,
+        analyze_session_fn: str = DEFAULT_ANALYZE_SESSION_FN,
+        analyze_survey_fn: str = DEFAULT_ANALYZE_SURVEY_FN,
+    ) -> None:
         self._db = databases
         self._log = logger
+        self._functions = functions
+        self._analyze_session_fn = analyze_session_fn
+        self._analyze_survey_fn = analyze_survey_fn
 
     @classmethod
     def from_env(cls, env: Mapping[str, str], logger: Any) -> "InterviewRepository":
@@ -63,9 +86,17 @@ class InterviewRepository:
         if not (endpoint and project and api_key):
             raise ValueError("APPWRITE_ENDPOINT / APPWRITE_PROJECT_ID / APPWRITE_API_KEY are required")
 
+        from appwrite.services.functions import Functions
+
         client = Client()
         client.set_endpoint(endpoint).set_project(project).set_key(api_key)
-        return cls(_DatabasesAdapter(Databases(client)), logger)
+        return cls(
+            _DatabasesAdapter(Databases(client)),
+            logger,
+            _FunctionsAdapter(Functions(client)),
+            analyze_session_fn=env.get("ANALYZE_SESSION_FUNCTION_ID", cls.DEFAULT_ANALYZE_SESSION_FN),
+            analyze_survey_fn=env.get("ANALYZE_SURVEY_FUNCTION_ID", cls.DEFAULT_ANALYZE_SURVEY_FN),
+        )
 
     def mark_in_progress(self, session_id: str) -> None:
         fields = session_progress_fields(state="in_progress", started_at=_now_iso())
@@ -112,11 +143,73 @@ class InterviewRepository:
                     updateError=str(update_error),
                 )
 
+    def trigger_post_session_analysis(self, session_id: str, survey_id: str) -> None:
+        """Fire-and-await the analyze Functions after a session completes.
+
+        Per ADR-0003 D1+D4 the agent worker chains:
+            session.state=completed  ->  analyzeSession(sessionId)
+                                     ->  analyzeSurvey(surveyId)
+
+        Failures are logged but never raised: a session is durably completed
+        before this method is called, so the worst case is a missing report
+        the researcher can regenerate manually from /reports/[surveyId].
+        """
+        if self._functions is None:
+            self._log.warn(
+                "post-session analysis skipped: no Functions client configured",
+                sessionId=session_id,
+            )
+            return
+        try:
+            self._functions.create_execution(
+                self._analyze_session_fn, _json_body({"sessionId": session_id})
+            )
+        except Exception as error:  # noqa: BLE001
+            self._log.error(
+                "analyzeSession dispatch failed",
+                sessionId=session_id,
+                error=str(error),
+            )
+            return  # Skip survey rollup if session-level analysis didn't dispatch.
+        try:
+            self._functions.create_execution(
+                self._analyze_survey_fn, _json_body({"surveyId": survey_id})
+            )
+        except Exception as error:  # noqa: BLE001
+            self._log.error(
+                "analyzeSurvey dispatch failed",
+                surveyId=survey_id,
+                error=str(error),
+            )
+
     def _safe_update(self, session_id: str, fields: Mapping[str, Any], action: str) -> None:
         try:
             self._db.update_document(DATABASE_ID, SESSIONS_COLLECTION_ID, session_id, fields)
         except Exception as error:  # noqa: BLE001 - never let persistence kill the call
             self._log.error("persistence failed", action=action, sessionId=session_id, error=str(error))
+
+
+import json as _stdlib_json
+
+
+def _json_body(payload: Mapping[str, Any]) -> str:
+    return _stdlib_json.dumps(payload)
+
+
+class _FunctionsAdapter:
+    """Adapts the Appwrite ``Functions`` service to ``FunctionsClient``."""
+
+    def __init__(self, functions: Any) -> None:
+        self._functions = functions
+
+    def create_execution(self, function_id: str, body: str) -> Any:
+        return self._functions.create_execution(
+            function_id=function_id,
+            body=body,
+            x_async=False,
+            method="POST",
+            headers={"content-type": "application/json"},
+        )
 
 
 class _DatabasesAdapter:

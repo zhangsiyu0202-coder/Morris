@@ -1,24 +1,24 @@
 import { createAgentUIStreamResponse, type UIMessage } from "ai";
-import { morrisAgent } from "@/lib/assistant/agent";
+import { buildMorrisAgent } from "@/lib/assistant/agent";
+import { getCurrentUserId } from "@/lib/queries/auth";
 
-// AI SDK 必须使用 Node runtime(绝不用 edge)。
+// AI SDK 必须使用 Node runtime(绝不用 edge),且 cookies() 也只能在 Node 上下文里读。
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
 /**
- * AI 研究助手对接端点。
+ * Morris 研究助手对接端点。
  *
- * 前端契约(不可更改,严格对接 components/assistant/conversation.tsx 的 useChat):
- * - 入参:`{ messages: UIMessage[] }`
- * - 出参:UIMessageStream(text/event-stream),由 useChat + DefaultChatTransport 消费
+ * 行为契约:
+ * - 入参: { messages: UIMessage[] }
+ * - 出参: UIMessageStream(text/event-stream),由前端 useChat + DefaultChatTransport 消费
  *
- * 编排交给 morrisAgent(ToolLoopAgent):工具循环、上下文管理、降级、停止条件。
- * 本层只负责:请求体校验、把错误转成对用户友好的中文、以及最外层异常兜底。
+ * 每次请求构造一个新的 ToolLoopAgent,把当前研究员的 ownerUserId 注入到工具集。
+ * 工具的 execute 用 ownerUserId 过滤 Appwrite 查询,保证只读到该研究员自己的数据。
+ * 未登录(ownerUserId === null)时,工具会返回 "请先登录" 错误而不是读任何数据。
  */
 export async function POST(req: Request) {
   let messages: UIMessage[];
-
-  // 参数校验:body 必须是 JSON 且 messages 为数组,否则返回 400。
   try {
     const body = await req.json();
     if (!body || !Array.isArray(body.messages)) {
@@ -29,13 +29,17 @@ export async function POST(req: Request) {
     return Response.json({ error: "请求体不是合法的 JSON。" }, { status: 400 });
   }
 
+  // Resolve the signed-in researcher. null → tools short-circuit with
+  // "not signed in" rather than reading anything.
+  const ownerUserId = await getCurrentUserId();
+
   try {
+    const agent = buildMorrisAgent({ ownerUserId });
     return await createAgentUIStreamResponse({
-      agent: morrisAgent,
+      agent,
       uiMessages: messages,
-      // 把流式过程中出现的任意错误转成发给前端的友好中文文本。
       onError: (error) => {
-        console.error("[v0] assistant stream error:", error);
+        console.error("[assistant] stream error:", error);
         const message = error instanceof Error ? error.message : String(error);
         if (/api key|unauthor|401|403/i.test(message)) {
           return "AI 服务鉴权失败,请检查 DEEPSEEK_API_KEY 配置。";
@@ -50,8 +54,7 @@ export async function POST(req: Request) {
       },
     });
   } catch (error) {
-    // 流尚未建立时的同步异常(如 agent 初始化失败)。
-    console.error("[v0] assistant route fatal error:", error);
+    console.error("[assistant] route fatal error:", error);
     return Response.json({ error: "AI 助手暂时不可用,请稍后再试。" }, { status: 500 });
   }
 }

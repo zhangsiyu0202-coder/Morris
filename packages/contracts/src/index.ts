@@ -1,6 +1,7 @@
 export * from "./entities.js";
 export * from "./api.js";
 export * from "./state.js";
+export * from "./insight.js";
 export type {
   AnalyzeSessionRequest,
   AnalyzeSessionResponse,
@@ -33,4 +34,10 @@ export type {
   SurveyDraft,
   SurveyDraftQuestion,
   SurveyDraftSection,
+  AnalyzeSurveyRequest,
+  AnalyzeSurveyResponse,
+  SurveyAnalysisReportOutput,
+  SurveyQuestionStat,
 } from "./api.js";
+
+export type { Insight, InsightReport } from "./insight.js";

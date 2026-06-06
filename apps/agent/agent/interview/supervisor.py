@@ -69,6 +69,12 @@ def create_supervisor_agent_class():
                     self._repo.complete_session(
                         self._state.sessionId, collected_answers_map(self._state)
                     )
+                    # ADR-0003 D1+D4: chain analyzeSession -> analyzeSurvey on
+                    # completion. Failures are logged inside the repository
+                    # method and never raised back to the supervisor.
+                    self._repo.trigger_post_session_analysis(
+                        self._state.sessionId, self._state.surveyId
+                    )
             except Exception as error:  # noqa: BLE001 - surface + persist failure
                 self._log.error("interview failed", sessionId=self._state.sessionId, error=str(error))
                 if self._repo is not None:

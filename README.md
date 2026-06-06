@@ -17,7 +17,9 @@ sub-specs (see [Sub-spec roadmap](#sub-spec-roadmap)).
   hosting a LiveKit **Supervisor / TaskGroup / AgentTask** interview workflow.
   Media/turn state never routes through Appwrite.
 - **Web:** Next.js 15 (App Router) + TypeScript + Tailwind + shadcn/ui, with a
-  **CopilotKit** runtime route for the survey-editor page assistant.
+  **Vercel AI SDK 6 `ToolLoopAgent`** ("Morris") page assistant — sidebar dock
+  + standalone `/assistant` page, model = DeepSeek. See
+  `docs/adr/0002-page-assistant-vercel-ai-sdk.md`.
 - **Contracts:** `packages/contracts` (zod) is the cross-module boundary; Python
   mirrors the needed subset in `apps/agent/agent/contracts.py`.
 
@@ -59,8 +61,10 @@ Run live integration tests (permission matrix etc.) with a running stack:
 
 ```
 apps/
-  web/                     Next.js app (researcher UI + interviewee landing)
-  agent/                   Python LiveKit Agent Worker (Supervisor/TaskGroup host)
+  web/                     Next.js 15 (App Router) — researcher UI, page assistant
+                           Morris (/assistant), interviewee landing (/interview)
+  agent/                   Python LiveKit Agent Worker — Supervisor / TaskGroup /
+                           AgentTask workflow + DeepSeek LLM + Qwen ASR/TTS
   functions/
     issueLivekitToken/     Appwrite Function: validate link, create session, sign JWT
 packages/
@@ -70,7 +74,11 @@ packages/
 infra/docker/              docker-compose: Appwrite + LiveKit
 scripts/                   stack / env / smoke / scope-guard helpers
 tests/properties/          shared property-based tests (fast-check)
-docs/                      sub-spec template and docs
+docs/
+  adr/                     architecture decision records (0001 interview controller,
+                           0002 page assistant stack)
+  design/                  cross-cutting design notes (e.g. multimodal interview)
+  sub-spec-template.md     starter checklist for new sub-specs
 ```
 
 ## Sub-spec roadmap
@@ -80,10 +88,10 @@ Each sub-spec references this foundation as a prerequisite (see
 
 | Spec | Scope | Depends on |
 |---|---|---|
-| **survey-editor** | three-column editor, question types, skip logic, CopilotKit tools | foundation-setup |
+| **survey-editor** | three-column editor, question types, skip logic, page-assistant tools | foundation-setup |
 | **interviewee-portal** | `/i/[linkToken]` landing, consent, device test, session join, reconnect | foundation-setup |
 | **ai-interview-engine** | Agent Worker, LiveKit Supervisor/TaskGroup/AgentTask workflow, STT/TTS providers, transcript/recording | foundation-setup, survey-editor, interviewee-portal |
-| **analysis-report** | DeepSeek thematic coding, citations, PDF/MD rendering, report viewer | foundation-setup, ai-interview-engine |
+| **analysis-report** ✅ | DeepSeek thematic coding via `analyzeSession` + `analyzeSurvey` Functions, citations, report viewer at `/reports/[surveyId]`, Morris read tools, Insights migrated to Appwrite. PDF/MD rendering deferred. See `.kiro/specs/analysis-report/` and `docs/adr/0003-analysis-report-architecture.md`. | foundation-setup, ai-interview-engine |
 
 ## Scope (permanent exclusions)
 

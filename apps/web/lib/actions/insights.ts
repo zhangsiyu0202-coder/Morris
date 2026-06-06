@@ -2,17 +2,23 @@
 
 import { generateText, Output } from "ai";
 import { createDeepSeek } from "@ai-sdk/deepseek";
-import { desc, eq } from "drizzle-orm";
+import { Client, Databases, ID, Permission, Query, Role } from "node-appwrite";
 import { revalidatePath } from "next/cache";
-import { db } from "@/lib/db";
-import { insight, type InsightRow } from "@/lib/db/schema";
+import { type Insight } from "@merism/contracts";
 import {
   insightReportSchema,
   type InsightReport,
   buildStudyContext,
   isValidStudyId,
 } from "@/lib/insights";
-import { STUDIES } from "@/lib/agent-data";
+import {
+  DATABASE_ID,
+  countCompletedSessions,
+  getCurrentUserId,
+  getInsightById as readInsightById,
+  getStudy,
+  listInsights as readInsights,
+} from "@/lib/queries";
 
 // 与 Morris AI 一致:直连 DeepSeek 官方,不引入其它供应商。
 const deepseek = createDeepSeek({
@@ -32,12 +38,45 @@ const ANALYSIS_INSTRUCTIONS = `你是 Morris 的研究洞察引擎。用户已�
 - 只依据提供的「调研上下文」作答,绝不编造数据或原话。数据不足时在 confidenceReason 中说明并下调 confidence。
 - 全程使用中文,语言专业、有判断力。`;
 
-export type InsightListItem = Pick<
-  InsightRow,
-  "id" | "studyId" | "studyTitle" | "question" | "headline" | "summary" | "confidence" | "sampleSize" | "createdAt"
->;
+/** 卡片视图所需的轻量字段集合。 */
+export type InsightListItem = {
+  id: string;
+  studyId: string;
+  studyTitle: string;
+  question: string;
+  headline: string;
+  summary: string;
+  confidence: "high" | "medium" | "low";
+  sampleSize: number;
+  createdAt: string;
+};
 
-/** 生成一份深度洞察报告并落库,返回新记录 id。生成时一次算好,详情页直接读取。 */
+function toListItem(i: Insight): InsightListItem {
+  return {
+    id: i.$id,
+    studyId: i.studyId,
+    studyTitle: i.studyTitle,
+    question: i.question,
+    headline: i.headline,
+    summary: i.summary,
+    confidence: i.confidence,
+    sampleSize: i.sampleSize,
+    createdAt: i.createdAt,
+  };
+}
+
+function getServerKeyClient(): { client: Client; db: Databases } {
+  const endpoint = process.env.APPWRITE_ENDPOINT;
+  const projectId = process.env.APPWRITE_PROJECT_ID;
+  const apiKey = process.env.APPWRITE_API_KEY;
+  if (!endpoint || !projectId || !apiKey) {
+    throw new Error("appwrite_not_configured");
+  }
+  const client = new Client().setEndpoint(endpoint).setProject(projectId).setKey(apiKey);
+  return { client, db: new Databases(client) };
+}
+
+/** 生成一份深度洞察报告并落 Appwrite,返回新记录 id。 */
 export async function createInsight(input: {
   studyId: string;
   question: string;
@@ -46,13 +85,19 @@ export async function createInsight(input: {
   const question = typeof input.question === "string" ? input.question.trim() : "";
 
   if (!studyId) return { error: "缺少调研。" };
-  if (!isValidStudyId(studyId)) return { error: "指定的调研不存在。" };
   if (question.length < 2) return { error: "请输入一个有效的问题(至少 2 个字符)。" };
 
-  const study = STUDIES.find((s) => s.id === studyId)!;
+  const ownerUserId = await getCurrentUserId();
+  if (!ownerUserId) return { error: "请先登录。" };
+
+  const valid = await isValidStudyId(ownerUserId, studyId);
+  if (!valid) return { error: "指定的调研不存在或不属于当前账户。" };
+
+  const study = await getStudy(ownerUserId, studyId);
+  if (!study) return { error: "找不到该调研。" };
 
   try {
-    const context = buildStudyContext(studyId);
+    const context = await buildStudyContext(ownerUserId, studyId);
 
     const { experimental_output } = await generateText({
       model: deepseek("deepseek-chat"),
@@ -63,55 +108,67 @@ export async function createInsight(input: {
     });
 
     const report = experimental_output as InsightReport;
+    const sampleSize = await countCompletedSessions(ownerUserId, studyId);
+    const id = ID.unique();
+    const now = new Date().toISOString();
 
-    const [row] = await db
-      .insert(insight)
-      .values({
+    const { db } = getServerKeyClient();
+    await db.createDocument(
+      DATABASE_ID,
+      "insights",
+      id,
+      {
         studyId,
-        studyTitle: study.title,
+        studyTitle: study.survey.title,
         question,
         headline: report.headline,
         summary: report.directAnswer,
         confidence: report.confidence,
-        sampleSize: study.responses,
-        report,
-      })
-      .returning({ id: insight.id });
+        sampleSize,
+        report: JSON.stringify(report),
+        ownerUserId,
+        createdAt: now,
+      },
+      [
+        Permission.read(Role.user(ownerUserId)),
+        Permission.update(Role.user(ownerUserId)),
+        Permission.delete(Role.user(ownerUserId)),
+      ],
+    );
 
     revalidatePath("/insights");
-    return { id: row.id };
+    return { id };
   } catch (err) {
-    console.error("[v0] createInsight failed:", err);
+    console.error("[insights] createInsight failed:", err);
     return { error: "洞察生成失败,请稍后重试。" };
   }
 }
 
-/** 列表:读取全部洞察(卡片字段),按时间倒序。 */
+/** 列表:读取当前研究员的所有洞察(卡片字段),按时间倒序。 */
 export async function listInsights(): Promise<InsightListItem[]> {
-  return db
-    .select({
-      id: insight.id,
-      studyId: insight.studyId,
-      studyTitle: insight.studyTitle,
-      question: insight.question,
-      headline: insight.headline,
-      summary: insight.summary,
-      confidence: insight.confidence,
-      sampleSize: insight.sampleSize,
-      createdAt: insight.createdAt,
-    })
-    .from(insight)
-    .orderBy(desc(insight.createdAt));
+  const ownerUserId = await getCurrentUserId();
+  if (!ownerUserId) return [];
+  const insights = await readInsights(ownerUserId);
+  return insights.map(toListItem);
 }
 
-/** 详情:按 id 读取完整记录(含 report)。 */
-export async function getInsightById(id: string): Promise<InsightRow | null> {
-  const rows = await db.select().from(insight).where(eq(insight.id, id)).limit(1);
-  return rows[0] ?? null;
+/** 详情:按 id 读取完整记录(含 report)。仅 owner 可读。 */
+export async function getInsightById(id: string): Promise<Insight | null> {
+  const ownerUserId = await getCurrentUserId();
+  if (!ownerUserId) return null;
+  return readInsightById(ownerUserId, id);
 }
 
-/** 删除一条洞察。 */
-export async function deleteInsight(id: string): Promise<void> {
-  await db.delete(insight).where(eq(insight.id, id));
+/** 删除一条洞察。仅 owner 可删。 */
+export async function deleteInsight(id: string): Promise<{ ok: boolean }> {
+  const ownerUserId = await getCurrentUserId();
+  if (!ownerUserId) return { ok: false };
+  // Verify ownership via a read first; the server key bypasses Permissions
+  // so we cannot rely on Appwrite to enforce it here.
+  const existing = await readInsightById(ownerUserId, id);
+  if (!existing) return { ok: false };
+  const { db } = getServerKeyClient();
+  await db.deleteDocument(DATABASE_ID, "insights", id);
   revalidatePath("/insights");
+  return { ok: true };
 }

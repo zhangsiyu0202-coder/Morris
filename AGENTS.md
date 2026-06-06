@@ -4,10 +4,10 @@
 
 MerismV2 is an AI-driven voice interview qualitative research platform. The intended architecture is:
 
-- Researcher web app: Next.js App Router + TypeScript + Tailwind + shadcn/ui (`apps/web`, planned).
+- Researcher web app: Next.js App Router + TypeScript + Tailwind + shadcn/ui (`apps/web`, present).
 - Realtime interview layer: LiveKit server + Python LiveKit Agent Worker (`apps/agent`).
 - Interview orchestration: LiveKit Supervisor / TaskGroup / AgentTask workflow hosted inside the agent worker. LangGraph is no longer the primary controller for the realtime voice interview module.
-- Page assistant: CopilotKit runtime and UI for survey editing workflows.
+- Page assistant ("Morris"): Vercel AI SDK 6 `ToolLoopAgent` + DeepSeek for sidebar/standalone researcher workflows. See `docs/adr/0002-page-assistant-vercel-ai-sdk.md`.
 - Backend single source of truth: self-hosted Appwrite for Auth, Database, Storage, Realtime, and Functions.
 - Shared contracts: `packages/contracts` is the TypeScript/zod source for cross-module API and data shapes; Python mirrors only the agent-needed subset in `apps/agent/agent/contracts.py`.
 
@@ -15,7 +15,7 @@ The product is for qualitative voice interviews: survey design, anonymous interv
 
 ## Hard Architecture Rules
 
-- Keep modules low-coupled and high-cohesion. Do not let UI, Appwrite schema tooling, LiveKit agent workflow code, analysis code, and CopilotKit tools bleed into each other.
+- Keep modules low-coupled and high-cohesion. Do not let UI, Appwrite schema tooling, LiveKit agent workflow code, analysis code, and page-assistant tools bleed into each other.
 - Treat `packages/contracts` as the stable boundary between modules. Update contracts first when changing cross-module data, then update consumers.
 - Keep realtime interview state and media inside LiveKit Agents workflows. Do not route realtime media or turn-by-turn state through Appwrite unless the spec explicitly calls for persistence.
 - Keep Appwrite as the only backend platform unless a later architecture decision explicitly changes this.
@@ -29,7 +29,7 @@ The product is for qualitative voice interviews: survey design, anonymous interv
 - Prefer structured schemas and typed contracts over ad hoc object/string handling.
 - Use mature ecosystem patterns from the active stack before inventing custom infrastructure:
   - LiveKit Agents examples for agent lifecycle, room metadata, track handling, interruption/barge-in patterns, Supervisor pattern, TaskGroup, and AgentTask.
-  - CopilotKit examples for tool/action definitions and runtime integration.
+  - Vercel AI SDK 6 examples for the page assistant: `ToolLoopAgent`, `tool({ inputSchema, execute })`, `prepareStep` (model/context/`toolChoice` switching), `stopWhen` conditions, `createAgentUIStreamResponse`, and `@ai-sdk/react` `useChat` + `DefaultChatTransport`.
   - Appwrite Server SDK examples for functions, permissions, storage buckets, and schema operations.
 - Keep hot-path interview code performance-conscious: avoid unnecessary network calls, avoid shared mutable global state across sessions, and isolate per-session state.
 - Use explicit error types for provider failures and preserve `traceId` in logs/responses where applicable.
@@ -45,18 +45,21 @@ The product is for qualitative voice interviews: survey design, anonymous interv
 - `.kiro/steering/design-system.md`: **MerismV2 Design System (Mauve Quiet)** — single source of truth for visual tokens, typography roles, button system, sidebar pattern, and Figma → code translation rules. Always-included steering.
 - `packages/contracts`: zod schemas and TypeScript types for entities, API contracts, and shared interview workflow state.
 - `packages/observability`: TypeScript logger, retry, and function error-boundary helpers.
-- `packages/appwrite-schema`: declarative Appwrite schema with apply / verify tooling.
-- `apps/agent`: Python LiveKit Agent Worker skeleton and pydantic contract mirrors.
+- `packages/appwrite-schema`: declarative Appwrite schema (collections, attributes, indexes, permissions, storage buckets) with `apply` / `verify` tooling under `src/`.
+- `apps/agent`: Python LiveKit Agent Worker. Contains the realtime interview implementation: `agent/interview/{engine,supervisor,workflow,transcript}.py` (LiveKit Supervisor + ordered TaskGroups + AgentTasks), `agent/persistence/` (Appwrite repository + pure serializers), `agent/providers/` (DeepSeek LLM + Qwen ASR/TTS adapters), and the contracts mirror in `agent/contracts.py`. Realtime deps are an opt-in extra (`uv sync --extra realtime`).
 - `apps/functions/issueLivekitToken`: example Appwrite Function with pure-core / SDK-wrapper split.
-- `apps/web`: Next.js researcher web app (planned, not present yet).
+- `apps/web`: Next.js 15 (App Router) researcher web app. Hosts the page assistant Morris (`app/api/assistant/route.ts` + `lib/assistant/*` + `components/assistant/*` + standalone `/assistant`), the interviewee surfaces (`/interview` + `components/interview/*`), the editor surfaces (`/home`, `/studies/[id]`, `components/studies/*`), and the analysis surfaces (`/insights`, `/insights/[id]`, `/report`). The current editor is a v0-generated draft slated for redesign; do not treat its persistence layer (Drizzle/Postgres) as the architectural target.
+- `docs/adr/`: architecture decision records. `0001-livekit-supervisor-interview-workflow.md` (interview controller), `0002-page-assistant-vercel-ai-sdk.md` (page assistant stack).
+- `docs/design/`: cross-cutting technical designs (e.g. `multimodal-interview-and-structured-rendering.md`).
 - `infra/docker/docker-compose.yml`: local Appwrite + LiveKit stack.
 - `scripts`: stack, environment, scope-guard, and Python test helpers.
 - `tests/properties`: property-based test templates.
 
-Current skeleton gaps to respect when planning work:
+Current gaps and known drifts:
 
-- `apps/web` is referenced by scripts/specs but is not present yet.
-- `packages/appwrite-schema` currently has package metadata but no `src/` implementation.
+- `apps/web/components/studies/*`, `apps/web/lib/guide.ts`, `apps/web/lib/actions/studies.ts`, `apps/web/lib/db/*`, `apps/web/lib/actions/guide-ai.ts` — these implement the existing editor draft against Drizzle + Postgres. They will be replaced when the `survey-editor` sub-spec is written; the architectural target remains Appwrite as the only backend. The Drizzle `insight` table was removed by the `analysis-report` sub-spec (T8); only the `study` table remains in `lib/db/schema.ts`.
+- `apps/web/lib/mock-session.ts` is still used by `app/page.tsx` (root) and `lib/use-interview-session.ts` for the structured-question rendering preview. Out of scope for the `analysis-report` sub-spec; planned for the `interviewee-portal` sub-spec to consolidate with the live `useLiveInterview` hook.
+- `pnpm-lock.yaml` still pins `@copilotkit/*` packages. They are not imported by `apps/web/package.json` and will be removed on the next dependency refresh (see `docs/adr/0002-page-assistant-vercel-ai-sdk.md`).
 - Root `smoke` and `e2e` scripts reference planned files that may not exist yet.
 
 ## Common Commands

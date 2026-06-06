@@ -231,3 +231,47 @@ class InterviewWorkflowState(BaseModel):  # ts: InterviewWorkflowState
     currentQuestionTaskId: str | None = None
     sectionResults: dict[str, SectionTaskGroupResult] = Field(default_factory=dict)
     transcriptBuffer: list[TranscriptSegment] = Field(default_factory=list)
+
+
+# --- analysis-report sub-spec additions (ADR-0003) ---
+
+
+class InsightReportTheme(BaseModel):  # zod: insightReportSchema.themes[]
+    title: str
+    analysis: str
+    quotes: list[str]
+
+
+class InsightReportDivergence(BaseModel):  # zod: insightReportSchema.divergences[]
+    group: str
+    stance: str
+
+
+class InsightReportAction(BaseModel):  # zod: insightReportSchema.actions[]
+    priority: Literal["P0", "P1", "P2"]
+    action: str
+    rationale: str
+
+
+class InsightReport(BaseModel):  # zod: insightReportSchema
+    headline: str
+    directAnswer: str
+    confidence: Literal["high", "medium", "low"]
+    confidenceReason: str
+    themes: list[InsightReportTheme]
+    divergences: list[InsightReportDivergence]
+    actions: list[InsightReportAction]
+
+
+class Insight(BaseModel):  # zod: InsightSchema
+    id: str = Field(alias="$id")
+    studyId: str
+    studyTitle: str
+    question: str
+    headline: str
+    summary: str
+    confidence: Literal["high", "medium", "low"]
+    sampleSize: int
+    report: InsightReport
+    ownerUserId: str
+    createdAt: str

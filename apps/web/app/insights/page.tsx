@@ -1,6 +1,7 @@
 import { InsightsWorkbench } from "@/components/insights/insights-workbench";
 import { listStudyOptions } from "@/lib/insights";
 import { listInsights } from "@/lib/actions/insights";
+import { getCurrentUserId } from "@/lib/queries/auth";
 
 export const metadata = {
   title: "研究洞察 · Insights",
@@ -11,8 +12,9 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function InsightsPage() {
+  const ownerUserId = await getCurrentUserId();
   const [studies, cards] = await Promise.all([
-    Promise.resolve(listStudyOptions()),
+    ownerUserId ? listStudyOptions(ownerUserId) : Promise.resolve([]),
     listInsights(),
   ]);
 

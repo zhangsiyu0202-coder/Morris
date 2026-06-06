@@ -11,7 +11,7 @@ import {
   YAxis,
 } from "recharts"
 import { ChevronDown, ChevronRight, MessageSquareText } from "lucide-react"
-import type { ChoiceDatum, QuestionStat } from "@/lib/mock-report"
+import type { ChoiceDatum, QuestionStat } from "./shared"
 import { CHART_RAMP, highlightKeywords } from "./shared"
 
 function ChartFrame({ caption, children }: { caption: string; children: React.ReactNode }) {

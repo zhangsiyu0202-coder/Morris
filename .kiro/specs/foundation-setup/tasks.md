@@ -16,7 +16,7 @@ flowchart TD
     T6[6. Appwrite Schema 声明与同步工具]
     T7[7. Storage Bucket 与 Permission]
     T8[8. issueLivekitToken Function]
-    T9[9. CopilotKit Runtime 占位]
+    T9[9. 页面助手 API（Vercel AI SDK 6）]
     T10[10. 错误处理与日志基线]
     T11[11. 测试基础设施 - Vitest + fast-check]
     T12[12. 测试基础设施 - pytest + hypothesis]
@@ -86,9 +86,14 @@ flowchart TD
   - **Validates: Requirements 1.2, 4.1**
 
 - [x] 2. 建立共享契约包 `packages/contracts`
-  - 安装 zod，导出与 design.md §Data Models 一一对应的 schema：`User`、`Project`、`Survey`、`SurveySection`、`QuestionBlock`、`InterviewLink`、`InterviewSession`、`Transcript`、`Recording`、`AnalysisReport`。
-  - 导出 `IssueLivekitTokenRequest/Response`、`AnalyzeSessionRequest/Response`、`AnalysisReportInput/Output` schema。
-  - 导出 LiveKit workflow 的 `InterviewWorkflowConfig`、`SectionTaskGroupConfig`、`QuestionTaskConfig`、`QuestionTaskResult`、`InterviewWorkflowState` 高层 TypeScript 类型（结构化字段，不含运行时实现）。
+  - 安装 zod，导出与 design.md §Data Models 一一对应的实体 schema：`User`、`Project`、`Survey`、`SurveySection`、`QuestionBlock`、`InterviewLink`、`InterviewSession`、`Transcript`、`Recording`、`AnalysisReport`。
+  - 导出 API IO schema：`IssueLivekitTokenRequest/Response`、`AnalyzeSessionRequest/Response`、`AnalysisReportInput/Output`。
+  - 导出提纲编辑态 schema：`SurveyDraft / SurveyDraftSection / SurveyDraftQuestion`（含选择/排序题至少 2 个选项的 `superRefine` 校验）。
+  - 导出访谈运行态 schema：`InterviewRuntimeStudy / InterviewRuntimeSection / InterviewRuntimeQuestion`（题型自动映射 `responseMode`）、`InterviewAgentState / InterviewAgentStatus`、`InterviewRoomMetadata`、`InterviewAnswerPayload`、`SubmitInterviewAnswerRpcRequest/Response`。
+  - 导出 LiveKit workflow schema 与 TypeScript 类型：`InterviewWorkflowConfig / SectionTaskGroupConfig / QuestionTaskConfig / QuestionTaskResult / SectionTaskGroupResult`、TS 类型 `InterviewWorkflowState`。
+  - 导出追问 / 刺激物 schema：`ProbeConfig`（`standard` 默认 maxRounds=3、`deep`=5）、`ProbeRound / ProbeResult`、`Stimulus / StimulusType`。
+  - 导出工具函数：`buildInterviewRuntimeStudy / buildInterviewWorkflowConfigFromDraft / buildInterviewRoomMetadataFromDraft`，把 `SurveyDraft` 一致地转译为运行态契约。
+  - 导出共享常量：`INTERVIEW_STATE_ATTRIBUTE`、`SUBMIT_ANSWER_RPC_METHOD`。
   - 配置 tsup/tsc 输出 ESM + d.ts；通过 `pnpm -F @merism/contracts build` 可成功产出。
   - **Validates: Requirements 4.2, 4.3, 4.6**
 
@@ -140,11 +145,12 @@ flowchart TD
   - 保证 LiveKit `apiSecret` 仅从 Function 环境变量读取，且响应体/日志仅记录 token 前缀掩码。
   - **Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 5.5**
 
-- [x] 9. CopilotKit Runtime 占位
-  - 在 `apps/web/app/api/copilotkit/route.ts` 接入 `@copilotkit/runtime`，使用 DeepSeek 的 OpenAI 兼容接口（提供 `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` / `DEEPSEEK_MODEL` 环境变量）。
-  - 暴露空的 actions 数组，确保 GET/POST 200 响应。
-  - 在 `apps/web` 中安装 `@copilotkit/react-core` + `@copilotkit/react-ui`，但不渲染任何对话 UI（留给 survey-editor 子 Spec）。
-  - 添加 `apps/web/app/api/copilotkit/route.test.ts` 用 Vitest 调用 handler 验证 200 + 空 actions。
+- [x] 9. 页面助手 API（Vercel AI SDK 6 + DeepSeek）
+  - 在 `apps/web/app/api/assistant/route.ts` 实现 Node runtime 的 POST handler，使用 `createAgentUIStreamResponse({ agent: morrisAgent, uiMessages })` 输出 UIMessageStream；`onError` 把 provider 错误（鉴权失败 / 速率限制 / 超时 / 通用）翻译为面向用户的中文文案。
+  - 在 `apps/web/lib/assistant/agent.ts` 用 AI SDK 6 的 `ToolLoopAgent` 构建 Morris：模型走 DeepSeek（`deepseek-chat`，工具失败或 ≥5 步降级到 `deepseek-reasoner` 并停止工具调用），`stopWhen: [stepCountIs(8), budgetExceeded(24000 tokens)]`，`maxRetries: 2`，`prepareStep` 负责长对话裁剪与降级切换。
+  - 在 `apps/web/lib/assistant/tools.ts` 用 `tool({ inputSchema, execute })` 定义 4 个研究员侧工具：`createStudyDraft / searchInterviewData / analyzeData / listStudies`；任何内部异常被捕获并转为 `{ error: true, message }` 结构（前端 `tool-results.tsx` 据此渲染失败态）。`apps/web/lib/assistant/system-prompt.ts` 定义 agent 的中文行为指令。
+  - 在 `apps/web/components/assistant/{assistant-dock,conversation,tool-results,markdown}.tsx` 用 `@ai-sdk/react` 的 `useChat` + `DefaultChatTransport` 消费流；浮动 dock 与独立全屏 `apps/web/app/assistant/page.tsx` 共用 `Conversation`。
+  - 当前数据源为 `apps/web/lib/agent-data.ts` 的 mock，待 survey-editor / analysis-report 子 spec 落地时接入真实持久化。CopilotKit 已在 `docs/adr/0002-page-assistant-vercel-ai-sdk.md` 中正式弃用。
   - **Validates: Requirements 4.5**
 
 - [x] 10. 错误处理与可观测性基线

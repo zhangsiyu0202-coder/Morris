@@ -53,3 +53,25 @@ export function SentimentTag({ sentiment }: { sentiment: "positive" | "neutral" 
     </span>
   )
 }
+
+
+// Type aliases backing the 5 report components. Sourced from the canonical
+// SurveyAnalysisReportOutput contract in @merism/contracts; kept here so the
+// rest of the components/report/* files only import from one place.
+export type {
+  SurveyAnalysisReportOutput as SurveyReport,
+  SurveyQuestionStat as QuestionStat,
+} from "@merism/contracts";
+
+import type {
+  SurveyAnalysisReportOutput,
+  SurveyQuestionStat,
+} from "@merism/contracts";
+
+// Per-variant aliases — derived from the discriminated union so the data
+// arrays' element types stay in lockstep with the contract.
+export type ChoiceDatum = Extract<SurveyQuestionStat, { kind: "choice" }>["data"][number];
+export type RatingDatum = Extract<SurveyQuestionStat, { kind: "rating" }>["data"][number];
+export type Insight = SurveyAnalysisReportOutput["insights"][number];
+export type Theme = SurveyAnalysisReportOutput["themes"][number];
+export type SentimentDatum = SurveyAnalysisReportOutput["sentimentBreakdown"][number];

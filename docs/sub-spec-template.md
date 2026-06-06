@@ -17,14 +17,33 @@ Do not redefine cross-module contracts; consume them from `packages/contracts`
 change, update `packages/contracts` first, then the consumers (the root
 `typecheck` will surface every break).
 
+Also read the active ADRs and cross-cutting design notes that constrain the
+sub-spec's stack:
+
+- `docs/adr/0001-livekit-supervisor-interview-workflow.md` — LiveKit Supervisor /
+  TaskGroup / AgentTask is the only realtime interview controller. No
+  LangGraph in new code.
+- `docs/adr/0002-page-assistant-vercel-ai-sdk.md` — Page assistant uses Vercel
+  AI SDK 6 `ToolLoopAgent` + DeepSeek. No CopilotKit in new code.
+- `docs/design/multimodal-interview-and-structured-rendering.md` — Structured
+  question rendering (room attribute + RPC) and screen-observation vision
+  layer; consult before extending the agent ↔ web boundary.
+
 ## 2. Reuse the contracts
 
 | Need | Source |
 |---|---|
-| Entity shapes (Survey, Session, …) | `@merism/contracts` entities |
-| `issueLivekitToken` request/response | `@merism/contracts` api |
-| `analyzeSession` / `AnalysisReport` IO | `@merism/contracts` api |
-| LiveKit interview workflow state/results | `@merism/contracts` state/api |
+| Domain entity shapes (Survey, Session, Transcript, …) | `@merism/contracts` entities |
+| `issueLivekitToken` request/response | `@merism/contracts` api (`IssueLivekitToken*`) |
+| `analyzeSession` / `AnalysisReport` IO | `@merism/contracts` api (`AnalyzeSession*`, `AnalysisReport*`) |
+| Editor-time survey shape (with options/probe validation) | `@merism/contracts` api (`SurveyDraft`, `SurveyDraftSection`, `SurveyDraftQuestion`) |
+| Runtime study handed to LiveKit (with `responseMode`) | `@merism/contracts` api (`InterviewRuntimeStudy`, `InterviewRuntimeSection`, `InterviewRuntimeQuestion`) |
+| LiveKit Supervisor / TaskGroup / AgentTask workflow config + results | `@merism/contracts` api (`InterviewWorkflowConfig`, `SectionTaskGroupConfig`, `QuestionTaskConfig`, `QuestionTaskResult`, `SectionTaskGroupResult`); state snapshot in `state.ts` (`InterviewWorkflowState`) |
+| LiveKit room metadata + live agent status | `@merism/contracts` api (`InterviewRoomMetadata`, `InterviewAgentState`, `InterviewAgentStatus`) |
+| Frontend ↔ agent RPC (submit answer) | `@merism/contracts` api (`SubmitInterviewAnswerRpcRequest/Response`, `InterviewAnswerPayload`); constants `INTERVIEW_STATE_ATTRIBUTE`, `SUBMIT_ANSWER_RPC_METHOD` |
+| Probe / stimulus building blocks | `@merism/contracts` entities + api (`ProbeConfig`, `ProbeResult`, `ProbeRound`, `Stimulus`, `StimulusType`) |
+| Draft → runtime translation (don't reimplement) | `@merism/contracts` `buildInterviewRuntimeStudy / buildInterviewWorkflowConfigFromDraft / buildInterviewRoomMetadataFromDraft` |
+| Python mirror for the agent worker | `apps/agent/agent/contracts.py` (pydantic, field names match TS) |
 | Appwrite collections / permissions / buckets | `@merism/appwrite-schema` |
 | Logger / retry / error boundary | `@merism/observability` |
 

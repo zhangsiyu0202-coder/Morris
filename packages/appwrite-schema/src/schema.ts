@@ -227,19 +227,72 @@ export const COLLECTIONS: CollectionDef[] = [
   {
     id: "analysis_reports",
     name: "AnalysisReport",
+    // Server-only writes: only the analyzeSession / analyzeSurvey Functions
+    // (using the server API key) write to this collection. Owner researchers
+    // read via per-document permissions pinned at write time.
     permissions: SERVER_ONLY,
     documentSecurity: true,
     attributes: [
-      { key: "sessionId", type: "string", size: 64, required: true },
+      // sessionId is optional: present for scope=session reports, absent for
+      // scope=survey reports. Application-level invariant enforced by the zod
+      // superRefine in @merism/contracts AnalysisReportSchema.
+      { key: "sessionId", type: "string", size: 64, required: false },
+      // surveyId is also typed optional but is required for scope=survey
+      // (enforced by the zod schema). Both fields are queryable.
       { key: "surveyId", type: "string", size: 64, required: false },
       { key: "scope", type: "enum", elements: ["session", "survey"], required: true },
+      // ownerUserId is set by the analyze Function from Survey.ownerUserId so
+      // that document-level read permissions can be pinned to that user and
+      // the read layer in apps/web/lib/queries can filter by it.
+      { key: "ownerUserId", type: "string", size: 64, required: true },
       { key: "themes", type: "string", size: JSON_SIZE, required: false, default: "[]" },
       { key: "insights", type: "string", size: JSON_SIZE, required: false, default: "[]" },
       { key: "citations", type: "string", size: JSON_SIZE, required: false, default: "[]" },
       { key: "storageFileId", type: "string", size: 64, required: false },
       { key: "generatedAt", type: "datetime", required: true },
     ],
-    indexes: [{ key: "by_session", type: "key", attributes: ["sessionId"] }],
+    // Idempotency at write time: handlers query (scope, sessionId|surveyId)
+    // and update if found, insert otherwise. We use plain key indexes rather
+    // than unique because Appwrite unique-index semantics on nullable fields
+    // are fragile; the handler enforces "one per (scope, key)" instead.
+    indexes: [
+      { key: "by_session", type: "key", attributes: ["sessionId"] },
+      { key: "by_survey", type: "key", attributes: ["surveyId"] },
+      { key: "by_scope_session", type: "key", attributes: ["scope", "sessionId"] },
+      { key: "by_scope_survey", type: "key", attributes: ["scope", "surveyId"] },
+      { key: "by_owner", type: "key", attributes: ["ownerUserId"] },
+    ],
+  },
+  {
+    id: "insights",
+    name: "Insight",
+    // Owner-scoped: researchers create their own insights via the
+    // /api/insights server actions; per-document permissions are pinned at
+    // creation. See docs/adr/0003-analysis-report-architecture.md (D2).
+    permissions: OWNER_SCOPED,
+    documentSecurity: true,
+    attributes: [
+      { key: "studyId", type: "string", size: 64, required: true },
+      { key: "studyTitle", type: "string", size: 512, required: true },
+      { key: "question", type: "string", size: 4000, required: true },
+      // Card-view fast fields, redundantly stored alongside `report` so a
+      // listing query does not need to expand the full report jsonb.
+      { key: "headline", type: "string", size: 512, required: true },
+      { key: "summary", type: "string", size: 4000, required: true },
+      { key: "confidence", type: "enum", elements: ["high", "medium", "low"], required: true },
+      { key: "sampleSize", type: "integer", required: true },
+      // Full structured argumentative report (insightReportSchema in
+      // @merism/contracts/insight). Stored as JSON string per the convention
+      // used by other JSON fields in this schema.
+      { key: "report", type: "string", size: JSON_SIZE, required: true },
+      { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "createdAt", type: "datetime", required: true },
+    ],
+    indexes: [
+      { key: "by_owner", type: "key", attributes: ["ownerUserId"] },
+      { key: "by_owner_study", type: "key", attributes: ["ownerUserId", "studyId"] },
+      { key: "by_owner_created", type: "key", attributes: ["ownerUserId", "createdAt"] },
+    ],
   },
 ];
 

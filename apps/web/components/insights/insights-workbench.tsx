@@ -18,7 +18,10 @@ import { createInsight, deleteInsight, type InsightListItem } from "@/lib/action
 type StudyOption = {
   id: string;
   title: string;
-  status: "draft" | "live" | "closed";
+  // Status text varies by source: editor uses live/closed, the contract
+  // (Appwrite) uses draft/published/archived. Accept any string and render
+  // a best-effort label below.
+  status: string;
   responses: number;
 };
 
@@ -29,10 +32,12 @@ const SUGGESTED_QUESTIONS = [
   "我们下一步应该优先改进什么?",
 ];
 
-const STATUS_LABEL: Record<StudyOption["status"], string> = {
+const STATUS_LABEL: Record<string, string> = {
   live: "进行中",
   draft: "草稿",
   closed: "已结束",
+  published: "已发布",
+  archived: "已归档",
 };
 
 const CONFIDENCE_LABEL: Record<string, string> = {
@@ -206,7 +211,7 @@ function CreateInsightModal({
           >
             {studies.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.title} · {STATUS_LABEL[s.status]}({s.responses} 份)
+                {s.title} · {(STATUS_LABEL[s.status] ?? s.status)}({s.responses} 份)
               </option>
             ))}
           </select>

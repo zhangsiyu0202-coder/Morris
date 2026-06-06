@@ -92,10 +92,16 @@
    - 数据实体（与 Requirement 2 的 Collection 一一对应）
    - `issueLivekitToken` 的请求/响应
    - `analyzeSession` 的请求/响应及 `AnalysisReport` 输入/输出
-   - LiveKit `InterviewWorkflowConfig`、`SectionTaskGroupConfig`、`QuestionTaskConfig`、`QuestionTaskResult`、`InterviewWorkflowState` 的高层结构
+   - 提纲编辑态：`SurveyDraft / SurveyDraftSection / SurveyDraftQuestion`（含选择/排序题至少 2 个选项的 `superRefine` 校验）
+   - 访谈运行态：`InterviewRuntimeStudy / InterviewRuntimeSection / InterviewRuntimeQuestion`（含 `responseMode` 由题型自动映射）、`InterviewAgentState / InterviewAgentStatus`、`InterviewRoomMetadata`
+   - LiveKit workflow：`InterviewWorkflowConfig / SectionTaskGroupConfig / QuestionTaskConfig / QuestionTaskResult / SectionTaskGroupResult / InterviewWorkflowState`
+   - 追问与刺激物：`ProbeConfig`（`level / instruction / maxRounds`，`standard` 默认 3、`deep` 默认 5）、`ProbeRound / ProbeResult`、`Stimulus / StimulusType`
+   - 受访者侧 RPC：`SubmitInterviewAnswerRpcRequest / Response`、`InterviewAnswerPayload`
+   - 工具函数：`buildInterviewRuntimeStudy / buildInterviewWorkflowConfigFromDraft / buildInterviewRoomMetadataFromDraft`，把 `SurveyDraft` 一致地转译为运行态契约
+   - 共享常量：`INTERVIEW_STATE_ATTRIBUTE`（`merism.interviewState`）、`SUBMIT_ANSWER_RPC_METHOD`（`merism.submit_answer`）
 3. THE 契约包 SHALL 使用单一权威 schema（如 zod）作为定义来源，并能将该定义导出为 TypeScript 类型；Python 侧（Agent Worker）通过对应工具（如 pydantic 或代码生成）保持契约同步。
 4. THE 系统 SHALL 在仓库内提供 LiveKit Agent Worker 的 Python 项目骨架，至少能引导 `livekit-agents` 框架、运行 `hello world` 级 Agent，并为后续 Supervisor / TaskGroup / AgentTask 工作流预留结构。
-5. THE 系统 SHALL 提供 CopilotKit Runtime 的 Next.js API Route 骨架，能够接受空 action 列表并返回 200，作为子 Spec 后续填充工具的占位入口。
+5. THE 系统 SHALL 提供页面助手 (Page Assistant) 的 Next.js API Route，基于 Vercel AI SDK 6 的 `ToolLoopAgent` + DeepSeek 模型，至少接入 4 个研究员侧工具（创建调研草稿 / 检索访谈数据 / 分析数据 / 列出调研），通过 `createAgentUIStreamResponse` 以 UIMessageStream 输出，前端用 `@ai-sdk/react useChat` + `DefaultChatTransport` 消费。详见 `docs/adr/0002-page-assistant-vercel-ai-sdk.md`。
 6. IF 任何契约 schema 的字段被修改 THEN 项目根的 typecheck 命令 SHALL 在依赖该字段的 TS 文件出现编译错误，从而强制呈现破坏性影响。
 
 ### Requirement 5: 认证与所有权隔离基线

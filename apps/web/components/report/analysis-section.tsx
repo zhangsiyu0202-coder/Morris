@@ -1,7 +1,7 @@
 "use client"
 
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts"
-import type { SentimentDatum, Theme } from "@/lib/mock-report"
+import type { SentimentDatum, Theme } from "./shared"
 import { SENTIMENT_COLOR, SENTIMENT_LABEL } from "./shared"
 
 function SentimentDonut({ data }: { data: SentimentDatum[] }) {

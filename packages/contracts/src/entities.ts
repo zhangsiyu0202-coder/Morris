@@ -143,17 +143,54 @@ export const RecordingSchema = z.object({
   format: RecordingFormat,
 });
 
-export const AnalysisReportSchema = z.object({
-  $id: z.string(),
-  sessionId: z.string(),
-  surveyId: z.string().optional(),
-  scope: ReportScope,
-  themes: z.array(z.unknown()).default([]),
-  insights: z.array(z.unknown()).default([]),
-  citations: z.array(z.unknown()).default([]),
-  storageFileId: z.string().optional(),
-  generatedAt: z.string().datetime(),
-});
+/**
+ * Persisted report record. The same collection holds both per-session reports
+ * (`scope=session`, must carry `sessionId`) and survey-level rollups
+ * (`scope=survey`, must carry `surveyId` and must NOT carry `sessionId`).
+ *
+ * The lifecycle is governed by the `analyzeSession` and `analyzeSurvey`
+ * Functions; see `docs/adr/0003-analysis-report-architecture.md` for the
+ * trigger model (D1 + D4) and `analysis-report` sub-spec design.md for
+ * field semantics.
+ */
+export const AnalysisReportSchema = z
+  .object({
+    $id: z.string(),
+    sessionId: z.string().optional(),
+    surveyId: z.string().optional(),
+    scope: ReportScope,
+    themes: z.array(z.unknown()).default([]),
+    insights: z.array(z.unknown()).default([]),
+    citations: z.array(z.unknown()).default([]),
+    storageFileId: z.string().optional(),
+    generatedAt: z.string().datetime(),
+  })
+  .superRefine((report, ctx) => {
+    if (report.scope === "session") {
+      if (!report.sessionId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "sessionId is required when scope=session",
+          path: ["sessionId"],
+        });
+      }
+    } else if (report.scope === "survey") {
+      if (!report.surveyId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "surveyId is required when scope=survey",
+          path: ["surveyId"],
+        });
+      }
+      if (report.sessionId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "sessionId must be absent when scope=survey",
+          path: ["sessionId"],
+        });
+      }
+    }
+  });
 
 export type User = z.infer<typeof UserSchema>;
 export type Project = z.infer<typeof ProjectSchema>;

@@ -142,3 +142,60 @@ def test_repository_swallows_persistence_errors():
     # Should not raise -- persistence failures must not kill the live interview.
     repo.mark_in_progress("s1")
     repo.save_transcript("s1", [TranscriptSegment(speaker="agent", startMs=0, endMs=1, text="x")], "zh")
+
+
+class _FakeFunctions:
+    """Records create_execution calls and can be told to raise per call."""
+
+    def __init__(self, fail_on: list[str] | None = None) -> None:
+        self.calls: list[tuple[str, str]] = []
+        self._fail_on = fail_on or []
+
+    def create_execution(self, function_id: str, body: str):
+        self.calls.append((function_id, body))
+        if function_id in self._fail_on:
+            raise RuntimeError(f"function {function_id} failed")
+        return {"$id": "exec-1"}
+
+
+# -- post-session analysis chain (ADR-0003 D1+D4) -----------------------------
+
+
+def test_trigger_post_session_analysis_calls_session_then_survey():
+    db = _FakeDatabases()
+    fns = _FakeFunctions()
+    repo = InterviewRepository(db, _SilentLogger(), fns)
+    repo.trigger_post_session_analysis(session_id="sess1", survey_id="sv1")
+    assert len(fns.calls) == 2
+    assert fns.calls[0][0] == "analyzeSession"
+    assert '"sessionId"' in fns.calls[0][1]
+    assert "sess1" in fns.calls[0][1]
+    assert fns.calls[1][0] == "analyzeSurvey"
+    assert "sv1" in fns.calls[1][1]
+
+
+def test_trigger_post_session_analysis_skips_survey_when_session_dispatch_fails():
+    db = _FakeDatabases()
+    fns = _FakeFunctions(fail_on=["analyzeSession"])
+    repo = InterviewRepository(db, _SilentLogger(), fns)
+    repo.trigger_post_session_analysis(session_id="sess1", survey_id="sv1")
+    # Only the session call was attempted; survey was skipped.
+    assert [c[0] for c in fns.calls] == ["analyzeSession"]
+
+
+def test_trigger_post_session_analysis_swallows_survey_failure():
+    db = _FakeDatabases()
+    fns = _FakeFunctions(fail_on=["analyzeSurvey"])
+    repo = InterviewRepository(db, _SilentLogger(), fns)
+    # Must not raise even though analyzeSurvey fails.
+    repo.trigger_post_session_analysis(session_id="sess1", survey_id="sv1")
+    assert [c[0] for c in fns.calls] == ["analyzeSession", "analyzeSurvey"]
+
+
+def test_trigger_post_session_analysis_no_op_without_functions_client():
+    db = _FakeDatabases()
+    repo = InterviewRepository(db, _SilentLogger())  # no functions client
+    repo.trigger_post_session_analysis(session_id="sess1", survey_id="sv1")
+    # No databases interactions, no exceptions.
+    assert db.created == []
+    assert db.updated == []

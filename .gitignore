@@ -32,3 +32,7 @@ coverage/
 playwright-report/
 test-results/
 .DS_Store
+
+# figma make reference export (kept locally as a design reference, not committed)
+_figma_make_export/
+Recreate Front-End Page*.zip

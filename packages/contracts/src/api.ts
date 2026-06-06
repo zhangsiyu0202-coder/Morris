@@ -36,6 +36,20 @@ export const AnalyzeSessionResponseSchema = z.object({
   scope: z.enum(["session", "survey"]),
 });
 
+// analyzeSurvey: rolls every existing AnalysisReport(scope=session) for one
+// survey into a single AnalysisReport(scope=survey). Triggered by the agent
+// worker on session completion (D1+D4) and by the researcher via the
+// /reports/[surveyId] page (D5). Idempotent: same surveyId always upserts the
+// same AnalysisReport(scope=survey) row.
+export const AnalyzeSurveyRequestSchema = z.object({
+  surveyId: z.string().min(1),
+});
+
+export const AnalyzeSurveyResponseSchema = z.object({
+  reportId: z.string(),
+  scope: z.literal("survey"),
+});
+
 export const StudyQuestionTypeSchema = z.enum([
   "open_ended",
   "single_choice",
@@ -261,7 +275,9 @@ export const AnalysisReportOutputSchema = z.object({
       id: z.string(),
       label: z.string(),
       description: z.string(),
-      evidence: z.array(SegmentRefSchema),
+      // P-ANL-01: every theme must carry at least one transcript evidence ref
+      // so reviewers can audit provenance.
+      evidence: z.array(SegmentRefSchema).min(1),
     }),
   ),
   insights: z.array(
@@ -286,10 +302,137 @@ export const AnalysisReportOutputSchema = z.object({
       sentiment: z.string(),
     }),
   ),
-  rendered: z.object({
-    storageFileId: z.string(),
-    format: z.string(),
-  }),
+  rendered: z
+    .object({
+      storageFileId: z.string(),
+      format: z.string(),
+    })
+    .nullable(),
+});
+
+/**
+ * Survey-level rolled-up report — the output of `analyzeSurvey`.
+ *
+ * Distinct from `AnalysisReportOutputSchema` (session-level, single transcript)
+ * because survey-level rolls many sessions into question-level aggregate
+ * statistics (choice / rating / nps), a single themes/insights set, and
+ * preserves citations that map back to specific transcript segments.
+ *
+ * Field semantics:
+ * - `totalRespondents` and `completedRespondents` may diverge once we model
+ *   abandoned sessions (P-ANL-03 today asserts completedRespondents equals the
+ *   number of session-level reports for this survey).
+ * - `themes[].pct` is share of mentions across all sessions; `themes` sum is
+ *   constrained to <= 1.0 by P-ANL-04 to catch LLM hallucinated over-coverage.
+ * - `rendered` is nullable: PDF/Markdown export is out of scope for v1
+ *   (ADR-0003 §Out of scope), so the field is always `null` until that lands.
+ */
+const SurveySegmentRefSchema = z.object({
+  transcriptId: z.string(),
+  segmentIndex: z.number().int().nonnegative(),
+});
+
+const SurveyChoiceDatumSchema = z.object({
+  label: z.string(),
+  count: z.number().int().nonnegative(),
+  pct: z.number().min(0).max(100),
+  blurb: z.string().optional(),
+  keywords: z.array(z.string()).optional(),
+});
+
+const SurveyRatingDatumSchema = z.object({
+  score: z.number().int(),
+  count: z.number().int().nonnegative(),
+});
+
+const SurveySentimentDatumSchema = z.object({
+  sentiment: z.enum(["positive", "neutral", "negative"]),
+  count: z.number().int().nonnegative(),
+});
+
+const SurveyChoiceQuestionStatSchema = z.object({
+  questionId: z.string(),
+  questionText: z.string(),
+  kind: z.literal("choice"),
+  multi: z.boolean(),
+  total: z.number().int().nonnegative(),
+  reportQuestion: z.string(),
+  summary: z.string(),
+  data: z.array(SurveyChoiceDatumSchema),
+});
+
+const SurveyRatingQuestionStatSchema = z.object({
+  questionId: z.string(),
+  questionText: z.string(),
+  kind: z.literal("rating"),
+  total: z.number().int().nonnegative(),
+  average: z.number(),
+  scaleMax: z.number().int().positive(),
+  reportQuestion: z.string(),
+  summary: z.string(),
+  data: z.array(SurveyRatingDatumSchema),
+});
+
+const SurveyNpsQuestionStatSchema = z.object({
+  questionId: z.string(),
+  questionText: z.string(),
+  kind: z.literal("nps"),
+  total: z.number().int().nonnegative(),
+  score: z.number().min(-100).max(100),
+  promoters: z.number().int().nonnegative(),
+  passives: z.number().int().nonnegative(),
+  detractors: z.number().int().nonnegative(),
+  reportQuestion: z.string(),
+  summary: z.string(),
+});
+
+export const SurveyQuestionStatSchema = z.discriminatedUnion("kind", [
+  SurveyChoiceQuestionStatSchema,
+  SurveyRatingQuestionStatSchema,
+  SurveyNpsQuestionStatSchema,
+]);
+
+const SurveyThemeSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  mentions: z.number().int().nonnegative(),
+  pct: z.number().min(0).max(100),
+  sentiment: z.enum(["positive", "neutral", "negative"]),
+});
+
+const SurveyInsightItemSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  text: z.string(),
+  confidence: z.number().min(0).max(1),
+});
+
+const SurveyCitationSchema = z.object({
+  segmentRef: SurveySegmentRefSchema,
+  quote: z.string(),
+  themeIds: z.array(z.string()),
+});
+
+export const SurveyAnalysisReportOutputSchema = z.object({
+  surveyId: z.string(),
+  surveyTitle: z.string(),
+  totalRespondents: z.number().int().nonnegative(),
+  completedRespondents: z.number().int().nonnegative(),
+  avgDurationLabel: z.string(),
+  studyCount: z.number().int().nonnegative().optional(),
+  lastUpdatedLabel: z.string(),
+  topics: z.array(z.string()),
+  questionStats: z.array(SurveyQuestionStatSchema),
+  sentimentBreakdown: z.array(SurveySentimentDatumSchema),
+  themes: z.array(SurveyThemeSchema),
+  insights: z.array(SurveyInsightItemSchema),
+  citations: z.array(SurveyCitationSchema),
+  rendered: z
+    .object({
+      storageFileId: z.string(),
+      format: z.string(),
+    })
+    .nullable(),
 });
 
 export const INTERVIEW_STATE_ATTRIBUTE = "merism.interviewState";
@@ -449,3 +592,7 @@ export type ProbeRound = z.infer<typeof ProbeRoundSchema>;
 export type ProbeResult = z.infer<typeof ProbeResultSchema>;
 export type QuestionTaskResult = z.infer<typeof QuestionTaskResultSchema>;
 export type SectionTaskGroupResult = z.infer<typeof SectionTaskGroupResultSchema>;
+export type AnalyzeSurveyRequest = z.infer<typeof AnalyzeSurveyRequestSchema>;
+export type AnalyzeSurveyResponse = z.infer<typeof AnalyzeSurveyResponseSchema>;
+export type SurveyQuestionStat = z.infer<typeof SurveyQuestionStatSchema>;
+export type SurveyAnalysisReportOutput = z.infer<typeof SurveyAnalysisReportOutputSchema>;

@@ -1,5 +1,5 @@
 import { Lightbulb } from "lucide-react"
-import type { Insight } from "@/lib/mock-report"
+import type { Insight } from "./shared"
 
 function ConfidenceBar({ value }: { value: number }) {
   const pct = Math.round(value * 100)

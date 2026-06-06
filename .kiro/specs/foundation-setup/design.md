@@ -4,13 +4,15 @@
 
 > **架构更新（2026-06-01）**: `ai-interview-engine` 的实时访谈主控从 LangGraph 调整为 LiveKit Agents 原生 `Supervisor / TaskGroup / AgentTask`。一场问卷包含多个 `SurveySection`，每个 section 对应一个 `TaskGroup`，每个问题对应一个 `AgentTask`。LangGraph 不再作为实时语音访谈主流程控制器；后续若用于离线分析或实验性流程，必须另行记录 ADR。详见 `docs/adr/0001-livekit-supervisor-interview-workflow.md`。
 
+> **架构更新（2026-06-06）**: 研究员侧的页面 Agent 从 CopilotKit 调整为 **Vercel AI SDK 6 `ToolLoopAgent` + DeepSeek**。前端用 `@ai-sdk/react` 的 `useChat` + `DefaultChatTransport`，后端 API 通过 `createAgentUIStreamResponse` 输出 UIMessageStream。CopilotKit 不再作为页面 Agent 的运行时；后续不得在新代码中引入 `useCopilotAction` / `CopilotSidebar` / `@copilotkit/runtime`。详见 `docs/adr/0002-page-assistant-vercel-ai-sdk.md`。
+
 ---
 
 ## Overview
 
 MerismV2 是一个**端到端的 AI 语音访谈平台**，参考 [openinterviewer](https://github.com/linxule/openinterviewer) 的产品流程，面向用户研究、产品调研、HR 面试等场景：
 
-1. **研究员 (Researcher)** 登录平台，使用三栏式编辑器创建结构化访谈问卷；编辑过程中可由 CopilotKit 驱动的页面 Agent 协助生成/修改题目。
+1. **研究员 (Researcher)** 登录平台，使用三栏式编辑器创建结构化访谈问卷；编辑过程中可由 **Vercel AI SDK 6 `ToolLoopAgent`** 驱动的页面助手（"Morris"）协助生成/修改题目。
 2. **受访者 (Interviewee)** 通过研究员分享的**匿名链接**进入访谈页面，无需注册账号，完成同意书后进入 LiveKit 实时房间。
 3. **AI 访谈 Agent** 由 LiveKit Agents 原生 `Supervisor / TaskGroup / AgentTask` 编排，加入 LiveKit 房间，与受访者进行**双向语音对话**：Qwen ASR 实时转写 → DeepSeek 在 Supervisor/Task 内完成访谈推进与结果归纳 → Qwen TTS 合成语音播放，支持打断 (barge-in)。
 4. 访谈结束后，转写文本与录音持久化至 Appwrite Storage / Database；分析模块借鉴 openinterviewer 等开源实现的方法学（主题编码 / 引文标注 / 洞察归纳），生成结构化的**访谈分析报告**。
@@ -28,7 +30,7 @@ MerismV2 是一个**端到端的 AI 语音访谈平台**，参考 [openinterview
 **包含 (In Scope)**:
 - 研究员账户体系（注册、登录、个人空间）
 - 问卷创建/编辑（三栏式编辑器，借鉴 heyform 交互）
-- 页面 Agent (CopilotKit, sidebar + standalone 双形态)
+- 页面助手 (Vercel AI SDK 6 `ToolLoopAgent` + DeepSeek, sidebar dock + standalone `/assistant` 双形态)
 - 匿名访谈链接生成与受访者门户
 - AI 实时语音访谈（LiveKit Supervisor / TaskGroup / AgentTask）
 - 访谈转写、录音存储
@@ -58,7 +60,7 @@ MerismV2 是一个**端到端的 AI 语音访谈平台**，参考 [openinterview
 | **LiveKit Supervisor** | 在房间内代表 AI 的长期主控 Agent，指导整场访谈 |
 | **TaskGroup** | LiveKit workflow 中的一组有序任务；Merism 中一个 section 对应一个 TaskGroup |
 | **AgentTask** | LiveKit workflow 中的单个任务；Merism 中一个问题对应一个 AgentTask |
-| **CopilotKit Sidebar / Standalone** | 页面右侧浮层式 / 独立全屏式的 Agent 对话 UI |
+| **Page Assistant Sidebar / Standalone** | 页面右侧浮层式 / 独立全屏式的页面助手对话 UI（产品名 "Morris"），由 Vercel AI SDK 6 `ToolLoopAgent` 驱动 |
 
 ---
 
@@ -73,7 +75,7 @@ flowchart TB
     subgraph Researcher["👤 研究员端 (Browser)"]
         R_UI["Next.js App<br/>(App Router + shadcn/ui)"]
         R_Editor["问卷三栏编辑器<br/>(借鉴 heyform)"]
-        R_Copilot["CopilotKit<br/>Sidebar + Standalone"]
+        R_Assistant["页面助手 Morris<br/>(Vercel AI SDK 6 ToolLoopAgent)"]
         R_Reports["分析报告页"]
     end
 
@@ -105,8 +107,8 @@ flowchart TB
     R_UI --> A_Auth
     R_UI --> A_DB
     R_Editor --> A_DB
-    R_Copilot -. "tool calls<br/>(读写 survey draft)" .-> A_DB
-    R_Copilot -. "LLM" .-> LLM_DS
+    R_Assistant -. "tool calls<br/>(读写 survey draft)" .-> A_DB
+    R_Assistant -. "LLM" .-> LLM_DS
     R_Reports --> A_DB
     R_Reports --> A_Storage
 
@@ -144,7 +146,7 @@ flowchart TB
 | **LiveKit Supervisor Workflow** | 嵌入 Agent Worker 进程内 | Supervisor 控制整场访谈；每个 SurveySection 生成一个 TaskGroup；每个 QuestionBlock 生成一个 AgentTask |
 | **LLM (DeepSeek)** | 公有云 API | 实时访谈判断与 task result 归纳；离线分析也复用 DeepSeek |
 | **Qwen ASR / Qwen TTS** | 公有云 API | 实时语音识别与合成 |
-| **CopilotKit Runtime** | 与 Next.js 同进程（API Route） | 页面 Agent 后端，处理工具调用 |
+| **页面助手 API (Morris)** | 与 Next.js 同进程（API Route，Node runtime） | 研究员侧页面助手后端，基于 Vercel AI SDK 6 `ToolLoopAgent` + DeepSeek，处理工具调用与流式输出 |
 
 ---
 
@@ -281,23 +283,23 @@ erDiagram
 
 > 本节合并"核心流程"与"跨模块契约"：左侧呈现各组件交互（流程图），右侧给出组件之间的接口/契约形态。
 
-### 5.1 研究员创建问卷（CopilotKit 协助）
+### 5.1 研究员创建问卷（页面助手协助）
 
 ```mermaid
 sequenceDiagram
     participant R as Researcher
     participant UI as Editor (Next.js)
-    participant CK as CopilotKit Runtime
+    participant PA as 页面助手 API (Vercel AI SDK 6)
     participant DS as DeepSeek
     participant DB as Appwrite DB
 
     R->>UI: 进入 /surveys/new
     UI->>DB: createSurvey(draft)
     DB-->>UI: surveyId
-    R->>CK: "帮我生成一份产品访谈问卷, 围绕 X 主题"
-    CK->>DS: prompt + 当前 survey 快照 + 工具描述
-    DS-->>CK: tool_call: addQuestionBlock(...)
-    CK->>UI: 应用工具调用 (前端 action handler)
+    R->>PA: "帮我生成一份产品访谈问卷, 围绕 X 主题"
+    PA->>DS: prompt + 当前 survey 快照 + 工具描述
+    DS-->>PA: tool_call: addQuestionBlock(...)
+    PA->>UI: 应用工具调用 (前端 action handler)
     UI->>DB: upsertQuestionBlock(...)
     DB-->>UI: ok
     UI-->>R: 画布更新, 显示新题目
@@ -310,9 +312,9 @@ sequenceDiagram
 ```
 
 **要点**:
-- CopilotKit 通过 `useCopilotAction` 暴露受控的"问卷增改"工具集；Agent 不直接写库，统一经前端 action handler，便于撤销/审计。
-- Sidebar 模式：编辑器右侧驻留对话面板，针对当前选中题目做"改写""增加追问策略""调整选项"等局部操作。
-- Standalone 模式：独立页面 `/copilot`，从零生成整份问卷骨架，再"导入"为新 Survey。
+- 页面助手通过 Vercel AI SDK 6 的 `tool({ inputSchema, execute })` 暴露受控的"问卷增改"工具集（如 `addQuestionBlock / updateQuestionBlock / removeQuestionBlock / reorderBlocks / setFlowConfig`）；工具的副作用统一经 server action / Function 落盘，便于撤销与审计，agent 不直接写库。
+- Sidebar 模式：编辑器右侧 dock 浮层，针对当前选中题目做"改写""增加追问策略""调整选项"等局部操作。
+- Standalone 模式：独立页面 `/assistant`，从零生成整份问卷骨架，再"导入"为新 Survey。
 
 ### 5.2 受访者进入访谈
 
@@ -340,7 +342,7 @@ sequenceDiagram
     LK->>Agent: dispatch agent (room 元数据携带 sessionId)
     Agent->>DB: 加载 Survey + QuestionBlocks
     Agent->>LK: 发布 audio track (TTS 输出)
-    Agent->>U: "你好,我是访谈助理..." (greet 节点)
+    Agent->>U: "你好,我是访谈助理..." (supervisor 开场介绍)
     U->>Agent: 通过 mic 回应
     Note over Agent: 进入对话循环 (见 5.3)
 ```
@@ -350,43 +352,66 @@ sequenceDiagram
 - Session 创建与 Room 创建在同一 Function 内原子完成，失败回滚 Session 状态为 `failed`。
 - Agent dispatch 通过 LiveKit Agents 框架的自动派发机制，依据 room 元数据匹配。
 
-### 5.3 实时对话循环 (LangGraph 状态机)
+### 5.3 实时对话循环 (LiveKit Supervisor / TaskGroup / AgentTask)
+
+实时访谈控制器是 **LiveKit Agents 原生** 的 `Supervisor / TaskGroup / AgentTask` 三层结构（详见 `docs/adr/0001-livekit-supervisor-interview-workflow.md`）。一场 session 对应一个 supervisor，一个 `SurveySection` 对应一个 `TaskGroup`，每道题对应一个 `AgentTask`。
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Greet
-    Greet --> AskQuestion: 开场白完成
-    AskQuestion --> Listen: 题目播报完成
-    Listen --> Transcribe: 检测到用户停止说话
-    Transcribe --> Decide: STT 文本就绪
-    Decide --> Probe: 答案不充分 & 追问预算未耗尽
-    Decide --> Clarify: 用户要求澄清/重复
-    Decide --> SkipLogic: 触发跳题规则
-    Decide --> NextQuestion: 答案充分
-    Probe --> Listen: 追问已发出
-    Clarify --> Listen: 澄清已发出
-    SkipLogic --> AskQuestion: 跳到目标题
-    NextQuestion --> AskQuestion: 还有题目
-    NextQuestion --> WrapUp: 题目耗尽
-    WrapUp --> [*]: 结束语已播报
-    Decide --> EmergencyExit: 用户表达终止意愿
-    EmergencyExit --> WrapUp
+flowchart TB
+    subgraph Session["一场访谈 Session"]
+        Sup["InterviewSupervisorAgent<br/>(整场访谈主控,持有 InterviewWorkflowState)"]
+
+        subgraph SecA["Section A (TaskGroup)"]
+            QA1["Question A.1 (AgentTask)"]
+            QA2["Question A.2 (AgentTask)"]
+        end
+
+        subgraph SecB["Section B (TaskGroup)"]
+            QB1["Question B.1 (AgentTask)"]
+            QB2["Question B.2 (AgentTask)"]
+        end
+
+        Sup --> SecA --> SecB
+        SecA --> QA1 --> QA2
+        SecB --> QB1 --> QB2
+    end
+
+    Sup -. "publish<br/>InterviewAgentState" .-> Participant["前端 (room attribute)"]
+    QA1 -. "submit RPC 答案" .-> Sup
+    Sup -. "记录 transcript / 答案" .-> Persist["Appwrite (Function/SDK)"]
 ```
 
-**节点契约（高层）**:
+**层级职责**:
 
-| 节点 | 输入 | 输出/副作用 | 决策依据 |
+| 层 | 角色 | 持有 | 主要副作用 |
 |---|---|---|---|
-| `Greet` | session 元数据 | 通过 TTS 播放开场白 | survey.flowConfig.opening |
-| `AskQuestion` | 当前 question_block | TTS 播放题干 | order + skipLogic 计算下一题 |
-| `Listen` | LiveKit 入站音频 | VAD 检测 + 缓冲音频 | 静音阈值 / 最大时长 |
-| `Transcribe` | 音频 buffer | 文本片段 + 写入 Transcript | STT provider |
-| `Decide` | 当前题 + 答案文本 + 追问历史 | 路由决策 | LLM (DeepSeek) 结构化输出 |
-| `Probe` | Decide 产出的追问 prompt | TTS 播放追问 | probingPolicy.maxRounds |
-| `Clarify` | 用户的澄清请求 | TTS 重述题目 | 关键词 + LLM 判断 |
-| `WrapUp` | 已收集答案 | 致谢 + 关闭 room | flowConfig.closing |
+| `InterviewSupervisorAgent` | 整场访谈主控；初始化 / 推进 section / 汇总 result / 发布 wrap-up | `InterviewWorkflowState`、Supervisor 级 instruction、整场 chat_ctx | 发布 `merism.interviewState` 房间属性；订阅 `merism.submit_answer` RPC；最终化 transcript / 触发分析 |
+| `Section TaskGroup` | 一个 `SurveySection` 的有序题目执行单元 | 该 section 的题目工厂 + `on_task_completed` 回调 | 顺序运行子任务，结束时回到 supervisor 决策 |
+| `Question AgentTask` | 一道题的最小执行单元（ASR/TTS、追问轮次、`record_answer`） | 题干、可选 `stimulus`、可选 `probeConfig`、本地完成判定 | 朗读题干、监听音频、完成时返回 `QuestionTaskResult` |
 
-**Barge-in 处理**: Listen / Probe / Clarify 节点皆订阅 VAD 事件，受访者打断时立即停止 TTS 播放，跳转到 Listen。
+**关键不变量（与 ADR-0001 一致）**:
+
+- 不引入 LangGraph 等外部状态机；不为每道题/每张问卷生成定制类。
+- 题目工厂通过 `lambda q=question: QuestionTask(q)` 捕获 question，`section_group.add(factory, id=f"question_{question.id}", ...)`。
+- 写音频走 `AgentSession` 的 audio_source；ASR / TTS / 打断 / turn handling 全部由 `AgentSession` 兜底。
+- 写 Appwrite **只在题目完成与 wrap-up 两个边界**发生（`SectionTaskGroupResult` / 最终 transcript / recording 关联）；任务进行中不写库。
+- 调 LLM 仅在 supervisor 评估阶段与 question task 内的追问决策处发生；DeepSeek 是唯一 LLM。
+- 受访者侧渲染状态通过 `merism.interviewState` 房间属性实时反映当前题目，结构化答案通过 `merism.submit_answer` RPC 回流（详见 `docs/design/multimodal-interview-and-structured-rendering.md`）。
+
+**Question 结果契约**（高层，详细字段见 `packages/contracts` 的 `QuestionTaskResult` / `ProbeResult`）：
+
+```
+QuestionTaskResult {
+  questionType, questionContent, respondentAnswer, probe?: ProbeResult | null
+}
+ProbeResult {
+  level, probeInstruction, rounds: ProbeRound[]   // rounds.length ≥ 1 当 probe ≠ null
+}
+```
+
+`probe` 为 `null` 表示该题未发生追问。section 结果以 `{ sectionId, questionResults: Map<questionId, QuestionTaskResult> }` 汇总到 supervisor。
+
+**Barge-in / 打断**: 由 `AgentSession` 内置的 turn-taking + VAD 处理；question task 不需自行管理打断状态。
 
 ### 5.4 访谈结束 → 转写 → 分析
 
@@ -454,41 +479,36 @@ grants:
   canSubscribe: true
 ```
 
-### 6.3 LiveKit Agent ↔ LangGraph 契约
+### 6.3 LiveKit Agent ↔ Supervisor / TaskGroup 契约
 
-- **每个 Session 一个 LangGraph 实例**：Agent Worker 在 `on_room_connected` 时构建 LangGraph `StateGraph` 并初始化状态。
-- **State Schema (高层)**：
-  ```
-  InterviewState {
-    sessionId, surveyId
-    questionBlocks: QuestionBlock[]
-    cursor: int                   // 当前题目索引
-    collectedAnswers: Map<qid, AnswerDraft>
-    transcriptBuffer: Segment[]
-    probeHistory: Map<qid, ProbeRound[]>
-    flowConfig
-    terminationRequested: bool
-  }
-  ```
-- **节点的副作用规则**：
-  - 写音频 → 经 LiveKit Agents 提供的 `audio_source` 接口
-  - 写 DB → 仅在 `Transcribe`(增量) 与 `WrapUp`(最终化) 节点；中间节点禁止写库
-  - 调 LLM → `Decide` / `Probe` / `Clarify` 节点
+- **每个 Session 一个 `InterviewSupervisorAgent` 实例**：Agent Worker 在 `on_room_connected` 时读取 room metadata（由 `issueLivekitToken` 写入，含 `runtimeStudy` 与 `workflowConfig`），构建 supervisor 与 `AgentSession`。
+- **运行态契约（详见 `packages/contracts`）**：
+  - `InterviewWorkflowConfig`：将 draft 转译为 supervisor 可执行的工作流，包含 supervisor 指令与 `SectionTaskGroupConfig[]`（每个含 `QuestionTaskConfig[]`）。
+  - `InterviewRuntimeStudy`：当前 session 的题面运行态，含 `responseMode`、`options`、`stimulus` 等前端渲染所需字段。
+  - `InterviewAgentState`：supervisor 实时发布到 `merism.interviewState` 房间属性的可观察状态（`status / currentSectionId / currentQuestionId / currentQuestion / updatedAt`）。
+  - `SubmitInterviewAnswerRpcRequest/Response`：受访者侧通过 `merism.submit_answer` RPC 提交结构化答案的契约。
+- **副作用规则**：
+  - 写音频 / 控制 TTS / 监听 ASR → 经 LiveKit Agents 的 `AgentSession` 接口；question task 内不直接操作 RTC。
+  - 写 Appwrite → 仅在 question 完成（`SectionTaskGroupResult`）与 session wrap-up（最终 transcript / recording 关联 / 触发分析）边界发生；任务进行中不写库。
+  - 调 LLM (DeepSeek) → supervisor 的"评估推进"决策点 + question task 内追问决策；总轮次受 `ProbeConfig.maxRounds` 硬约束。
+- **Provider 抽象**：LLM 走 DeepSeek（`agent/providers/deepseek.py`），ASR/TTS 走 Qwen（`agent/providers/qwen.py`）；speech 后端通过 `QWEN_SPEECH_BACKEND` 在 `openai`（默认）与 `dashscope`（保留位）之间切换。视觉 provider（screen observation）由 `multimodal-interview-and-structured-rendering` 设计文档定义为 `build_vision_llm` 抽象，懒加载，opt-in。
 
-### 6.4 CopilotKit 工具契约 (Researcher 编辑器内)
+### 6.4 页面助手工具契约 (Researcher 编辑器内)
 
-页面 Agent 暴露的 actions（在 `survey-editor` 子 Spec 细化签名）:
+页面助手暴露的工具（在 `survey-editor` 子 Spec 细化签名；定义形式为 Vercel AI SDK 6 的 `tool({ inputSchema, execute })`）:
 
-| Action | 用途 |
+| Tool | 用途 |
 |---|---|
 | `addQuestionBlock(spec)` | 在指定位置插入题目 |
 | `updateQuestionBlock(id, patch)` | 修改题目内容/配置 |
 | `removeQuestionBlock(id)` | 删除题目 |
 | `reorderBlocks(orderList)` | 调整顺序 |
 | `setFlowConfig(patch)` | 修改开场白 / 结束语 / 全局追问策略 |
-| `suggestProbingPolicy(qid)` | 针对一题给出推荐追问策略（只读建议，不直接写） |
+| `suggestProbeConfig(qid)` | 针对一题给出推荐 `ProbeConfig`（level / instruction / maxRounds），只读建议，不直接写 |
 
-**安全边界**: 工具调用只能影响"当前研究员拥有的草稿 Survey"。前端在 handler 中校验 ownership 再 dispatch 到 Appwrite。
+**安全边界**: 工具调用只能影响"当前研究员拥有的草稿 Survey"。`execute` 内或其调用的 server action 必须校验 ownership 后再写 Appwrite；任何工具内部异常需被捕获并以 `{ error: true, message }` 形式返回，避免污染流。
+
+> 当前 `apps/web` 中已落地的 4 个研究员侧通用工具（`createStudyDraft / searchInterviewData / analyzeData / listStudies`）属于 Morris 的"研究助理"工具集，与上面这套"编辑器内工具"互补；后者由 `survey-editor` 子 Spec 在编辑器画布内落地。
 
 ### 6.5 分析模块输入/输出契约
 
@@ -523,18 +543,18 @@ grants:
 | ID | 决策 | 选择 | 理由 | 替代方案 / 风险 |
 |---|---|---|---|---|
 | D-01 | 后端基础设施 | **Appwrite (自托管)** | 用户既定约束；一次性满足 Auth/DB/Storage/Realtime/Function | 自托管运维成本；通过 Docker Compose 标准部署缓解 |
-| D-02 | 实时媒体 | **LiveKit (自托管)** | 开源 SFU + 与 LangGraph 集成成熟的 LiveKit Agents 框架；中文延迟可控 | LiveKit Cloud（更省心但被排除：托管要求） |
-| D-03 | AI 编排 | **LangGraph** | 状态机模型贴合"按问卷推进 + 自适应追问"；可视化与持久化 checkpoint 友好 | 手写 FSM；OpenAI Realtime API（端到端但状态可控性差） |
-| D-04 | 全站 LLM | **DeepSeek** (`deepseek-chat` / `deepseek-reasoner`) | 用户已锁定：所有 LLM 调用统一使用 DeepSeek，包括 CopilotKit、访谈判断、task result 归纳和离线分析 | 多 LLM 分流会增加调优复杂度，当前排除 |
+| D-02 | 实时媒体 | **LiveKit (自托管)** | 开源 SFU，自带 Supervisor / TaskGroup / AgentTask 工作流原语，与 ASR/TTS/LLM provider 集成成熟；中文延迟可控 | LiveKit Cloud（更省心但被排除：托管要求） |
+| D-03 | 实时访谈编排 | **LiveKit Agents 原生 `Supervisor / TaskGroup / AgentTask`** | 与媒体层同栈，turn-taking / barge-in / RPC / 房间属性等原生支持；section→TaskGroup、question→AgentTask 的层级直接对应数据模型。详见 `docs/adr/0001-livekit-supervisor-interview-workflow.md` | LangGraph（历史方案，已废弃）；OpenAI Realtime API（端到端但状态可控性差）；手写 FSM |
+| D-04 | 全站 LLM | **DeepSeek** (`deepseek-chat` / `deepseek-reasoner`) | 用户已锁定：所有 LLM 调用统一使用 DeepSeek，包括页面助手 Morris、访谈判断、task result 归纳和离线分析 | 多 LLM 分流会增加调优复杂度，当前排除 |
 | D-05 | ASR | **Qwen ASR** | 用户已锁定；实时语音识别由 Qwen 负责 | 其他 ASR provider 仅作为后续适配可能 |
 | D-06 | TTS | **Qwen TTS** | 用户已锁定；实时语音合成由 Qwen 负责 | 其他 TTS provider 仅作为后续适配可能 |
-| D-08 | 前端框架 | **Next.js 15 App Router** | 同时承载研究员后台与受访者落地页；API Route 承接 CopilotKit Runtime | Remix；Vite + React Router |
-| D-09 | UI 库 | **shadcn/ui + TailwindCSS** | 组件可拆可改；与 CopilotKit 默认样式兼容 | Ant Design；Mantine |
+| D-08 | 前端框架 | **Next.js 15 App Router** | 同时承载研究员后台与受访者落地页；API Route 承接页面助手 (Vercel AI SDK 6) 的流式端点 | Remix；Vite + React Router |
+| D-09 | UI 库 | **shadcn/ui + TailwindCSS** | 组件可拆可改；契合 Mauve Quiet 设计系统的可定制需求 | Ant Design；Mantine |
 | D-10 | 状态管理 | **Zustand**（编辑器局部） + **TanStack Query**（服务态） | 轻量、与 Appwrite SDK 易整合 | Redux Toolkit（重）；Jotai（同级备选） |
 | D-11 | 编辑器交互范式 | **三栏式 (借鉴 heyform)**: 左侧块库 / 中间画布 / 右侧属性 | 用户既定；符合表单工具行业心智 | 单栏 inline 编辑；Notion 式 slash 菜单 |
-| D-12 | 页面 Agent | **CopilotKit (sidebar + standalone)** | 用户既定；内置 useCopilotAction / chat UI；可双形态 | 自建 Vercel AI SDK 对话面板（可控但工作量大） |
+| D-12 | 页面助手 | **Vercel AI SDK 6 `ToolLoopAgent`** (sidebar dock + standalone `/assistant`) | 与本仓库已锁定的 AI SDK + DeepSeek 栈天然对齐；`tool({...})` / `prepareStep` / `stopWhen` / `createAgentUIStreamResponse` 提供 agent loop、降级、流式 UI 全套原语；UI 自建以契合 Mauve Quiet。详见 `docs/adr/0002-page-assistant-vercel-ai-sdk.md` | CopilotKit（历史方案，已废弃，不得在新代码中再引入） |
 | D-13 | 受访者身份 | **匿名一次性 link token** | 借鉴 openinterviewer；零摩擦提升完成率 | 短信/邮箱 OTP（增加门槛） |
-| D-14 | LangGraph Checkpointer | **Appwrite DB collection** 作为自定义 checkpointer | 与现有数据栈一致，便于断线恢复 | Postgres / Redis（需额外部署） |
+| D-14 | Session 状态持久化 | **Appwrite collection (按 question 完成边界写入 `SectionTaskGroupResult` / 最终 transcript)** | 与现有数据栈一致，命中"实时↔持久化边界"硬规则；断线恢复以最近一次完成的 question 为锚 | LangGraph Checkpointer（已废弃，因 LangGraph 不再作主控）；Postgres / Redis（需额外部署） |
 | D-15 | 录音导出 | **LiveKit Egress → Appwrite Storage** | 标准管线；可选关闭 | 浏览器端 MediaRecorder（不可靠） |
 
 > **注**: 本架构层锁定“DeepSeek = 唯一 LLM provider；Qwen = ASR/TTS provider”。后续仍应保留 provider adapter 边界，但默认实现不得再把 Qwen 用作 LLM。
@@ -560,7 +580,9 @@ grants:
 ### 8.3 实时语音 Agent 参考
 
 - **LiveKit Agents 官方示例 (Python)** — `voice-pipeline-agent` / `multimodal-agent` 模板，作为 Agent Worker 的脚手架。
-- **LangGraph 官方文档 — Multi-actor stateful agents** — 节点+条件边的实现范式与 checkpointer 用法。
+- **LiveKit Tasks and Task Groups** — https://docs.livekit.io/agents/logic/tasks/，本仓库 supervisor / TaskGroup / AgentTask 编排的权威参考。
+- **LiveKit Supervisor Pattern** — https://docs.livekit.io/agents/logic/supervisor-pattern/，整场访谈主控的标准范式。
+- **LiveKit Agents — survey example** — https://github.com/livekit/agents/tree/main/examples/survey，与本项目题目顺推 + 追问的范式最接近。
 
 ### 8.4 访谈分析模块参考
 
@@ -616,28 +638,28 @@ grants:
 - 范围: ai-interview-engine
 - **Validates: Requirements 2.1**
 
-### Property 7: 状态机不死锁 (P-FLOW-02)
+### Property 7: 工作流可终止 (P-FLOW-02)
 
-LangGraph 状态机不存在死锁：从任意可达状态都存在到达 `WrapUp` 或 `EmergencyExit` 的路径。
+实时访谈工作流不会卡住：从任意正在进行的 question `AgentTask` / section `TaskGroup` / supervisor 状态出发，都存在能让 supervisor 进入 wrap-up（最终化 transcript + 关闭 session）的可达路径；终止意愿、不可恢复错误、最后一题完成均能触发 wrap-up。
 - 范围: ai-interview-engine
-- 验证手段: 基于状态图静态可达性分析 + 模拟运行 PBT。
+- 验证手段: 工作流配置层（`agent/interview/workflow.py` 等纯模块）做静态可达性分析 + 模拟运行 PBT。
 - **Validates: Requirements 4.2, 4.4**
 
 ### Property 8: 追问轮数受限 (P-FLOW-03)
 
-单题追问轮数 ≤ `probingPolicy.maxRounds`（含全局与题目级覆盖，取较小值）。
+单题追问轮数 ≤ `ProbeConfig.maxRounds`（`standard` 默认 3、`deep` 默认 5；研究员可在题目级覆盖默认值）。supervisor / question task 必须在达到上限前完成该题。
 - 范围: ai-interview-engine
 - **Validates: Requirements 2.1**
 
-### Property 9: 跳题不形成环 (P-FLOW-04)
+### Property 9: 题目顺序单调推进 (P-FLOW-04)
 
-`skipLogic` 不会引起跳题环；cursor 只能向前推进或按 skip 规则跳过若干题，不会回退到已应答题。
+session 内 supervisor 推进题目时，全局 cursor 只能向前推进或按 `skipLogic` 跳过若干题，不会回退到已完成题；同一题不会被同一 session 完成两次（`SectionTaskGroupResult.questionResults` 中每个 questionId 至多出现一次）。
 - 范围: ai-interview-engine
 - **Validates: Requirements 2.1**
 
 ### Property 10: 终止意愿快速生效 (P-FLOW-05)
 
-受访者明确表达终止意愿后，状态机在 ≤ 1 轮决策内进入 `EmergencyExit → WrapUp`。
+受访者明确表达终止意愿后，supervisor 在 ≤ 1 轮决策内进入 wrap-up：停止后续 question / section、最终化 transcript、关闭 session。
 - 范围: ai-interview-engine
 - **Validates: Requirements 6.4, 6.5**
 
@@ -649,7 +671,7 @@ LangGraph 状态机不存在死锁：从任意可达状态都存在到达 `WrapU
 
 ### Property 12: Barge-in 响应 (P-RT-02)
 
-Barge-in 触发后，TTS 播放在 ≤ 300ms 内停止并进入 Listen 节点。
+Barge-in 触发后，`AgentSession` 在 ≤ 300ms 内停止 TTS 并恢复监听受访者输入。
 - 范围: ai-interview-engine
 - **Validates: Requirements 6.3**
 
@@ -684,9 +706,9 @@ LiveKit JWT 永不在浏览器源码或网络响应中泄露 API Secret；客户
 - 范围: interviewee-portal
 - **Validates: Requirements 3.3, 3.4, 3.5**
 
-### Property 18: CopilotKit 写操作越权拒绝 (P-SEC-04)
+### Property 18: 页面助手写操作越权拒绝 (P-SEC-04)
 
-CopilotKit Action handler 拒绝任何不属于当前 researcher 的 `surveyId` 写操作。
+页面助手（Vercel AI SDK 6 `ToolLoopAgent`）的工具 `execute`（或其调用的 server action / Function）拒绝任何不属于当前 researcher 的 `surveyId` 写操作。
 - 范围: survey-editor
 - **Validates: Requirements 4.5, 5.2**
 
@@ -717,9 +739,9 @@ CopilotKit Action handler 拒绝任何不属于当前 researcher 的 `surveyId` 
 | 序 | Spec 名 | 范围 | 依赖 |
 |---|---|---|---|
 | 1 | **foundation-setup** (本) | 架构总览、技术选型、数据模型、跨模块契约、CI/CD 与本地开发脚手架 | 无 |
-| 2 | **survey-editor** | 三栏式编辑器；题型库（open_ended / single_choice / multi_choice / rating / nps / info）；跳题逻辑配置；CopilotKit sidebar + standalone 集成；问卷预览；草稿/发布生命周期 | foundation-setup |
+| 2 | **survey-editor** | 三栏式编辑器；题型库（open_ended / single_choice / multi_choice / rating / nps / info）；跳题逻辑配置；页面助手 (Vercel AI SDK 6 ToolLoopAgent) 的 sidebar dock + standalone `/assistant` 集成；问卷预览；草稿/发布生命周期 | foundation-setup |
 | 3 | **interviewee-portal** | 匿名链接落地页（`/i/[linkToken]`）；同意书与设备测试；Session 创建；LiveKit 加入流程；断线重连 UI | foundation-setup |
-| 4 | **ai-interview-engine** | LiveKit Agent Worker（Python）；LangGraph 状态机实现；STT/TTS Provider 抽象与选型落地；追问/澄清/跳题策略；Checkpointer；Transcript 流式持久化；录音 Egress | foundation-setup, survey-editor (问卷 schema), interviewee-portal (Session 入口) |
+| 4 | **ai-interview-engine** | LiveKit Agent Worker（Python）；Supervisor / TaskGroup / AgentTask 工作流落地；STT/TTS Provider 抽象与选型落地；追问/澄清/跳题策略；按 question 完成边界的状态持久化；Transcript 流式持久化；录音 Egress | foundation-setup, survey-editor (问卷 schema), interviewee-portal (Session 入口) |
 | 5 | **analysis-report** | DeepSeek 主题编码 prompt 链；引文回溯；perQuestionSummary；PDF/MD 渲染；Researcher 报告查看页 | foundation-setup, ai-interview-engine (Transcript) |
 
 每个子 Spec 自行交付：requirements.md / design.md / tasks.md，并对本架构层定义的 Correctness Properties 子集编写 PBT。
@@ -736,7 +758,7 @@ CopilotKit Action handler 拒绝任何不属于当前 researcher 的 `surveyId` 
 |---|---|---|
 | **用户输入错误** | 链接已过期 / 同意书未勾选 / 受访者拒绝麦克风 | UI 友好提示 + 不创建 Session；Function 返回 4xx |
 | **外部服务瞬时失败** | LLM 限流 / STT 流式中断 / TTS 单次合成失败 | Provider 适配层自动重试（指数退避，最多 3 次）；超过则降级 |
-| **外部服务永久失败** | LLM 账户余额不足 / API key 失效 | LangGraph 节点抛出错误 → Agent 触发 `EmergencyExit` 并标记 Session `failed`，保留已有 Transcript |
+| **外部服务永久失败** | LLM 账户余额不足 / API key 失效 | provider 适配层抛出 `PermanentProviderError` → supervisor 中断当前 question task / section TaskGroup → 进入 wrap-up 路径并把 `InterviewSession.state` 标记为 `failed`，保留已有 transcript |
 | **状态机冲突** | 不可达跳转 / cursor 越界 | 视为 bug：Agent 写入 `failed`，并落 `errorContext` 字段供事后分析 |
 | **Appwrite 写入失败** | 网络抖动 / 权限拒绝 | DB 操作必须在 Function 中包装事务式逻辑；写失败回滚关联实体 |
 | **媒体层失败** | LiveKit Room 连接断开 | 客户端自动重连（≤30s 内）；超时则前端显示恢复界面，Agent 维持 Session 可恢复状态 |
@@ -744,7 +766,7 @@ CopilotKit Action handler 拒绝任何不属于当前 researcher 的 `surveyId` 
 ### 关键不变量
 
 - **失败的 Session 不产出 AnalysisReport**：`analyzeSession` Function 入口校验 `state == completed`。
-- **错误不影响其他 Session**：每个 Agent 实例独立进程/协程，单次 LangGraph 异常不污染共享状态。
+- **错误不影响其他 Session**：每个 supervisor 实例运行在独立 session 上下文中，per-session 状态不共享；单 session 内的工作流异常不污染其他 session。
 - **任何用户可见错误必有 trace id**：Function 与 Agent 日志统一打 `sessionId + traceId`，便于受访者反馈时定位。
 
 ### 降级策略
@@ -787,7 +809,7 @@ CopilotKit Action handler 拒绝任何不属于当前 researcher 的 `surveyId` 
 留给后续子 Spec 决议、本架构层不强行收口：
 
 1. **STT / TTS 最终选型** — 在 `ai-interview-engine` 中以 < 5 分钟原型对比火山 / 豆包 / MiniMax 在中文延迟、打断响应、情感拟真上的差异。
-2. **LangGraph Checkpointer 实现** — 自定义 Appwrite Collection 还是退回 SQLite/Redis？取决于断线恢复的频率与运维成本。
+2. **Session 状态持久化粒度与断线恢复** — 当前默认按 question 完成边界写入 `SectionTaskGroupResult`；受访者断线重连时是否需要更细粒度的快照、以及是否引入额外存储（SQLite / Redis），由 `ai-interview-engine` 子 Spec 评估。
 3. **录音是否默认开启** — 涉及隐私合规与 Storage 成本，建议默认关，受访者明确勾选才录。
 4. **Survey 级聚合分析** — 跨多次 Session 的主题归并算法（重复 theme 合并、引文加权），列入 `analysis-report` 的第二迭代。
 5. **i18n / 多语言访谈** — MVP 仅中文；英文支持作为后续迭代，接口预留 `survey.language` 字段。

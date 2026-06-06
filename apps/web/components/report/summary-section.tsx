@@ -1,4 +1,4 @@
-import type { SurveyReport } from "@/lib/mock-report"
+import type { SurveyReport } from "./shared"
 
 function BigKpi({ value, label }: { value: string; label: string }) {
   return (
@@ -12,18 +12,19 @@ function BigKpi({ value, label }: { value: string; label: string }) {
 }
 
 export function SummarySection({ report }: { report: SurveyReport }) {
-  const completionRate = Math.round((report.completedRespondents / report.totalRespondents) * 100)
+  const completionRate = report.totalRespondents > 0
+    ? Math.round((report.completedRespondents / report.totalRespondents) * 100)
+    : 0
 
   return (
     <section className="flex flex-col gap-4">
       <h2 className="font-display text-xl font-semibold tracking-tight text-ink-900">执行摘要</h2>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <BigKpi value={String(report.completedRespondents)} label="完成访谈" />
         <BigKpi value={report.avgDurationLabel} label="平均访谈时长" />
         <BigKpi value={`${completionRate}%`} label="完成率" />
-        <BigKpi value={`${report.avgProbeRounds}`} label="平均追问轮次" />
-        <BigKpi value={String(report.studyCount)} label="关联研究" />
+        <BigKpi value={String(report.studyCount ?? 1)} label="关联研究" />
       </div>
 
       <div className="rounded bg-mauve-200 px-5 py-4 shadow-[0_2px_4px_rgba(167,133,133,0.08)]">
