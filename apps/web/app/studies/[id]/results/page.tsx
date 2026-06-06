@@ -1,5 +1,12 @@
-import { TabPlaceholder } from "@/components/studies/tab-placeholder";
+import { ResultsTableView } from "@/components/studies/results-table";
+import { getMockResults } from "@/lib/mock/workspace";
 
-export default function ResultsTabPage() {
-  return <TabPlaceholder title="结果" hint="结果大表与转录下钻(波 4 实现)。" />;
+export default async function ResultsTabPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const table = getMockResults(id);
+  return <ResultsTableView studyId={id} table={table} />;
 }
