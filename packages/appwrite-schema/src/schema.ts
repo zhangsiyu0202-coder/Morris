@@ -96,6 +96,7 @@ export const COLLECTIONS: CollectionDef[] = [
     permissions: OWNER_SCOPED,
     documentSecurity: true,
     attributes: [
+      { key: "ownerUserId", type: "string", size: 64, required: true },
       { key: "projectId", type: "string", size: 64, required: true },
       { key: "title", type: "string", size: 512, required: true },
       {
@@ -109,7 +110,10 @@ export const COLLECTIONS: CollectionDef[] = [
       { key: "version", type: "integer", required: false, default: 1 },
       { key: "updatedAt", type: "datetime", required: true },
     ],
-    indexes: [{ key: "by_project", type: "key", attributes: ["projectId"] }],
+    indexes: [
+      { key: "by_project", type: "key", attributes: ["projectId"] },
+      { key: "by_owner", type: "key", attributes: ["ownerUserId"] },
+    ],
   },
   {
     id: "survey_sections",
