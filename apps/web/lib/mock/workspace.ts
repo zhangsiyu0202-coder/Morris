@@ -211,3 +211,56 @@ export function getMockRecruit(studyId: string): RecruitMock {
     completionUrl: "",
   };
 }
+
+/** 首页书签墙的一条书签(受访片段)。 */
+export type HomeBookmark = {
+  id: string;
+  respondent: string;
+  date: string;
+  quote: string;
+  source: string;
+};
+
+/** 首页报告预览卡。 */
+export type HomeReportPreview = {
+  id: string;
+  title: string;
+  subtitle: string;
+  lastRun: string;
+};
+
+export function getMockBookmarks(): HomeBookmark[] {
+  return [
+    {
+      id: "bm_1",
+      respondent: "受访者 · 10:36",
+      date: "2024-12-13",
+      quote:
+        "对我来说不只是配送的问题,我甚至没想到要去找我真正想要的东西,结果跳出来的选项就……",
+      source: "线上可用性测试 · 问题 2",
+    },
+    {
+      id: "bm_2",
+      respondent: "受访者 · 04:49",
+      date: "2024-12-13",
+      quote:
+        "它会给城市、给手指那些,主要还是工作时用我的个人账号,我太上瘾了,它就在那本书里……",
+      source: "线上可用性测试 · Airbnb 任务",
+    },
+    {
+      id: "bm_3",
+      respondent: "受访者 · 15:28",
+      date: "2024-12-13",
+      quote:
+        "我在计划八月份带家人去巴黎,有个还是小孩的宝宝,想找个好地方住,白天逛完能避避暑……",
+      source: "线上可用性测试 · Airbnb 任务",
+    },
+  ];
+}
+
+export function getMockHomeReports(): HomeReportPreview[] {
+  return [
+    { id: "rp_1", title: "零食概念报告 Final", subtitle: "已访问的调研", lastRun: "2 个月前" },
+    { id: "rp_2", title: "自定义报告", subtitle: "已访问的调研", lastRun: "2 个月前" },
+  ];
+}
