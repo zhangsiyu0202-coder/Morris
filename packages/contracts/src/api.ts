@@ -70,6 +70,7 @@ export const SurveyDraftQuestionSchema = z
     probeLevel: StudyProbeLevelSchema.default("standard"),
     probeInstruction: z.string().default(""),
     options: z.array(z.string().min(1)).default([]),
+    allowSkip: z.boolean().default(false),
     stimulus: StimulusSchema.optional(),
   })
   .superRefine((question, ctx) => {
