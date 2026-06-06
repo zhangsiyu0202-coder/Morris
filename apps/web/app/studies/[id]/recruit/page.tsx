@@ -1,5 +1,12 @@
-import { TabPlaceholder } from "@/components/studies/tab-placeholder";
+import { RecruitView } from "@/components/studies/recruit-view";
+import { getMockRecruit } from "@/lib/mock/workspace";
 
-export default function RecruitTabPage() {
-  return <TabPlaceholder title="招募" hint="分享链接与完成跳转(波 5 实现,纯 mock)。" />;
+export default async function RecruitTabPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const recruit = getMockRecruit(id);
+  return <RecruitView recruit={recruit} />;
 }

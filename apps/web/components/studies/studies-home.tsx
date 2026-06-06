@@ -8,15 +8,15 @@ import { STATUS_LABELS, type StudyStatus } from "@/lib/guide";
 import { createStudy, deleteStudy, type StudyCard } from "@/lib/actions/studies";
 
 const STATUS_STYLES: Record<StudyStatus, string> = {
-  live: "bg-positive/15 text-positive",
-  draft: "bg-mauve-100 text-mauve-600",
-  closed: "bg-ink-100 text-ink-500",
+  live: "bg-mauve-50 text-ink-900",
+  draft: "bg-mauve-50 text-ink-900",
+  closed: "bg-mauve-100 text-ink-900",
 };
 
 const STATUS_DOT: Record<StudyStatus, string> = {
   live: "bg-positive",
   draft: "bg-mauve-400",
-  closed: "bg-ink-300",
+  closed: "bg-ink-200",
 };
 
 export function StudiesHome({ studies }: { studies: StudyCard[] }) {
@@ -41,7 +41,7 @@ export function StudiesHome({ studies }: { studies: StudyCard[] }) {
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className="inline-flex h-10 items-center gap-2 rounded bg-ink-900 px-4 font-ui text-body-sm font-medium text-ink-0 transition-colors hover:bg-ink-800"
+            className="inline-flex h-10 items-center gap-2 rounded bg-mauve-200 px-4 font-ui text-body-sm font-medium text-ink-900 transition-colors hover:bg-mauve-100"
           >
             <Plus className="size-4" strokeWidth={2.5} />
             新建调研
@@ -105,7 +105,7 @@ function StudyCardItem({
           onClick={handleDelete}
           disabled={pending}
           aria-label="删除调研"
-          className="grid size-7 place-items-center rounded text-ink-300 opacity-0 transition-all hover:bg-ink-100 hover:text-ink-600 focus:opacity-100 group-hover:opacity-100"
+          className="grid size-7 place-items-center rounded text-ink-400 opacity-0 transition-all hover:bg-ink-100 hover:text-ink-600 focus:opacity-100 group-hover:opacity-100"
         >
           {pending ? (
             <Loader2 className="size-4 animate-spin" />
@@ -119,12 +119,12 @@ function StudyCardItem({
         {study.title}
       </h2>
       {study.researchGoal && (
-        <p className="mt-1.5 line-clamp-2 font-ui text-body-sm leading-6 text-ink-500">
+        <p className="mt-1.5 line-clamp-2 font-ui text-body-sm leading-6 text-ink-400">
           {study.researchGoal}
         </p>
       )}
 
-      <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-4 font-ui text-caption text-ink-500">
+      <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-4 font-ui text-caption text-ink-400">
         <span className="inline-flex items-center gap-1.5">
           <Layers className="size-3.5" strokeWidth={2} />
           {study.sectionCount} 节
@@ -146,16 +146,16 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="mt-8 flex flex-col items-center justify-center rounded border border-dashed border-ink-200 bg-ink-0 px-6 py-16 text-center">
       <div className="grid size-12 place-items-center rounded-full bg-mauve-100">
-        <FileText className="size-6 text-mauve-600" strokeWidth={2} />
+        <FileText className="size-6 text-ink-900" strokeWidth={2} />
       </div>
       <h2 className="mt-4 font-ui text-body font-semibold text-ink-900">还没有调研</h2>
-      <p className="mt-1.5 max-w-sm font-ui text-body-sm leading-6 text-ink-500">
+      <p className="mt-1.5 max-w-sm font-ui text-body-sm leading-6 text-ink-400">
         新建一个调研,编辑它的访谈提纲,就能开始收集访谈了。
       </p>
       <button
         type="button"
         onClick={onCreate}
-        className="mt-5 inline-flex h-10 items-center gap-2 rounded bg-ink-900 px-4 font-ui text-body-sm font-medium text-ink-0 transition-colors hover:bg-ink-800"
+        className="mt-5 inline-flex h-10 items-center gap-2 rounded bg-mauve-200 px-4 font-ui text-body-sm font-medium text-ink-900 transition-colors hover:bg-mauve-100"
       >
         <Plus className="size-4" strokeWidth={2.5} />
         新建调研
@@ -193,12 +193,12 @@ function CreateDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between">
-          <h2 className="font-display text-display-sm text-ink-900">新建调研</h2>
+          <h2 className="font-display text-display-md text-ink-900">新建调研</h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="关闭"
-            className="grid size-8 place-items-center rounded text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700"
+            className="grid size-8 place-items-center rounded text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-600"
           >
             <X className="size-4" strokeWidth={2} />
           </button>
@@ -214,7 +214,7 @@ function CreateDialog({
             if (e.key === "Enter") submit();
           }}
           placeholder="例如:差旅住宿预订习惯调研"
-          className="mt-2 w-full rounded border border-ink-200 bg-ink-0 px-3 py-2.5 font-ui text-body-sm text-ink-900 outline-none transition-colors placeholder:text-ink-300 focus:border-ink-400"
+          className="mt-2 w-full rounded border border-ink-200 bg-ink-0 px-3 py-2.5 font-ui text-body-sm text-ink-900 outline-none transition-colors placeholder:text-ink-400 focus:border-ink-400"
         />
         <div className="mt-6 flex justify-end gap-2">
           <button
@@ -228,7 +228,7 @@ function CreateDialog({
             type="button"
             onClick={submit}
             disabled={pending}
-            className="inline-flex h-10 items-center gap-2 rounded bg-ink-900 px-4 font-ui text-body-sm font-medium text-ink-0 transition-colors hover:bg-ink-800 disabled:opacity-60"
+            className="inline-flex h-10 items-center gap-2 rounded bg-mauve-200 px-4 font-ui text-body-sm font-medium text-ink-900 transition-colors hover:bg-mauve-100 disabled:opacity-60"
           >
             {pending && <Loader2 className="size-4 animate-spin" />}
             创建并编辑提纲

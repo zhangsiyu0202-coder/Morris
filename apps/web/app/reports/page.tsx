@@ -55,18 +55,18 @@ export default async function ReportsListPage() {
                 className="group flex flex-col gap-3 rounded border border-ink-100 bg-ink-0 p-5 shadow-sm transition-shadow hover:shadow-md"
               >
                 <div className="flex items-center justify-between">
-                  <span className="inline-flex size-9 items-center justify-center rounded bg-mauve-100 text-mauve-700">
+                  <span className="inline-flex size-9 items-center justify-center rounded bg-mauve-100 text-ink-900">
                     <FileBarChart className="size-4" strokeWidth={2} />
                   </span>
                   <ArrowRight
-                    className="size-4 text-ink-300 transition-colors group-hover:text-ink-700"
+                    className="size-4 text-ink-400 transition-colors group-hover:text-ink-900"
                     aria-hidden
                   />
                 </div>
                 <h2 className="font-ui text-body font-semibold leading-6 text-ink-900">
                   {c.title}
                 </h2>
-                <p className="font-ui text-body-sm text-ink-500">
+                <p className="font-ui text-body-sm text-ink-400">
                   {c.completedRespondents} 份完成访谈
                 </p>
               </Link>
@@ -83,7 +83,7 @@ function SignedOutEmpty() {
     <main className="min-h-full bg-mauve-50 px-4 py-12 sm:px-8">
       <div className="mx-auto max-w-md rounded border border-dashed border-ink-200 bg-ink-0 p-10 text-center">
         <h2 className="font-ui text-body font-semibold text-ink-900">请先登录</h2>
-        <p className="mt-2 font-ui text-body-sm leading-6 text-ink-500">
+        <p className="mt-2 font-ui text-body-sm leading-6 text-ink-400">
           只有研究员账号能查看分析报告。
         </p>
       </div>
@@ -95,10 +95,10 @@ function EmptyState() {
   return (
     <div className="mt-8 flex flex-col items-center justify-center rounded border border-dashed border-ink-200 bg-ink-0 px-6 py-16 text-center">
       <div className="grid size-12 place-items-center rounded-full bg-mauve-100">
-        <FileBarChart className="size-6 text-mauve-600" strokeWidth={2} />
+        <FileBarChart className="size-6 text-ink-900" strokeWidth={2} />
       </div>
       <h2 className="mt-4 font-ui text-body font-semibold text-ink-900">尚无可生成报告的调研</h2>
-      <p className="mt-1.5 max-w-sm font-ui text-body-sm leading-6 text-ink-500">
+      <p className="mt-1.5 max-w-sm font-ui text-body-sm leading-6 text-ink-400">
         创建一个调研、邀请受访者完成至少一次访谈,系统会自动生成 survey 级聚合报告。
       </p>
     </div>
