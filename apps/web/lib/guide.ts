@@ -52,6 +52,9 @@ export const guideQuestionSchema = z.object({
   probeLevel: z.enum(["standard", "deep"]),
   probeInstruction: z.string().default(""),
   options: z.array(z.string()).default([]),
+  // 是否允许主持人在访谈中跳过该问题(对应 Make 的 "Allow skip")。
+  // 仅编辑态使用;若后续 agent 主持需要消费,再同步到 @merism/contracts。
+  allowSkip: z.boolean().default(false),
 });
 
 export const guideSectionSchema = z.object({
@@ -91,6 +94,7 @@ export function emptyQuestion(): GuideQuestion {
     probeLevel: "standard",
     probeInstruction: "",
     options: [],
+    allowSkip: false,
   };
 }
 

@@ -51,6 +51,7 @@ function toGuideQuestion(q: z.infer<typeof aiQuestionSchema>): GuideQuestion {
     probeLevel: q.probeLevel,
     probeInstruction: q.probeInstruction ?? "",
     options: Array.isArray(q.options) ? q.options : [],
+    allowSkip: false,
   };
 }
 

@@ -1,9 +1,7 @@
 "use client";
 
 import { useState, useTransition, useCallback, useMemo } from "react";
-import Link from "next/link";
 import {
-  ArrowLeft,
   Plus,
   Trash2,
   Sparkles,
@@ -21,7 +19,6 @@ import {
   QUESTION_TYPES,
   QUESTION_TYPE_LABELS,
   PROBE_LEVEL_LABELS,
-  STATUS_LABELS,
   TYPES_NEEDING_OPTIONS,
   emptySection,
   emptyQuestion,
@@ -31,12 +28,10 @@ import {
   type GuideQuestion,
   type QuestionType,
   type ProbeLevel,
-  type StudyStatus,
 } from "@/lib/guide";
 import {
   updateStudyMeta,
   saveGuide,
-  updateStudyStatus,
   type StudyDetail,
 } from "@/lib/actions/studies";
 import { generateGuide, expandSection } from "@/lib/actions/guide-ai";
@@ -64,7 +59,6 @@ export function GuideEditor({ study }: { study: StudyDetail }) {
   const [researchGoal, setResearchGoal] = useState(study.researchGoal);
   const [targetAudience, setTargetAudience] = useState(study.targetAudience);
   const [introScript, setIntroScript] = useState(study.introScript);
-  const [status, setStatus] = useState<StudyStatus>(study.status);
   const [guide, setGuide] = useState<Guide>(study.guide);
 
   const [selection, setSelection] = useState<Selection>({ kind: "intro" });
@@ -87,13 +81,6 @@ export function GuideEditor({ study }: { study: StudyDetail }) {
       setTimeout(() => setSaveState("idle"), 1800);
     });
   }, [study.id, title, researchGoal, targetAudience, introScript, guide]);
-
-  const handleStatusChange = (next: StudyStatus) => {
-    setStatus(next);
-    startTransition(async () => {
-      await updateStudyStatus(study.id, next);
-    });
-  };
 
   // ---- guide 变更帮助函数 ----
   const setGuideDirty = (updater: (g: Guide) => Guide) => {
@@ -224,64 +211,46 @@ export function GuideEditor({ study }: { study: StudyDetail }) {
   }, [selection, selectedSection]);
 
   return (
-    <main className="flex h-full flex-col bg-mauve-50">
-      {/* ===== 顶栏 ===== */}
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-ink-100 bg-ink-0 px-4">
-        <Link
-          href="/home"
-          className="grid size-9 shrink-0 place-items-center rounded text-ink-500 transition-colors hover:bg-ink-100 hover:text-ink-800"
-          aria-label="返回调研列表"
-        >
-          <ArrowLeft className="size-4" strokeWidth={2} />
-        </Link>
-        <div className="min-w-0 flex-1">
-          <input
-            value={title}
-            onChange={(e) => {
-              setTitle(e.target.value);
-              markDirty();
-            }}
-            placeholder="未命名调研"
-            aria-label="调研标题"
-            className="w-full max-w-md truncate bg-transparent font-ui text-body-sm font-semibold text-ink-900 outline-none placeholder:text-ink-300"
-          />
-          <p className="font-ui text-caption text-ink-400">
-            {guide.sections.length} 个分节 · 共 {total} 题
-            {dirty && <span className="ml-2 text-mauve-400">· 未保存</span>}
-          </p>
+    <div className="flex h-full flex-col bg-mauve-50">
+      {/* ===== 操作工具条 ===== */}
+      <div className="flex h-12 shrink-0 items-center justify-between border-b border-ink-200 bg-ink-0 px-4">
+        <p className="font-ui text-caption text-ink-400">
+          {guide.sections.length} 个分节 · 共 {total} 题
+          {dirty && <span className="ml-2 text-mauve-400">· 未保存</span>}
+        </p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleGenerate}
+            disabled={generating}
+            className="inline-flex h-9 items-center gap-2 rounded border border-ink-900 bg-ink-0 px-3.5 font-ui text-body-sm font-medium text-ink-900 transition-colors hover:bg-mauve-50 disabled:opacity-60"
+          >
+            {generating ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Sparkles className="size-4" strokeWidth={2} />
+            )}
+            {guide.sections.length ? "AI 重新生成" : "AI 生成提纲"}
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saveState === "saving"}
+            className="inline-flex h-9 items-center gap-2 rounded bg-mauve-200 px-4 font-ui text-body-sm font-medium text-ink-900 transition-colors hover:bg-mauve-100 disabled:opacity-60"
+          >
+            {saveState === "saving" ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : saveState === "saved" ? (
+              <Check className="size-4" strokeWidth={2.5} />
+            ) : null}
+            {saveState === "saved" ? "已保存" : "保存"}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={handleGenerate}
-          disabled={generating}
-          className="inline-flex h-9 items-center gap-2 rounded border border-mauve-300 bg-mauve-50 px-3.5 font-ui text-body-sm font-medium text-mauve-700 transition-colors hover:bg-mauve-100 disabled:opacity-60"
-        >
-          {generating ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Sparkles className="size-4" strokeWidth={2} />
-          )}
-          {guide.sections.length ? "AI 重新生成" : "AI 生成提纲"}
-        </button>
-        <StatusSelect value={status} onChange={handleStatusChange} />
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saveState === "saving"}
-          className="inline-flex h-9 items-center gap-2 rounded bg-ink-900 px-4 font-ui text-body-sm font-medium text-ink-0 transition-colors hover:bg-ink-800 disabled:opacity-60"
-        >
-          {saveState === "saving" ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : saveState === "saved" ? (
-            <Check className="size-4" strokeWidth={2.5} />
-          ) : null}
-          {saveState === "saved" ? "已保存" : "保存"}
-        </button>
-      </header>
+      </div>
 
       {aiError && (
-        <div className="shrink-0 border-b border-negative/30 bg-negative/10 px-4 py-2">
-          <p className="font-ui text-body-sm text-negative">{aiError}</p>
+        <div className="shrink-0 border-b border-ink-200 bg-mauve-100 px-4 py-2">
+          <p className="font-ui text-body-sm italic text-ink-900">{aiError}</p>
         </div>
       )}
 
@@ -336,7 +305,7 @@ export function GuideEditor({ study }: { study: StudyDetail }) {
                   <button
                     type="button"
                     onClick={() => addQuestion(section.id)}
-                    className="mt-0.5 flex h-8 items-center gap-1.5 rounded px-2 font-ui text-caption font-medium text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700"
+                    className="mt-0.5 flex h-8 items-center gap-1.5 rounded px-2 font-ui text-caption font-medium text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-600"
                   >
                     <Plus className="size-3.5" strokeWidth={2} />
                     添加问题
@@ -348,7 +317,7 @@ export function GuideEditor({ study }: { study: StudyDetail }) {
             <button
               type="button"
               onClick={addSection}
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded border border-dashed border-ink-200 py-2.5 font-ui text-caption font-medium text-ink-500 transition-colors hover:border-ink-300 hover:text-ink-700"
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded border border-dashed border-ink-200 py-2.5 font-ui text-caption font-medium text-ink-400 transition-colors hover:border-ink-200 hover:text-ink-600"
             >
               <Plus className="size-3.5" strokeWidth={2} />
               添加分节
@@ -423,31 +392,7 @@ export function GuideEditor({ study }: { study: StudyDetail }) {
           </div>
         </aside>
       </div>
-    </main>
-  );
-}
-
-/* ============ 顶栏:状态切换 ============ */
-function StatusSelect({
-  value,
-  onChange,
-}: {
-  value: StudyStatus;
-  onChange: (s: StudyStatus) => void;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value as StudyStatus)}
-      aria-label="调研状态"
-      className="h-9 rounded border border-ink-200 bg-ink-0 px-2.5 font-ui text-body-sm text-ink-700 outline-none transition-colors focus:border-ink-400"
-    >
-      {(["draft", "live", "closed"] as StudyStatus[]).map((s) => (
-        <option key={s} value={s}>
-          {STATUS_LABELS[s]}
-        </option>
-      ))}
-    </select>
+    </div>
   );
 }
 
@@ -474,11 +419,11 @@ function BlockRow({
         active ? "bg-mauve-100" : "hover:bg-ink-100"
       }`}
     >
-      <span className={`shrink-0 ${active ? "text-mauve-700" : "text-ink-400"}`}>{icon}</span>
+      <span className={`shrink-0 ${active ? "text-ink-900" : "text-ink-400"}`}>{icon}</span>
       <span className="min-w-0 flex-1">
         <span
           className={`block truncate font-ui text-body-sm ${
-            active ? "font-medium text-ink-900" : "text-ink-700"
+            active ? "font-medium text-ink-900" : "text-ink-600"
           }`}
         >
           {label}
@@ -515,7 +460,7 @@ function SectionRow({
       }`}
     >
       <button type="button" onClick={onClick} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-        <span className="grid size-5 shrink-0 place-items-center rounded-full bg-mauve-200 font-ui text-[10px] font-semibold text-mauve-700">
+        <span className="grid size-5 shrink-0 place-items-center rounded-full bg-mauve-200 font-ui text-[10px] font-semibold text-ink-900">
           {index + 1}
         </span>
         <span
@@ -559,7 +504,7 @@ function QuestionRowItem({
       <button type="button" onClick={onClick} className="flex min-w-0 flex-1 items-center gap-2 text-left">
         <span
           className={`grid h-5 min-w-[28px] shrink-0 place-items-center rounded px-1 font-ui text-[10px] font-semibold ${
-            active ? "bg-ink-900 text-ink-0" : "bg-ink-100 text-ink-500"
+            active ? "bg-ink-900 text-ink-0" : "bg-ink-100 text-ink-400"
           }`}
         >
           {TYPE_BADGE[question.questionType]}
@@ -595,7 +540,7 @@ function ReorderControls({
         onClick={onUp}
         disabled={!canUp}
         aria-label="上移"
-        className="grid size-5 place-items-center rounded text-ink-300 transition-colors hover:bg-ink-200 hover:text-ink-700 disabled:opacity-30"
+        className="grid size-5 place-items-center rounded text-ink-400 transition-colors hover:bg-ink-200 hover:text-ink-600 disabled:opacity-30"
       >
         <ChevronUp className="size-3.5" strokeWidth={2} />
       </button>
@@ -604,7 +549,7 @@ function ReorderControls({
         onClick={onDown}
         disabled={!canDown}
         aria-label="下移"
-        className="grid size-5 place-items-center rounded text-ink-300 transition-colors hover:bg-ink-200 hover:text-ink-700 disabled:opacity-30"
+        className="grid size-5 place-items-center rounded text-ink-400 transition-colors hover:bg-ink-200 hover:text-ink-600 disabled:opacity-30"
       >
         <ChevronDown className="size-3.5" strokeWidth={2} />
       </button>
@@ -644,14 +589,14 @@ function Canvas({
         <h2 className="mt-4 font-display text-display-md text-ink-900 text-balance">
           {title || "未命名调研"}
         </h2>
-        <p className="mx-auto mt-2 max-w-md font-ui text-body-sm leading-6 text-ink-500 text-pretty">
+        <p className="mx-auto mt-2 max-w-md font-ui text-body-sm leading-6 text-ink-400 text-pretty">
           {introScript || "还没有访谈提纲。先在右侧填写研究设定,或让 AI 直接生成一份完整提纲。"}
         </p>
         <button
           type="button"
           onClick={onGenerate}
           disabled={generating}
-          className="mx-auto mt-6 inline-flex h-10 items-center gap-2 rounded bg-ink-900 px-5 font-ui text-body-sm font-medium text-ink-0 transition-colors hover:bg-ink-800 disabled:opacity-60"
+          className="mx-auto mt-6 inline-flex h-10 items-center gap-2 rounded bg-mauve-200 px-5 font-ui text-body-sm font-medium text-ink-900 transition-colors hover:bg-mauve-100 disabled:opacity-60"
         >
           {generating ? (
             <Loader2 className="size-4 animate-spin" />
@@ -668,32 +613,32 @@ function Canvas({
   if (selection.kind === "intro") {
     return (
       <div className="w-full rounded-md border border-ink-100 bg-ink-0 p-10 shadow-sm">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-mauve-100 px-2.5 py-1 font-ui text-caption font-medium text-mauve-700">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-mauve-100 px-2.5 py-1 font-ui text-caption font-medium text-ink-900">
           <DoorOpen className="size-3.5" strokeWidth={2} />
           开场
         </span>
         <h2 className="mt-4 font-display text-display-lg text-ink-900 text-balance">
           {title || "未命名调研"}
         </h2>
-        <p className="mt-3 font-reading text-body leading-7 text-ink-700 text-pretty">
+        <p className="mt-3 font-reading text-body leading-7 text-ink-600 text-pretty">
           {introScript || "（开场白为空,在右侧填写主持人对受访者说的第一句话。）"}
         </p>
         {(researchGoal || targetAudience) && (
           <div className="mt-6 flex flex-col gap-2 border-t border-ink-100 pt-5">
             {researchGoal && (
-              <p className="font-ui text-caption text-ink-500">
-                <span className="font-medium text-ink-700">研究目标:</span> {researchGoal}
+              <p className="font-ui text-caption text-ink-400">
+                <span className="font-medium text-ink-600">研究目标:</span> {researchGoal}
               </p>
             )}
             {targetAudience && (
-              <p className="font-ui text-caption text-ink-500">
-                <span className="font-medium text-ink-700">目标受众:</span> {targetAudience}
+              <p className="font-ui text-caption text-ink-400">
+                <span className="font-medium text-ink-600">目标受众:</span> {targetAudience}
               </p>
             )}
           </div>
         )}
         <div className="mt-8">
-          <span className="inline-flex h-10 items-center rounded bg-ink-900 px-5 font-ui text-body-sm font-medium text-ink-0">
+          <span className="inline-flex h-10 items-center rounded bg-mauve-200 px-5 font-ui text-body-sm font-medium text-ink-900">
             开始访谈
           </span>
         </div>
@@ -712,7 +657,7 @@ function Canvas({
           {section.title || "未命名分节"}
         </h2>
         {section.objective && (
-          <p className="mx-auto mt-3 max-w-md font-ui text-body-sm leading-6 text-ink-500 text-pretty">
+          <p className="mx-auto mt-3 max-w-md font-ui text-body-sm leading-6 text-ink-400 text-pretty">
             {section.objective}
           </p>
         )}
@@ -743,7 +688,7 @@ function Canvas({
           <div className="mt-7 flex items-start gap-2 rounded border border-dashed border-mauve-200 bg-mauve-50 px-3 py-2">
             <CornerDownRight className="mt-0.5 size-3.5 shrink-0 text-mauve-400" strokeWidth={2} />
             <p className="font-ui text-caption leading-5 text-ink-600">
-              <span className="font-medium text-mauve-700">
+              <span className="font-medium text-ink-900">
                 {PROBE_LEVEL_LABELS[question.probeLevel]}
               </span>
               :{question.probeInstruction}
@@ -768,9 +713,9 @@ function AnswerPreview({ question }: { question: GuideQuestion }) {
         {opts.map((opt, i) => (
           <div
             key={i}
-            className="flex items-center gap-3 rounded border border-ink-200 px-3 py-2.5 font-ui text-body-sm text-ink-700"
+            className="flex items-center gap-3 rounded border border-ink-200 px-3 py-2.5 font-ui text-body-sm text-ink-600"
           >
-            <span className="grid size-6 shrink-0 place-items-center rounded border border-ink-200 font-ui text-caption font-semibold text-ink-500">
+            <span className="grid size-6 shrink-0 place-items-center rounded border border-ink-200 font-ui text-caption font-semibold text-ink-400">
               {letters[i] ?? i + 1}
             </span>
             <span className="min-w-0 flex-1 truncate">{opt || `选项 ${i + 1}`}</span>
@@ -790,7 +735,7 @@ function AnswerPreview({ question }: { question: GuideQuestion }) {
     return (
       <div className="flex items-center gap-2">
         {[1, 2, 3, 4, 5].map((n) => (
-          <Star key={n} className="size-7 text-mauve-300" strokeWidth={1.5} />
+          <Star key={n} className="size-7 text-mauve-400" strokeWidth={1.5} />
         ))}
       </div>
     );
@@ -814,8 +759,8 @@ function AnswerPreview({ question }: { question: GuideQuestion }) {
   // open_ended
   return (
     <div className="flex items-center gap-2 rounded border border-ink-200 bg-mauve-50/50 px-3 py-3">
-      <AlignLeft className="size-4 shrink-0 text-ink-300" strokeWidth={2} />
-      <span className="font-ui text-body-sm text-ink-300">受访者用语音或文字自由回答…</span>
+      <AlignLeft className="size-4 shrink-0 text-ink-400" strokeWidth={2} />
+      <span className="font-ui text-body-sm text-ink-400">受访者用语音或文字自由回答…</span>
     </div>
   );
 }
@@ -899,7 +844,7 @@ function SectionOptions({
         type="button"
         onClick={handleExpand}
         disabled={expanding}
-        className="inline-flex h-9 items-center justify-center gap-2 rounded border border-mauve-300 bg-mauve-50 px-3.5 font-ui text-body-sm font-medium text-mauve-700 transition-colors hover:bg-mauve-100 disabled:opacity-60"
+        className="inline-flex h-9 items-center justify-center gap-2 rounded border border-ink-900 bg-ink-0 px-3.5 font-ui text-body-sm font-medium text-ink-900 transition-colors hover:bg-mauve-50 disabled:opacity-60"
       >
         {expanding ? (
           <Loader2 className="size-4 animate-spin" />
@@ -967,7 +912,7 @@ function QuestionOptions({
                 aria-pressed={active}
                 className={`h-9 rounded border px-2 font-ui text-caption font-medium transition-colors ${
                   active
-                    ? "border-ink-900 bg-ink-900 text-ink-0"
+                    ? "border-ink-900 bg-mauve-200 text-ink-900"
                     : "border-ink-200 bg-ink-0 text-ink-600 hover:bg-ink-100"
                 }`}
               >
@@ -984,18 +929,18 @@ function QuestionOptions({
           <div className="flex flex-col gap-1.5">
             {question.options.map((opt, i) => (
               <div key={i} className="flex items-center gap-2">
-                <span className="font-ui text-caption text-ink-300">{i + 1}.</span>
+                <span className="font-ui text-caption text-ink-400">{i + 1}.</span>
                 <input
                   value={opt}
                   onChange={(e) => updateOption(i, e.target.value)}
                   placeholder={`选项 ${i + 1}`}
-                  className="h-8 flex-1 rounded border border-ink-200 bg-ink-0 px-2.5 font-ui text-caption text-ink-800 outline-none transition-colors placeholder:text-ink-300 focus:border-ink-400"
+                  className="h-8 flex-1 rounded border border-ink-200 bg-ink-0 px-2.5 font-ui text-caption text-ink-800 outline-none transition-colors placeholder:text-ink-400 focus:border-ink-400"
                 />
                 <button
                   type="button"
                   onClick={() => removeOption(i)}
                   aria-label="删除选项"
-                  className="grid size-7 place-items-center rounded text-ink-300 transition-colors hover:bg-ink-100 hover:text-ink-600"
+                  className="grid size-7 place-items-center rounded text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-600"
                 >
                   <X className="size-3.5" strokeWidth={2} />
                 </button>
@@ -1004,7 +949,7 @@ function QuestionOptions({
             <button
               type="button"
               onClick={addOption}
-              className="mt-0.5 inline-flex w-fit items-center gap-1 font-ui text-caption font-medium text-mauve-600 transition-colors hover:text-mauve-700"
+              className="mt-0.5 inline-flex w-fit items-center gap-1 font-ui text-caption font-medium text-ink-900 transition-colors hover:text-ink-900"
             >
               <Plus className="size-3.5" strokeWidth={2} />
               添加选项
@@ -1026,7 +971,7 @@ function QuestionOptions({
                 aria-pressed={active}
                 className={`h-9 rounded border px-2 font-ui text-caption font-medium transition-colors ${
                   active
-                    ? "border-ink-900 bg-ink-900 text-ink-0"
+                    ? "border-ink-900 bg-mauve-200 text-ink-900"
                     : "border-ink-200 bg-ink-0 text-ink-600 hover:bg-ink-100"
                 }`}
               >
@@ -1045,6 +990,12 @@ function QuestionOptions({
         />
       </Field>
 
+      <ToggleRow
+        label="允许主持人跳过此问题"
+        checked={question.allowSkip}
+        onChange={(v) => onUpdate({ allowSkip: v })}
+      />
+
       <div className="border-t border-ink-100 pt-4">
         <DangerButton onClick={onRemove} label="删除问题" />
       </div>
@@ -1053,6 +1004,39 @@ function QuestionOptions({
 }
 
 /* ============ 复用小组件 ============ */
+function ToggleRow({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="flex w-full items-center justify-between gap-3 text-left"
+    >
+      <span className="font-ui text-caption font-medium text-ink-600">{label}</span>
+      <span
+        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+          checked ? "bg-mauve-200" : "bg-ink-200"
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 size-4 rounded-full bg-ink-0 transition-transform ${
+            checked ? "translate-x-[18px] border border-ink-900" : "translate-x-0.5"
+          }`}
+        />
+      </span>
+    </button>
+  );
+}
+
 function PanelTitle({ children }: { children: React.ReactNode }) {
   return (
     <p className="font-ui text-caption font-semibold uppercase tracking-wide text-ink-400">
@@ -1070,7 +1054,7 @@ function Field({
 }) {
   return (
     <div>
-      <label className="mb-1.5 block font-ui text-caption font-medium text-ink-700">{label}</label>
+      <label className="mb-1.5 block font-ui text-caption font-medium text-ink-600">{label}</label>
       {children}
     </div>
   );
@@ -1090,7 +1074,7 @@ function TextInput({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      className="w-full rounded border border-ink-200 bg-ink-0 px-3 py-2 font-ui text-body-sm text-ink-900 outline-none transition-colors placeholder:text-ink-300 focus:border-ink-400"
+      className="w-full rounded border border-ink-200 bg-ink-0 px-3 py-2 font-ui text-body-sm text-ink-900 outline-none transition-colors placeholder:text-ink-400 focus:border-ink-400"
     />
   );
 }
@@ -1112,7 +1096,7 @@ function TextArea({
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       rows={rows}
-      className="w-full resize-none rounded border border-ink-200 bg-ink-0 px-3 py-2 font-ui text-body-sm leading-6 text-ink-900 outline-none transition-colors placeholder:text-ink-300 focus:border-ink-400"
+      className="w-full resize-none rounded border border-ink-200 bg-ink-0 px-3 py-2 font-ui text-body-sm leading-6 text-ink-900 outline-none transition-colors placeholder:text-ink-400 focus:border-ink-400"
     />
   );
 }
@@ -1122,7 +1106,7 @@ function DangerButton({ onClick, label }: { onClick: () => void; label: string }
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex h-9 w-full items-center justify-center gap-2 rounded border border-negative/30 px-3 font-ui text-body-sm font-medium text-negative transition-colors hover:bg-negative/10"
+      className="inline-flex h-9 w-full items-center justify-center gap-2 rounded border border-ink-900 px-3 font-ui text-body-sm font-medium text-ink-900 transition-colors hover:bg-mauve-50"
     >
       <Trash2 className="size-4" strokeWidth={2} />
       {label}
