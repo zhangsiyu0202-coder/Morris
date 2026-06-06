@@ -49,6 +49,12 @@ export interface BucketDef {
 
 const JSON_SIZE = 1_000_000;
 
+// Long free-text fields. Kept above Appwrite's ~16381-char VARCHAR threshold so
+// the underlying column is stored off-row as (MEDIUM)TEXT. Inline VARCHARs at
+// utf8mb4 (4 bytes/char) otherwise overflow MariaDB's 65535-byte row limit when
+// several large strings share a collection (see survey_sections instructions).
+const TEXT_SIZE = 100_000;
+
 // Permission model (§6.1 / Req 2.4):
 //  - owner-scoped collections: clients may create; per-document read/write is
 //    pinned to the owner at creation time (documentSecurity).
@@ -115,8 +121,8 @@ export const COLLECTIONS: CollectionDef[] = [
       { key: "title", type: "string", size: 512, required: true },
       { key: "description", type: "string", size: 2000, required: false, default: "" },
       { key: "order", type: "integer", required: true },
-      { key: "supervisorInstruction", type: "string", size: 8000, required: false },
-      { key: "sectionInstruction", type: "string", size: 8000, required: false },
+      { key: "supervisorInstruction", type: "string", size: TEXT_SIZE, required: false },
+      { key: "sectionInstruction", type: "string", size: TEXT_SIZE, required: false },
     ],
     indexes: [
       { key: "by_survey", type: "key", attributes: ["surveyId"] },

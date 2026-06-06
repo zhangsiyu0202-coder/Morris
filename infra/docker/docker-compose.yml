@@ -48,8 +48,11 @@ services:
       _APP_ENV: ${_APP_ENV:-development}
       _APP_LOCALE: ${_APP_LOCALE:-en}
       _APP_OPENSSL_KEY_V1: ${_APP_OPENSSL_KEY_V1:-dev-secret-key-change-me}
-      _APP_DOMAIN: ${_APP_DOMAIN:-localhost:8080}
-      _APP_DOMAIN_TARGET: ${_APP_DOMAIN_TARGET:-localhost:8080}
+      _APP_DOMAIN: ${_APP_DOMAIN:-localhost}
+      _APP_DOMAIN_TARGET: ${_APP_DOMAIN_TARGET:-localhost}
+      # Local dev: accept requests to localhost without registering a domain rule.
+      _APP_OPTIONS_ROUTER_PROTECTION: ${_APP_OPTIONS_ROUTER_PROTECTION:-disabled}
+      _APP_OPTIONS_FORCE_HTTPS: ${_APP_OPTIONS_FORCE_HTTPS:-disabled}
       _APP_REDIS_HOST: redis
       _APP_REDIS_PORT: 6379
       _APP_DB_HOST: mariadb
