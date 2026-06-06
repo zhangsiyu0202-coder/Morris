@@ -1,5 +1,12 @@
-import { TabPlaceholder } from "@/components/studies/tab-placeholder";
+import { OverviewView } from "@/components/studies/overview-view";
+import { getMockOverview } from "@/lib/mock/workspace";
 
-export default function OverviewTabPage() {
-  return <TabPlaceholder title="概览" hint="统计数与最近访谈列表(波 3 实现)。" />;
+export default async function OverviewTabPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const overview = getMockOverview(id);
+  return <OverviewView studyId={id} overview={overview} />;
 }
