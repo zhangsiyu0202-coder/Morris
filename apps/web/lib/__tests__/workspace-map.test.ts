@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import type { InterviewSession } from "@merism/contracts";
-import { sessionsToOverview } from "../workspace-map";
+import type { InterviewSession, Transcript } from "@merism/contracts";
+import { sessionsToOverview, sessionsToResults, transcriptToDetail } from "../workspace-map";
 
 function session(over: Partial<InterviewSession>): InterviewSession {
   return {
@@ -40,5 +40,60 @@ describe("sessionsToOverview", () => {
     const o = sessionsToOverview(many, { paused: true, limit: 4 });
     expect(o.paused).toBe(true);
     expect(o.latest.length).toBe(4);
+  });
+});
+
+describe("sessionsToResults", () => {
+  it("builds question columns and aligns answers by questionId", () => {
+    const questions = [
+      { id: "q1", prompt: "常用的订房网站?" },
+      { id: "q2", prompt: "最抓狂的事?" },
+    ];
+    const sessions = [
+      session({
+        $id: "a",
+        state: "completed",
+        startedAt: "2025-02-01T10:00:00.000Z",
+        collectedAnswers: { q1: "Airbnb 和 Booking", q2: { text: "价格跳涨" } },
+      }),
+      session({ $id: "b", state: "in_progress", startedAt: "2025-02-01T11:00:00.000Z", collectedAnswers: {} }),
+    ];
+    const t = sessionsToResults(questions, sessions);
+
+    expect(t.totalCount).toBe(2);
+    expect(t.questionColumns.length).toBe(2);
+    expect(t.questionColumns[0]).toContain("Q1");
+    expect(t.rows[0].answers).toEqual(["Airbnb 和 Booking", "价格跳涨"]);
+    expect(t.rows[0].summary).toBe("Airbnb 和 Booking");
+    expect(t.rows[0].status).toBe("completed");
+    expect(t.rows[1].answers).toEqual(["", ""]);
+  });
+});
+
+describe("transcriptToDetail", () => {
+  it("maps segments to turns and derives metadata", () => {
+    const transcript: Transcript = {
+      $id: "t1",
+      sessionId: "a",
+      segments: [
+        { speaker: "interviewer", startMs: 0, endMs: 4000, text: "Q?" },
+        { speaker: "respondent", startMs: 4000, endMs: 12000, text: "A." },
+      ],
+      language: "中文",
+      finalizedAt: "2025-02-01T10:14:00.000Z",
+    };
+    const s = session({
+      $id: "a",
+      state: "completed",
+      startedAt: "2025-02-01T10:00:00.000Z",
+      endedAt: "2025-02-01T10:14:00.000Z",
+    });
+    const d = transcriptToDetail(transcript, s, "");
+
+    expect(d.turns.map((x) => x.speaker)).toEqual(["interviewer", "respondent"]);
+    expect(d.turns[1].text).toBe("A.");
+    expect(d.aiSummary).toContain("暂无");
+    const dur = d.metadata.find((m) => m.key === "duration");
+    expect(dur?.value).toBe("14 分 0 秒");
   });
 });

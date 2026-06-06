@@ -9,8 +9,9 @@ import {
   type RecruitMock,
 } from "@/lib/mock/workspace";
 import { getOwnerUserId } from "@/lib/owner";
-import { sessionsToOverview } from "@/lib/workspace-map";
+import { sessionsToOverview, sessionsToResults, transcriptToDetail } from "@/lib/workspace-map";
 import { listSessions } from "@/lib/queries";
+import { listQuestionRefs, getSessionById, getTranscriptBySession } from "@/lib/survey-read";
 
 /**
  * 工作台各视图的**服务端数据访问层(seam)**。
@@ -46,11 +47,28 @@ export async function loadStudyOverview(studyId: string): Promise<WorkspaceOverv
 }
 
 export async function loadStudyResults(studyId: string): Promise<ResultsTable> {
-  return getMockResults(studyId);
+  try {
+    const sessions = await listSessions(getOwnerUserId(), studyId);
+    if (sessions.length === 0) return getMockResults(studyId);
+    const questions = await listQuestionRefs(studyId);
+    return sessionsToResults(questions, sessions);
+  } catch {
+    return getMockResults(studyId);
+  }
 }
 
 export async function loadStudyTranscript(sessionId: string): Promise<TranscriptDetail> {
-  return getMockTranscript(sessionId);
+  try {
+    const transcript = await getTranscriptBySession(sessionId);
+    if (!transcript) return getMockTranscript(sessionId);
+    const session = await getSessionById(sessionId);
+    // AI summary comes from the session-level AnalysisReport once
+    // analysis-report's parseSessionReportBody is implemented; "" for now ->
+    // transcriptToDetail renders a neutral placeholder.
+    return transcriptToDetail(transcript, session, "");
+  } catch {
+    return getMockTranscript(sessionId);
+  }
 }
 
 export async function loadStudyRecruit(studyId: string): Promise<RecruitMock> {

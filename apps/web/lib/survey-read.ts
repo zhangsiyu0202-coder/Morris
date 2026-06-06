@@ -1,4 +1,11 @@
-import type { Survey, SurveySection, QuestionBlock, SurveyDraft } from "@merism/contracts";
+import type {
+  Survey,
+  SurveySection,
+  QuestionBlock,
+  SurveyDraft,
+  InterviewSession,
+  Transcript,
+} from "@merism/contracts";
 import { getServerClient, DATABASE_ID, Query } from "@/lib/queries/client";
 import { getOwnerUserId } from "@/lib/owner";
 import { assembleSurveyDraft } from "@/lib/survey-draft";
@@ -150,4 +157,58 @@ export async function listSurveysForOwner(): Promise<SurveyListItem[]> {
       responses: 0,
     };
   });
+}
+
+/** 调研的有序问题引用(id + prompt),用于结果表头/答案列对齐。 */
+export async function listQuestionRefs(surveyId: string): Promise<{ id: string; prompt: string }[]> {
+  const database = getServerClient().databases;
+  const res = await database.listDocuments(DATABASE_ID, "question_blocks", [
+    Query.equal("surveyId", surveyId),
+    Query.orderAsc("order"),
+    Query.limit(2000),
+  ]);
+  return res.documents.map((raw) => {
+    const d = raw as unknown as Raw;
+    return { id: String(d.$id), prompt: String(d.prompt ?? "") };
+  });
+}
+
+/** 按 id 读取单个 session(collectedAnswers 解析为对象)。 */
+export async function getSessionById(sessionId: string): Promise<InterviewSession | null> {
+  const database = getServerClient().databases;
+  let d: Raw;
+  try {
+    d = (await database.getDocument(DATABASE_ID, "interview_sessions", sessionId)) as unknown as Raw;
+  } catch {
+    return null;
+  }
+  return {
+    $id: String(d.$id),
+    surveyId: String(d.surveyId),
+    linkId: String(d.linkId ?? ""),
+    state: (d.state as InterviewSession["state"]) ?? "created",
+    livekitRoom: String(d.livekitRoom ?? ""),
+    collectedAnswers: parseJson<Record<string, unknown>>(d.collectedAnswers, {}),
+    startedAt: d.startedAt ? String(d.startedAt) : undefined,
+    endedAt: d.endedAt ? String(d.endedAt) : undefined,
+  } as InterviewSession;
+}
+
+/** 取某 session 的转录(segments 解析为数组)。 */
+export async function getTranscriptBySession(sessionId: string): Promise<Transcript | null> {
+  const database = getServerClient().databases;
+  const res = await database.listDocuments(DATABASE_ID, "transcripts", [
+    Query.equal("sessionId", sessionId),
+    Query.limit(1),
+  ]);
+  const raw = res.documents[0];
+  if (!raw) return null;
+  const d = raw as unknown as Raw;
+  return {
+    $id: String(d.$id),
+    sessionId: String(d.sessionId),
+    segments: parseJson<Transcript["segments"]>(d.segments, []),
+    language: String(d.language ?? "中文"),
+    finalizedAt: String(d.finalizedAt ?? new Date().toISOString()),
+  };
 }
