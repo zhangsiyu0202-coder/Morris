@@ -35,20 +35,13 @@ const NAV: NavItem[] = [
 ];
 
 type StudyStatus = "live" | "draft" | "closed";
-type StudyItem = { id: string; title: string; status: StudyStatus };
+export type SidebarStudy = { id: string; title: string; status: StudyStatus };
 
 const DOT: Record<StudyStatus, string> = {
   live: "bg-positive",
   draft: "bg-mauve-400",
   closed: "bg-ink-200",
 };
-
-const STUDIES: StudyItem[] = [
-  { id: "st_travel", title: "差旅住宿预订习惯调研", status: "live" },
-  { id: "st_onboard", title: "新用户引导体验访谈", status: "live" },
-  { id: "st_pricing", title: "订阅定价敏感度研究", status: "closed" },
-  { id: "st_mobile", title: "移动端导航可用性测试", status: "draft" },
-];
 
 const COLLAPSED_W = 56;
 const EXPANDED_W = 264;
@@ -63,7 +56,7 @@ const rowState = (active: boolean) =>
  * 产品侧边栏 —— 纯白 + hover 悬浮展开(Mauve-Quiet 翻译自 Outset/Make 参考)。
  * 三态(设计系统绑定):Collapsed 56px / Hover-Expanded 264px 悬浮覆盖 / Pinned 264px 内联。
  */
-export function Sidebar() {
+export function Sidebar({ studies = [] }: { studies?: SidebarStudy[] }) {
   const pathname = usePathname();
   const [pinned, setPinned] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -148,7 +141,7 @@ export function Sidebar() {
           </div>
 
           <div className="flex flex-col gap-0.5 overflow-y-auto px-2 pb-2">
-            {STUDIES.map((s) => {
+            {studies.map((s) => {
               const selected = pathname.startsWith(`/studies/${s.id}`);
               return (
                 <Link

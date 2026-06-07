@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Sidebar } from "./sidebar";
+import { Sidebar, type SidebarStudy } from "./sidebar";
 
 // 不显示主菜单的全屏路由(受访者端访谈页)。
 // "/" 与 "/interview" 均为受访者端访谈页,面向外部受访者,
@@ -9,7 +9,13 @@ import { Sidebar } from "./sidebar";
 // 其余全部研究者工作台页面共用主菜单。
 const FULLSCREEN_ROUTES = ["/", "/interview"];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  studies = [],
+}: {
+  children: React.ReactNode;
+  studies?: SidebarStudy[];
+}) {
   const pathname = usePathname();
   const fullscreen = FULLSCREEN_ROUTES.some(
     (r) => pathname === r || (r !== "/" && pathname?.startsWith(`${r}/`)),
@@ -19,7 +25,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-mauve-50">
-      <Sidebar />
+      <Sidebar studies={studies} />
       <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
     </div>
   );
