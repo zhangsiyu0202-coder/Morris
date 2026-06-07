@@ -155,7 +155,7 @@ The product Sidebar follows the **Linear hover-expand** pattern, not the classic
 
 | State | Width | Layout impact | When |
 |---|---|---|---|
-| **Collapsed** (default) | `72px` | Inline, content is 1368px on a 1440px viewport | Idle. User has not interacted with the rail. |
+| **Collapsed** (default) | `56px` | Inline, content is 1384px on a 1440px viewport | Idle. User has not interacted with the rail. |
 | **Hover-Expanded** (overlay) | `264px` | Overlay — floats above content with `shadow-lg`. Content does not shift. | Mouse enters the rail. ~300ms leave delay. |
 | **Pinned** (inline) | `264px` | Inline, content is 1176px | User clicked the pin icon in the brand row. |
 
@@ -169,6 +169,8 @@ The product Sidebar follows the **Linear hover-expand** pattern, not the classic
 - The pin button is in the brand row, replacing any other icon there. Active (pinned) state uses `bg-mauve-200`; inactive uses outline icon, no fill.
 - Section labels ("MAIN", "ACCOUNT") are visible in expanded states; in collapsed they collapse to a thin `ink-200` divider.
 - Counts and badges in collapsed state become a small `ink-900` dot with a 1.5px white ring at the icon's top-right (tells "there's something" without revealing what).
+- IMPORTANT: The rail reads as **pure white** (`bg-ink-0`) with a hairline right edge (`inset -1px ink-100`). Row hover = `mauve-50` (warm white); row **active/selected** = `ink-100` surface + `ink-900` label + `ink-900` icon. Never use a mauve fill or any indigo/blue for nav/study active state — the signature mauve stays on content cards/buttons, not the rail. (This is the Mauve-Quiet translation of the Outset/Make pure-white reference; indigo `#4F46E5` / `#EEF2FF` accents are forbidden.)
+- IMPORTANT: The account avatar carries **no invented brand color**. Its color comes from the real user avatar; with no user it is a neutral placeholder (`bg-ink-100` + `text-ink-600` initial). Do not hardcode a `mauve-400` (or any) avatar fill.
 
 ### Implementation note
 
