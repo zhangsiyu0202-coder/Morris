@@ -6,7 +6,7 @@ import {
   type SurveyContext,
   type TranscriptRecord,
 } from "../src/handler";
-import type { AnalysisReportOutput } from "@merism/contracts";
+import type { AnalysisReportOutput, VisualAnalysisOutput } from "@merism/contracts";
 
 const baseSession: SessionRecord = {
   $id: "sess1",
@@ -70,11 +70,43 @@ const baseLlmOutput: AnalysisReportOutput = {
   rendered: null,
 };
 
+const baseVisualOutput: VisualAnalysisOutput = {
+  source: "recording",
+  recordingFileId: "file-sess1",
+  durationMs: 62000,
+  visualConfirmation: true,
+  summary: "受访者在展示刺激物时有明显停顿,随后继续回答。",
+  sentiment: "mixed",
+  tags: ["hesitation", "stimulus-review"],
+  segments: [
+    {
+      id: "vseg_1",
+      startMs: 0,
+      endMs: 30000,
+      title: "查看刺激物",
+      description: "受访者注视屏幕并短暂停顿,随后开始评价设计。",
+      evidence: [{ transcriptId: "sess1", segmentIndex: 0 }],
+      observations: ["受访者先停顿再继续回答。"],
+      issueLevel: "minor",
+    },
+  ],
+  keyMoments: [
+    {
+      id: "vmoment_1",
+      timestampMs: 12000,
+      label: "明显停顿",
+      description: "受访者在回答前停顿,像是在重新阅读刺激物。",
+      segmentId: "vseg_1",
+    },
+  ],
+};
+
 interface DepsOverrides {
   session?: SessionRecord | null;
   transcript?: TranscriptRecord | null;
   survey?: SurveyContext | null;
   llm?: () => Promise<AnalysisReportOutput>;
+  visual?: () => Promise<VisualAnalysisOutput>;
   upsert?: (args: any) => Promise<{ reportId: string }>;
 }
 
@@ -94,6 +126,22 @@ function makeDeps(overrides: DepsOverrides = {}): AnalyzeSessionDeps & {
     findSurveyContext: async () =>
       ("survey" in overrides ? overrides.survey : baseSurvey) as SurveyContext | null,
     analyzeWithLLM: llmSpy,
+    findRecording: async () =>
+      overrides.visual
+        ? {
+            $id: "rec1",
+            sessionId: "sess1",
+            ownerUserId: "user-owner",
+            storageFileId: "file-sess1",
+            durationMs: 62000,
+            format: "webm",
+          }
+        : null,
+    getRecordingBytes: async () => ({
+      bytes: new Uint8Array([1, 2, 3]),
+      mimeType: "video/webm",
+    }),
+    analyzeRecordingVisuals: overrides.visual ? vi.fn(overrides.visual) : undefined,
     upsertSessionReport: upsertSpy,
     upsertSpy,
     llmSpy,
@@ -181,6 +229,28 @@ describe("analyzeSession handler", () => {
     expect(call.body).toEqual(baseLlmOutput);
     // generatedAt is an ISO string sourced from deps.now()
     expect(call.generatedAt).toMatch(/^2026-06-06T/);
+  });
+
+  it("adds visual analysis to the saved session report when a visual provider is configured", async () => {
+    const deps = makeDeps({
+      visual: async () => baseVisualOutput,
+    });
+    const result = await analyzeSession({ sessionId: "sess1" }, deps);
+    expect(result.status).toBe(200);
+    const call = deps.upsertSpy.mock.calls[0][0];
+    expect(call.body.visualAnalysis).toEqual(baseVisualOutput);
+  });
+
+  it("returns a clear error when the configured visual provider fails", async () => {
+    const deps = makeDeps({
+      visual: async () => {
+        throw new Error("video model unavailable");
+      },
+    });
+    const result = await analyzeSession({ sessionId: "sess1" }, deps);
+    expect(result.status).toBe(500);
+    expect(result.body).toMatchObject({ error: "visual_analysis_failed" });
+    expect(deps.upsertSpy).not.toHaveBeenCalled();
   });
 
   it("is idempotent at the deps boundary: same sessionId resolves to same report row", async () => {

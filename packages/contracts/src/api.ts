@@ -269,6 +269,39 @@ const SegmentRefSchema = z.object({
   segmentIndex: z.number().int().nonnegative(),
 });
 
+export const VisualAnalysisSegmentSchema = z.object({
+  id: z.string(),
+  startMs: z.number().int().nonnegative(),
+  endMs: z.number().int().nonnegative(),
+  title: z.string(),
+  description: z.string(),
+  evidence: z.array(SegmentRefSchema).default([]),
+  observations: z.array(z.string()).default([]),
+  issueLevel: z.enum(["none", "minor", "major"]).default("none"),
+});
+
+export const VisualAnalysisMomentSchema = z.object({
+  id: z.string(),
+  timestampMs: z.number().int().nonnegative(),
+  label: z.string(),
+  description: z.string(),
+  segmentId: z.string().optional(),
+});
+
+export const VisualAnalysisOutputSchema = z.object({
+  source: z.literal("recording"),
+  recordingFileId: z.string(),
+  durationMs: z.number().int().nonnegative(),
+  visualConfirmation: z.boolean(),
+  segments: z.array(VisualAnalysisSegmentSchema),
+  keyMoments: z.array(VisualAnalysisMomentSchema),
+  summary: z.string(),
+  sentiment: z.enum(["positive", "neutral", "negative", "mixed"]).default("neutral"),
+  tags: z.array(z.string()).default([]),
+  modelId: z.string().optional(),
+  generatedAt: z.string().datetime().optional(),
+});
+
 export const AnalysisReportOutputSchema = z.object({
   scope: z.literal("session"),
   themes: z.array(
@@ -309,6 +342,7 @@ export const AnalysisReportOutputSchema = z.object({
       format: z.string(),
     })
     .nullable(),
+  visualAnalysis: VisualAnalysisOutputSchema.nullable().optional(),
 });
 
 /**
@@ -586,6 +620,7 @@ export type BuildInterviewRoomMetadataInput = z.infer<
 >;
 export type AnalysisReportInput = z.infer<typeof AnalysisReportInputSchema>;
 export type AnalysisReportOutput = z.infer<typeof AnalysisReportOutputSchema>;
+export type VisualAnalysisOutput = z.infer<typeof VisualAnalysisOutputSchema>;
 export type QuestionTaskConfig = z.infer<typeof QuestionTaskConfigSchema>;
 export type SectionTaskGroupConfig = z.infer<typeof SectionTaskGroupConfigSchema>;
 export type InterviewWorkflowConfig = z.infer<typeof InterviewWorkflowConfigSchema>;

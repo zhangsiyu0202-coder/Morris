@@ -14,7 +14,10 @@ import {
   type AnalyzeSessionResponse,
   type AnalysisReportInput,
   type AnalysisReportOutput,
+  type VisualAnalysisOutput,
 } from "@merism/contracts";
+import type { RecordingBytes, RecordingRecord, VisualAnalyzer } from "./visual-analysis.js";
+import { calculateVideoSegmentSpecs } from "./video-segments.js";
 
 export interface SessionRecord {
   $id: string;
@@ -63,6 +66,9 @@ export interface AnalyzeSessionDeps {
    * the returned payload to be schema-valid.
    */
   analyzeWithLLM(input: AnalysisReportInput): Promise<AnalysisReportOutput>;
+  findRecording?(sessionId: string): Promise<RecordingRecord | null>;
+  getRecordingBytes?(recording: RecordingRecord): Promise<RecordingBytes>;
+  analyzeRecordingVisuals?: VisualAnalyzer;
   /**
    * Upsert keyed by (scope=session, sessionId). Implementation is responsible
    * for "find existing or create new" — the handler simply trusts a single
@@ -138,6 +144,20 @@ export async function analyzeSession(
     return { status: 500, body: { error: "llm_unavailable" } };
   }
 
+  let visualAnalysis: VisualAnalysisOutput | null;
+  try {
+    visualAnalysis = await maybeAnalyzeRecordingVisuals({
+      deps,
+      sessionId,
+      transcript,
+    });
+  } catch {
+    return { status: 500, body: { error: "visual_analysis_failed" } };
+  }
+  if (visualAnalysis) {
+    body = { ...body, visualAnalysis };
+  }
+
   let saved: { reportId: string };
   try {
     saved = await deps.upsertSessionReport({
@@ -155,4 +175,31 @@ export async function analyzeSession(
     status: 200,
     body: { reportId: saved.reportId, scope: "session" },
   };
+}
+
+async function maybeAnalyzeRecordingVisuals({
+  deps,
+  sessionId,
+  transcript,
+}: {
+  deps: AnalyzeSessionDeps;
+  sessionId: string;
+  transcript: TranscriptRecord;
+}): Promise<VisualAnalysisOutput | null> {
+  if (!deps.findRecording || !deps.getRecordingBytes || !deps.analyzeRecordingVisuals) {
+    return null;
+  }
+
+  const recording = await deps.findRecording(sessionId);
+  if (!recording) return null;
+
+  const media = await deps.getRecordingBytes(recording);
+  const segmentSpecs = calculateVideoSegmentSpecs(recording.durationMs, transcript);
+  return deps.analyzeRecordingVisuals({
+    sessionId,
+    recording,
+    transcript,
+    media,
+    segmentSpecs,
+  });
 }

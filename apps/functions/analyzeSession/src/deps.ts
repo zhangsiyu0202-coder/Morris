@@ -1,5 +1,5 @@
 // Real deps: Appwrite Server SDK + DeepSeek via @ai-sdk/deepseek.
-import { Client, Databases, ID, Permission, Query, Role } from "node-appwrite";
+import { Client, Databases, ID, Permission, Query, Role, Storage } from "node-appwrite";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { generateText, Output } from "ai";
 import {
@@ -17,6 +17,9 @@ import {
   SESSION_ANALYZE_SYSTEM,
   buildSessionAnalyzeUserPrompt,
 } from "./prompts/session-analyze.js";
+import { createGeminiVisualAnalyzerFromEnv } from "./gemini-visual-analyzer.js";
+import { createDeepSeekConsolidator } from "./gemini/deepseek-consolidator.js";
+import { isVisualRecording, recordingMimeType, type RecordingRecord } from "./visual-analysis.js";
 
 const DB = "merism";
 
@@ -62,11 +65,18 @@ export function createRealDeps(): AnalyzeSessionDeps {
     .setProject(env.APPWRITE_PROJECT_ID)
     .setKey(env.APPWRITE_API_KEY);
   const db = new Databases(client);
+  const storage = new Storage(client);
   const deepseek = createDeepSeek({
     apiKey: env.DEEPSEEK_API_KEY,
     ...(env.DEEPSEEK_BASE_URL ? { baseURL: env.DEEPSEEK_BASE_URL } : {}),
   });
   const modelName = env.DEEPSEEK_MODEL ?? "deepseek-chat";
+  const deepseekModel = deepseek(modelName);
+  // Visual analyzer (PostHog-style: Gemini Files API + per-segment offsets +
+  // DeepSeek consolidation). Set GEMINI_VISUAL_ANALYSIS_ENABLED=true and the
+  // matching GEMINI_API_BASE_URL / GEMINI_API_KEY to enable. Off => skipped.
+  const consolidator = createDeepSeekConsolidator({ model: deepseekModel });
+  const analyzeRecordingVisuals = createGeminiVisualAnalyzerFromEnv({ consolidator });
 
   return {
     now: () => Date.now(),
@@ -101,6 +111,33 @@ export function createRealDeps(): AnalyzeSessionDeps {
         language: doc.language,
       };
     },
+
+    async findRecording(sessionId: string): Promise<RecordingRecord | null> {
+      const res = await db.listDocuments(DB, "recordings", [
+        Query.equal("sessionId", sessionId),
+        Query.limit(1),
+      ]);
+      const doc = res.documents[0] as any;
+      if (!doc) return null;
+      const recording: RecordingRecord = {
+        $id: doc.$id,
+        sessionId: doc.sessionId,
+        ownerUserId: doc.ownerUserId,
+        storageFileId: doc.storageFileId,
+        durationMs: doc.durationMs,
+        format: doc.format,
+      };
+      return isVisualRecording(recording) ? recording : null;
+    },
+
+    async getRecordingBytes(recording: RecordingRecord) {
+      const buffer = await storage.getFileDownload("recordings", recording.storageFileId);
+      return {
+        bytes: new Uint8Array(buffer),
+        mimeType: recordingMimeType(recording.format),
+      };
+    },
+    ...(analyzeRecordingVisuals ? { analyzeRecordingVisuals } : {}),
 
     async findSurveyContext(surveyId: string): Promise<SurveyContext | null> {
       try {
@@ -166,7 +203,7 @@ export function createRealDeps(): AnalyzeSessionDeps {
       });
 
       const { experimental_output } = await generateText({
-        model: deepseek(modelName),
+        model: deepseekModel,
         maxRetries: 2,
         experimental_output: Output.object({ schema: AnalysisReportOutputSchema }),
         system: SESSION_ANALYZE_SYSTEM,
@@ -197,6 +234,7 @@ export function createRealDeps(): AnalyzeSessionDeps {
         insights: JSON.stringify({
           insights: body.insights,
           perQuestionSummary: body.perQuestionSummary,
+          visualAnalysis: body.visualAnalysis ?? null,
         }),
         citations: JSON.stringify(body.citations),
         generatedAt,

@@ -38,6 +38,7 @@ export type {
   AnalyzeSurveyResponse,
   SurveyAnalysisReportOutput,
   SurveyQuestionStat,
+  VisualAnalysisOutput,
 } from "./api.js";
 
 export type { Insight, InsightReport } from "./insight.js";
