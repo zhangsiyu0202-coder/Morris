@@ -7,7 +7,7 @@ import type {
   Transcript,
 } from "@merism/contracts";
 import { getServerClient, DATABASE_ID, Query } from "@/lib/queries/client";
-import { getOwnerUserId } from "@/lib/owner";
+import { getOwnerUserIdOrNull } from "@/lib/owner";
 import { assembleSurveyDraft } from "@/lib/survey-draft";
 
 /**
@@ -31,10 +31,14 @@ function parseJson<T>(v: unknown, fallback: T): T {
   }
 }
 
-export type EditorStatus = "draft" | "live" | "closed";
+export type EditorStatus = "draft" | "live" | "paused" | "closed" | "archived";
 
 function toEditorStatus(s: unknown): EditorStatus {
-  return s === "published" ? "live" : s === "archived" ? "closed" : "draft";
+  if (s === "published") return "live";
+  if (s === "paused") return "paused";
+  if (s === "closed") return "closed";
+  if (s === "archived") return "archived";
+  return "draft";
 }
 
 export type LoadedSurvey = {
@@ -45,7 +49,8 @@ export type LoadedSurvey = {
 };
 
 export async function loadSurveyDraft(surveyId: string): Promise<LoadedSurvey | null> {
-  const owner = getOwnerUserId();
+  const owner = await getOwnerUserIdOrNull();
+  if (!owner) return null;
   const database = getServerClient().databases;
 
   let doc: Raw;
@@ -120,7 +125,8 @@ export type SurveyMeta = { surveyId: string; title: string; status: EditorStatus
 
 /** 轻量读取:只取 survey meta(标题/状态),供工作台 layout 顶栏使用。 */
 export async function loadSurveyMeta(surveyId: string): Promise<SurveyMeta | null> {
-  const owner = getOwnerUserId();
+  const owner = await getOwnerUserIdOrNull();
+  if (!owner) return null;
   const database = getServerClient().databases;
   let doc: Raw;
   try {
@@ -141,22 +147,25 @@ export type SurveyListItem = {
 
 /** 列出当前 owner 的全部调研(首页/侧边栏用)。 */
 export async function listSurveysForOwner(): Promise<SurveyListItem[]> {
-  const owner = getOwnerUserId();
+  const owner = await getOwnerUserIdOrNull();
+  if (!owner) return [];
   const database = getServerClient().databases;
   const res = await database.listDocuments(DATABASE_ID, "surveys", [
     Query.equal("ownerUserId", owner),
     Query.orderDesc("updatedAt"),
     Query.limit(100),
   ]);
-  return res.documents.map((raw) => {
-    const d = raw as unknown as Raw;
-    return {
-      id: String(d.$id),
-      title: String(d.title ?? "未命名调研"),
-      status: toEditorStatus(d.status),
-      responses: 0,
-    };
-  });
+  return res.documents
+    .map((raw) => {
+      const d = raw as unknown as Raw;
+      return {
+        id: String(d.$id),
+        title: String(d.title ?? "未命名调研"),
+        status: toEditorStatus(d.status),
+        responses: 0,
+      };
+    })
+    .filter((item) => item.status !== "archived");
 }
 
 /** 调研的有序问题引用(id + prompt),用于结果表头/答案列对齐。 */

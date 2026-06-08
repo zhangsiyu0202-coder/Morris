@@ -79,6 +79,8 @@ export function createRealDeps(): IssueDeps {
         maxUses: doc.maxUses,
         usedCount: doc.usedCount ?? 0,
         expiresAt: doc.expiresAt,
+        isRevoked: doc.isRevoked ?? false,
+        surveyStatus: survey.status,
       };
     },
 

@@ -22,6 +22,8 @@ export function makeFake(link: Partial<LinkRecord> = {}): Fake {
     maxUses: 1,
     usedCount: 0,
     expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    isRevoked: false,
+    surveyStatus: "published",
     ...link,
   };
   const deps: IssueDeps = {

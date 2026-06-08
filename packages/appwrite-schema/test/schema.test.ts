@@ -4,11 +4,13 @@ import { COLLECTIONS, BUCKETS } from "../src/schema.js";
 const FORBIDDEN = /team|share|comment|billing|subscribe|quota|plan|seat|usage[-_]?meter/i;
 
 describe("appwrite schema declaration", () => {
-  it("declares all 11 collections", () => {
+  it("declares all 11 collections (researcher identity is Appwrite Account, no users collection)", () => {
     const ids = COLLECTIONS.map((c) => c.id).sort();
+    expect(ids).not.toContain("users");
     expect(ids).toEqual(
       [
         "analysis_reports",
+        "bookmarks",
         "insights",
         "interview_links",
         "interview_sessions",
@@ -18,7 +20,6 @@ describe("appwrite schema declaration", () => {
         "surveys",
         "survey_sections",
         "transcripts",
-        "users",
       ].sort(),
     );
   });
@@ -48,6 +49,12 @@ describe("appwrite schema declaration", () => {
         expect(a.key, `${c.id}.${a.key}`).not.toMatch(FORBIDDEN);
       }
     }
+  });
+
+  it("surveys.status enum includes closed between paused and archived", () => {
+    const surveys = COLLECTIONS.find((c) => c.id === "surveys")!;
+    const status = surveys.attributes.find((a) => a.key === "status")!;
+    expect(status.elements).toEqual(["draft", "published", "paused", "closed", "archived"]);
   });
 
   it("models sections and section-scoped question ordering", () => {
@@ -102,11 +109,35 @@ describe("appwrite schema: analysis-report sub-spec (T2)", () => {
     expect(confidence.elements).toEqual(["high", "medium", "low"]);
   });
 
-  it("Insight collection indexes by owner and by owner+study", () => {
-    const ins = COLLECTIONS.find((c) => c.id === "insights")!;
-    const idxKeys = ins.indexes.map((i) => i.key);
-    expect(idxKeys).toContain("by_owner");
-    expect(idxKeys).toContain("by_owner_study");
-    expect(idxKeys).toContain("by_owner_created");
+  it("Recording collection carries ownerUserId and video formats", () => {
+    const rec = COLLECTIONS.find((c) => c.id === "recordings")!;
+    expect(rec.attributes.map((a) => a.key)).toContain("ownerUserId");
+    const format = rec.attributes.find((a) => a.key === "format")!;
+    expect(format.elements).toEqual(["mp3", "opus", "wav", "mp4", "webm"]);
+  });
+
+  it("Bookmark collection is owner-scoped with expected attributes", () => {
+    const bm = COLLECTIONS.find((c) => c.id === "bookmarks")!;
+    expect(bm.permissions).toContain('create("users")');
+    expect(bm.documentSecurity).toBe(true);
+    const keys = bm.attributes.map((a) => a.key).sort();
+    expect(keys).toEqual(
+      [
+        "createdAt",
+        "ownerUserId",
+        "quote",
+        "respondent",
+        "segmentIndex",
+        "sessionId",
+        "source",
+        "surveyId",
+      ].sort(),
+    );
+    expect(bm.indexes.map((i) => i.key)).toContain("by_owner_created");
+  });
+
+  it("recordings bucket allows video extensions", () => {
+    const bucket = BUCKETS.find((b) => b.id === "recordings")!;
+    expect(bucket?.allowedFileExtensions).toEqual(["mp4", "webm", "mp3", "opus", "wav"]);
   });
 });

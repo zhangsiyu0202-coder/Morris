@@ -15,45 +15,52 @@ import {
 import { STATUS_LABELS, type StudyStatus } from "@/lib/guide";
 import { createSurvey, deleteSurvey } from "@/lib/actions/survey";
 import type { SurveyListItem } from "@/lib/survey-read";
-import {
-  getMockBookmarks,
-  getMockHomeReports,
-} from "@/lib/mock/workspace";
+import type { HomeBookmark, HomeReportPreview } from "@/lib/home-data";
 
 const STATUS_PILL: Record<StudyStatus, string> = {
   live: "bg-mauve-50 text-ink-900",
   draft: "bg-mauve-50 text-ink-900",
+  paused: "bg-mauve-100 text-ink-900",
   closed: "bg-mauve-100 text-ink-900",
+  archived: "bg-mauve-100 text-ink-900",
 };
 
 const STATUS_DOT: Record<StudyStatus, string> = {
-  live: "bg-positive",
+  live: "bg-ink-900",
   draft: "bg-mauve-400",
+  paused: "bg-ink-400",
   closed: "bg-ink-200",
+  archived: "bg-ink-200",
 };
 
 /**
  * 首页仪表盘(参考 Make 结构,重绘为 Mauve Quiet):
- * 顶部调研横向卡片(真实数据)+ 下方书签墙(mock)与报告预览(mock)。
+ * 顶部调研横向卡片(真实数据)+ 下方书签墙与报告预览(真实数据)。
  */
-export function StudiesHome({ studies }: { studies: SurveyListItem[] }) {
+export function StudiesHome({
+  studies,
+  reportPreviews,
+  bookmarks,
+}: {
+  studies: SurveyListItem[];
+  reportPreviews: HomeReportPreview[];
+  bookmarks: HomeBookmark[];
+}) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
-  const bookmarks = getMockBookmarks();
-  const reports = getMockHomeReports();
 
   return (
-    <main className="min-h-full bg-mauve-50 px-4 py-8 sm:px-8 sm:py-10">
-      <div className="mx-auto max-w-5xl">
-        <h1 className="font-display text-display-lg text-ink-900">首页</h1>
+    <main className="min-h-full bg-mauve-50 px-5 py-10 sm:px-10 sm:py-12">
+      <div className="mx-auto max-w-6xl">
+        <h1 className="font-display text-display-xl text-ink-900">首页</h1>
 
         {/* 调研 */}
-        <section className="mt-6">
+        <section className="mt-8">
           <SectionHeader title="调研" actionLabel="新建调研" onAction={() => setCreating(true)} />
           {studies.length === 0 ? (
             <EmptyStudies onCreate={() => setCreating(true)} />
           ) : (
-            <div className="flex gap-3 overflow-x-auto pb-1">
+            <div className="flex gap-4 overflow-x-auto pb-1">
               {studies.map((s) => (
                 <StudyMiniCard key={s.id} study={s} onDeleted={() => router.refresh()} />
               ))}
@@ -61,70 +68,85 @@ export function StudiesHome({ studies }: { studies: SurveyListItem[] }) {
           )}
         </section>
 
-        <div className="my-7 h-px bg-ink-100" />
+        <div className="my-8 h-px bg-ink-100" />
 
         {/* 书签 + 报告 */}
-        <div className="flex flex-col gap-7 lg:flex-row">
+        <div className="flex flex-col gap-8 lg:flex-row">
           <section className="min-w-0 flex-1">
             <SectionHeader title="书签" />
-            <div className="flex flex-col gap-3">
-              {bookmarks.map((bm) => (
+            <div className="flex flex-col gap-4">
+              {bookmarks.length === 0 ? (
+                <p className="font-ui text-body-sm text-ink-400">尚未保存任何书签。</p>
+              ) : (
+                bookmarks.map((bm) => (
                 <div
                   key={bm.id}
-                  className="flex gap-3 rounded-md p-2 transition-colors hover:bg-ink-100"
+                  className="flex gap-4 rounded-md p-3 transition-colors hover:bg-ink-100"
                 >
                   <span
                     className="grid shrink-0 place-items-center rounded bg-mauve-100"
                     style={{ width: 56, height: 46 }}
                     aria-hidden
                   >
-                    <Bookmark className="size-4 text-ink-900" strokeWidth={2} />
+                    <Bookmark className="size-5 text-ink-900" strokeWidth={2} />
                   </span>
                   <div className="min-w-0">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-ui text-caption font-semibold text-ink-600">
+                      <span className="font-ui text-body font-semibold text-ink-600">
                         {bm.respondent}
                       </span>
-                      <span className="shrink-0 font-data text-caption text-ink-400">{bm.date}</span>
+                      <span className="shrink-0 font-data text-body-sm text-ink-400">{bm.date}</span>
                     </div>
-                    <p className="line-clamp-2 font-reading text-caption leading-5 text-ink-600">
+                    <p className="line-clamp-2 font-reading text-body leading-7 text-ink-600">
                       {bm.quote}
                     </p>
-                    <p className="mt-0.5 font-ui text-caption text-ink-400">{bm.source}</p>
+                    <p className="mt-1 font-ui text-body-sm text-ink-400">{bm.source}</p>
                   </div>
                 </div>
-              ))}
+                ))
+              )}
             </div>
           </section>
 
           <div className="hidden w-px bg-ink-100 lg:block" />
 
-          <section className="w-full shrink-0 lg:w-60">
+          <section className="w-full shrink-0 lg:w-72">
             <SectionHeader title="报告" actionLabel="查看全部" href="/reports" />
-            <div className="flex flex-col gap-3">
-              {reports.map((rp) => (
-                <Link
-                  key={rp.id}
-                  href="/reports"
-                  className="flex gap-3 rounded-md p-2 transition-colors hover:bg-ink-100"
-                >
-                  <span
-                    className="grid shrink-0 place-items-center rounded bg-mauve-100"
-                    style={{ width: 44, height: 36 }}
-                    aria-hidden
-                  >
-                    <FileBarChart className="size-4 text-ink-900" strokeWidth={2} />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate font-ui text-body-sm font-semibold text-ink-900">
-                      {rp.title}
-                    </p>
-                    <p className="font-ui text-caption text-ink-400">{rp.subtitle}</p>
-                    <p className="mt-0.5 font-ui text-caption text-ink-400">最后运行:{rp.lastRun}</p>
-                  </div>
+            {reportPreviews.length === 0 ? (
+              <p className="font-ui text-body-sm text-ink-400">
+                尚无可预览的报告。{" "}
+                <Link href="/reports" className="text-ink-900 underline hover:text-ink-600">
+                  查看全部
                 </Link>
-              ))}
-            </div>
+              </p>
+            ) : (
+              <div className="flex flex-col gap-4">
+                {reportPreviews.map((rp) => (
+                  <Link
+                    key={rp.surveyId}
+                    href={`/reports/${rp.surveyId}`}
+                    className="flex gap-4 rounded-md p-3 transition-colors hover:bg-ink-100"
+                  >
+                    <span
+                      className="grid shrink-0 place-items-center rounded bg-mauve-100"
+                      style={{ width: 44, height: 36 }}
+                      aria-hidden
+                    >
+                      <FileBarChart className="size-5 text-ink-900" strokeWidth={2} />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate font-ui text-body font-semibold text-ink-900">
+                        {rp.title}
+                      </p>
+                      <p className="font-ui text-body-sm text-ink-400">{rp.subtitle}</p>
+                      <p className="mt-1 font-ui text-body-sm text-ink-400">
+                        最后运行:{rp.lastRun}
+                      </p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
           </section>
         </div>
       </div>
@@ -154,26 +176,26 @@ function SectionHeader({
     href ? (
       <Link
         href={href}
-        className="inline-flex items-center gap-0.5 font-ui text-caption text-ink-400 transition-colors hover:text-ink-900"
+        className="inline-flex items-center gap-1 font-ui text-body-sm text-ink-400 transition-colors hover:text-ink-900"
       >
         {actionLabel}
-        <ChevronRight className="size-3.5" strokeWidth={2} />
+        <ChevronRight className="size-4" strokeWidth={2} />
       </Link>
     ) : (
       <button
         type="button"
         onClick={onAction}
-        className="inline-flex items-center gap-1 font-ui text-caption text-ink-400 transition-colors hover:text-ink-900"
+        className="inline-flex items-center gap-1.5 font-ui text-body-sm text-ink-400 transition-colors hover:text-ink-900"
       >
-        <Plus className="size-3.5" strokeWidth={2} />
+        <Plus className="size-4" strokeWidth={2} />
         {actionLabel}
       </button>
     )
   ) : null;
 
   return (
-    <div className="mb-3 flex items-center justify-between">
-      <span className="font-ui text-body-sm font-semibold text-ink-900">{title}</span>
+    <div className="mb-4 flex items-center justify-between">
+      <span className="font-ui text-body font-semibold text-ink-900">{title}</span>
       {action}
     </div>
   );
@@ -201,30 +223,30 @@ function StudyMiniCard({
   return (
     <Link
       href={`/studies/${study.id}`}
-      className="group relative flex w-40 shrink-0 flex-col rounded-lg border border-ink-200 bg-ink-0 p-3.5 shadow-sm transition-shadow hover:shadow"
+      className="group relative flex w-56 shrink-0 flex-col rounded-lg border border-ink-200 bg-ink-0 p-5 shadow-sm transition-shadow hover:shadow"
     >
-      <p className="line-clamp-2 min-h-9 font-ui text-body-sm font-semibold leading-5 text-ink-900">
+      <p className="line-clamp-2 min-h-12 font-ui text-body font-semibold leading-6 text-ink-900">
         {study.title}
       </p>
       <span
-        className={`mt-2 inline-flex w-fit items-center gap-1.5 rounded-full px-2 py-0.5 font-decor text-caption ${STATUS_PILL[study.status]}`}
+        className={`mt-3 inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 font-decor text-body-sm ${STATUS_PILL[study.status]}`}
       >
         <span className={`size-1.5 rounded-full ${STATUS_DOT[study.status]}`} aria-hidden />
         {STATUS_LABELS[study.status]}
       </span>
-      <p className="mt-2 font-ui text-caption text-ink-400">{study.responses} 份完成回收</p>
+      <p className="mt-3 font-ui text-body-sm text-ink-400">{study.responses} 份完成回收</p>
 
       <button
         type="button"
         onClick={handleDelete}
         disabled={pending}
         aria-label="删除调研"
-        className="absolute right-2 top-2 grid size-6 place-items-center rounded text-ink-400 opacity-0 transition-all hover:bg-ink-100 hover:text-ink-900 focus:opacity-100 group-hover:opacity-100"
+        className="absolute right-3 top-3 grid size-8 place-items-center rounded text-ink-400 opacity-0 transition-all hover:bg-ink-100 hover:text-ink-900 focus:opacity-100 group-hover:opacity-100"
       >
         {pending ? (
-          <Loader2 className="size-3.5 animate-spin" />
+          <Loader2 className="size-4 animate-spin" />
         ) : (
-          <Trash2 className="size-3.5" strokeWidth={2} />
+          <Trash2 className="size-4" strokeWidth={2} />
         )}
       </button>
     </Link>
@@ -236,9 +258,9 @@ function EmptyStudies({ onCreate }: { onCreate: () => void }) {
     <button
       type="button"
       onClick={onCreate}
-      className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-ink-200 bg-ink-0 py-10 font-ui text-body-sm font-medium text-ink-400 transition-colors hover:border-ink-400 hover:text-ink-900"
+      className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-dashed border-ink-200 bg-ink-0 py-12 font-ui text-body font-medium text-ink-400 transition-colors hover:border-ink-400 hover:text-ink-900"
     >
-      <Plus className="size-4" strokeWidth={2} />
+      <Plus className="size-5" strokeWidth={2} />
       新建第一个调研
     </button>
   );
@@ -283,7 +305,7 @@ function CreateDialog({
             <X className="size-4" strokeWidth={2} />
           </button>
         </div>
-        <label className="mt-5 block font-ui text-body-sm font-medium text-ink-800">
+        <label className="mt-5 block font-ui text-body font-medium text-ink-800">
           调研名称
         </label>
         <input
@@ -294,7 +316,7 @@ function CreateDialog({
             if (e.key === "Enter") submit();
           }}
           placeholder="例如:差旅住宿预订习惯调研"
-          className="mt-2 w-full rounded border border-ink-200 bg-ink-0 px-3 py-2.5 font-ui text-body-sm text-ink-900 outline-none transition-colors placeholder:text-ink-400 focus:border-ink-400"
+          className="mt-2 w-full rounded border border-ink-200 bg-ink-0 px-4 py-3 font-ui text-body text-ink-900 outline-none transition-colors placeholder:text-ink-400 focus:border-ink-400"
         />
         <div className="mt-6 flex justify-end gap-2">
           <button

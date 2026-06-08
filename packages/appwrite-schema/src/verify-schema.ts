@@ -24,6 +24,17 @@ async function diffCollections(db: Databases): Promise<string[]> {
       if (!cur) diffs.push(`missing attribute: ${coll.id}.${a.key}`);
       else if (cur.type !== reportedType(a.type))
         diffs.push(`type mismatch: ${coll.id}.${a.key} deployed=${cur.type} declared=${reportedType(a.type)}`);
+      else if (a.type === "enum") {
+        const declared = a.elements ?? [];
+        const live = (cur.elements ?? []) as string[];
+        const mismatch =
+          declared.length !== live.length || declared.some((v, i) => v !== live[i]);
+        if (mismatch) {
+          diffs.push(
+            `enum elements mismatch: ${coll.id}.${a.key} deployed=[${live.join(",")}] declared=[${declared.join(",")}]`,
+          );
+        }
+      }
     }
     const idxs = new Set<string>((deployed.indexes ?? []).map((i: any) => i.key));
     for (const i of coll.indexes) {

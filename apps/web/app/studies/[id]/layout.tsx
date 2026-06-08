@@ -20,7 +20,7 @@ export default async function StudyWorkspaceLayout({
 
   return (
     <div className="flex h-full flex-col bg-mauve-50">
-      <WorkspaceHeader title={meta.title} status={meta.status} lastSaved="刚刚" />
+      <WorkspaceHeader surveyId={meta.surveyId} title={meta.title} status={meta.status} lastSaved="刚刚" />
       <WorkspaceTabs studyId={id} />
       <div className="min-h-0 flex-1">{children}</div>
     </div>

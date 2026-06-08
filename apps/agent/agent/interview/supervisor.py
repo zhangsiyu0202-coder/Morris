@@ -47,12 +47,14 @@ def create_supervisor_agent_class():
             transcript: Any,
             repository: Any | None,
             logger: Any,
+            egress_recorder: Any | None = None,
         ) -> None:
             self._room = room
             self._state = state
             self._transcript = transcript
             self._repo = repository
             self._log = logger
+            self._egress = egress_recorder
             super().__init__(instructions=state.workflowConfig.supervisorInstruction)
 
         # -- lifecycle ----------------------------------------------------
@@ -66,6 +68,7 @@ def create_supervisor_agent_class():
                 self._publish_state("completed")
                 if self._repo is not None:
                     self._persist_transcript()
+                    await self._persist_recording()
                     self._repo.complete_session(
                         self._state.sessionId, collected_answers_map(self._state)
                     )
@@ -79,6 +82,7 @@ def create_supervisor_agent_class():
                 self._log.error("interview failed", sessionId=self._state.sessionId, error=str(error))
                 if self._repo is not None:
                     self._persist_transcript()
+                    await self._persist_recording()
                     self._repo.fail_session(self._state.sessionId, {"message": str(error)})
                 raise
 
@@ -146,6 +150,28 @@ def create_supervisor_agent_class():
             language = "zh"
             self._repo.save_transcript(
                 self._state.sessionId, self._transcript.snapshot(), language
+            )
+
+        async def _persist_recording(self) -> None:
+            if self._repo is None or self._egress is None:
+                return
+            artifact = await self._egress.finalize(session_id=self._state.sessionId)
+            if artifact is None:
+                return
+            owner_user_id = self._repo.resolve_owner_user_id(self._state.surveyId)
+            if owner_user_id is None:
+                self._log.warn(
+                    "recording skipped: could not resolve ownerUserId",
+                    sessionId=self._state.sessionId,
+                    surveyId=self._state.surveyId,
+                )
+                return
+            self._repo.save_recording(
+                self._state.sessionId,
+                owner_user_id=owner_user_id,
+                file_bytes=artifact.data,
+                duration_ms=artifact.duration_ms,
+                format=artifact.format,
             )
 
         def _publish_state(self, status: str) -> None:

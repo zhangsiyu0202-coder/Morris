@@ -1,16 +1,21 @@
 "use server";
 
 import { ID } from "node-appwrite";
-import { SurveyDraftSchema, type SurveyDraft } from "@merism/contracts";
+import {
+  SurveyDraftSchema,
+  canTransitionSurveyStatus,
+  type SurveyDraft,
+  type SurveyStatus,
+} from "@merism/contracts";
 import { getServerClient, DATABASE_ID, Query } from "@/lib/queries/client";
-import { getOwnerUserId } from "@/lib/owner";
+import { requireOwnerUserId } from "@/lib/owner";
 
 /**
  * 编辑器写路径(Appwrite)。把编辑态 `SurveyDraft` 规范化落到
  * `surveys` + `survey_sections` + `question_blocks` 三表。
  *
  * 设计见 survey-editor design §5：边界用 `SurveyDraftSchema` 校验;每个操作经
- * `getOwnerUserId()` + 所有权闸门;保存采用「全量替换」(删旧建新),天然满足
+ * `requireOwnerUserId()` + 所有权闸门;保存采用「全量替换」(删旧建新),天然满足
  * draft↔persisted 往返无损(P-DATA-01)。JSON 字段以字符串存储(schema 为
  * string 属性),写时 `JSON.stringify`。
  */
@@ -20,10 +25,14 @@ const SECTIONS = "survey_sections";
 const QUESTIONS = "question_blocks";
 const DEFAULT_PROJECT = "default";
 
-type EditorStatus = "draft" | "live" | "closed";
+type EditorStatus = "draft" | "live" | "paused" | "closed" | "archived";
 
-function toAppwriteStatus(s: EditorStatus): "draft" | "published" | "archived" {
-  return s === "live" ? "published" : s === "closed" ? "archived" : "draft";
+function toAppwriteStatus(s: EditorStatus): SurveyStatus {
+  if (s === "live") return "published";
+  if (s === "closed") return "closed";
+  if (s === "paused") return "paused";
+  if (s === "archived") return "archived";
+  return "draft";
 }
 
 function db() {
@@ -31,18 +40,32 @@ function db() {
 }
 
 /** 读取并校验 survey 归属当前 owner;不属于则抛错(P-SEC-04)。 */
-async function assertOwned(surveyId: string): Promise<{ ownerUserId: string; version: number }> {
-  const owner = getOwnerUserId();
+async function assertOwned(
+  surveyId: string,
+): Promise<{ ownerUserId: string; version: number; currentStatus: SurveyStatus }> {
+  const owner = await requireOwnerUserId();
   const doc = await db().getDocument(DATABASE_ID, SURVEYS, surveyId);
   if ((doc as { ownerUserId?: string }).ownerUserId !== owner) {
     throw new Error("survey_not_owned");
   }
-  return { ownerUserId: owner, version: Number((doc as { version?: number }).version ?? 1) };
+  const rawStatus = String((doc as { status?: string }).status ?? "draft");
+  const currentStatus: SurveyStatus =
+    rawStatus === "published" ||
+    rawStatus === "paused" ||
+    rawStatus === "closed" ||
+    rawStatus === "archived"
+      ? rawStatus
+      : "draft";
+  return {
+    ownerUserId: owner,
+    version: Number((doc as { version?: number }).version ?? 1),
+    currentStatus,
+  };
 }
 
 /** 新建空白调研,返回其 $id。 */
 export async function createSurvey(title: string): Promise<string> {
-  const owner = getOwnerUserId();
+  const owner = await requireOwnerUserId();
   const doc = await db().createDocument(DATABASE_ID, SURVEYS, ID.unique(), {
     ownerUserId: owner,
     projectId: DEFAULT_PROJECT,
@@ -121,11 +144,15 @@ export async function saveSurveyDraft(surveyId: string, draftInput: SurveyDraft)
   }
 }
 
-/** 切换调研状态。 */
+/** 切换调研状态;通过 canTransitionSurveyStatus 守卫非法迁移。 */
 export async function updateSurveyStatus(surveyId: string, status: EditorStatus): Promise<void> {
-  await assertOwned(surveyId);
+  const { currentStatus } = await assertOwned(surveyId);
+  const targetStatus = toAppwriteStatus(status);
+  if (!canTransitionSurveyStatus(currentStatus, targetStatus)) {
+    throw new Error(`invalid_transition:${currentStatus}→${targetStatus}`);
+  }
   await db().updateDocument(DATABASE_ID, SURVEYS, surveyId, {
-    status: toAppwriteStatus(status),
+    status: targetStatus,
     updatedAt: new Date().toISOString(),
   });
 }

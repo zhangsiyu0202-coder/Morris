@@ -5,7 +5,9 @@ import {
   buildInterviewRoomMetadataFromDraft,
   buildInterviewRuntimeStudy,
   buildInterviewWorkflowConfigFromDraft,
+  canTransitionSurveyStatus,
   InsightSchema,
+  RecordingFormat,
   InterviewWorkflowConfigSchema,
   IssueLivekitTokenRequestSchema,
   InterviewLinkSchema,
@@ -15,6 +17,14 @@ import {
   SurveyQuestionStatSchema,
   type SurveyAnalysisReportOutput,
 } from "@merism/contracts";
+
+describe("contracts: RecordingFormat", () => {
+  it("accepts video and legacy audio formats", () => {
+    for (const format of ["mp4", "webm", "mp3", "opus", "wav"] as const) {
+      expect(RecordingFormat.parse(format)).toBe(format);
+    }
+  });
+});
 
 describe("contracts: issueLivekitToken request", () => {
   it("accepts any non-empty linkToken with optional alias", () => {
@@ -345,6 +355,20 @@ describe("contracts: SurveyAnalysisReportOutput discriminated union", () => {
     expect(stats[0]?.kind).toBe("choice");
     expect(stats[1]?.kind).toBe("rating");
     expect(stats[2]?.kind).toBe("nps");
+  });
+});
+
+describe("contracts: survey status transitions", () => {
+  it("allows publish, pause, close, then archive", () => {
+    expect(canTransitionSurveyStatus("draft", "published")).toBe(true);
+    expect(canTransitionSurveyStatus("published", "paused")).toBe(true);
+    expect(canTransitionSurveyStatus("paused", "closed")).toBe(true);
+    expect(canTransitionSurveyStatus("closed", "archived")).toBe(true);
+  });
+
+  it("rejects skipping closed before archive", () => {
+    expect(canTransitionSurveyStatus("published", "archived")).toBe(false);
+    expect(canTransitionSurveyStatus("paused", "archived")).toBe(false);
   });
 });
 

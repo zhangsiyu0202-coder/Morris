@@ -45,6 +45,10 @@ export interface BucketDef {
   name: string;
   permissions: string[];
   fileSecurity: boolean;
+  /** Max upload size in bytes (Appwrite bucket maximumFileSize). */
+  maximumFileSize?: number;
+  /** Appwrite bucket allowed extensions (without leading dot). */
+  allowedFileExtensions?: string[];
 }
 
 const JSON_SIZE = 1_000_000;
@@ -64,19 +68,14 @@ const TEXT_SIZE = 100_000;
 const OWNER_SCOPED = ['create("users")'];
 const SERVER_ONLY: string[] = [];
 
+// Researcher identity is owned by Appwrite's built-in Account/Users service,
+// not a business collection. The former `users` collection (email/name/
+// createdAt) duplicated Account fields and was removed to avoid a dual-write
+// between the auth user and a business row. `ownerUserId` on every owner-scoped
+// collection is the Appwrite Account `$id`; researcher locale / timeZone /
+// notification settings live in Account `prefs` (ResearcherPrefsSchema).
+// See docs/design/auth-and-user-research.md §8.3.
 export const COLLECTIONS: CollectionDef[] = [
-  {
-    id: "users",
-    name: "User",
-    permissions: SERVER_ONLY,
-    documentSecurity: true,
-    attributes: [
-      { key: "email", type: "string", size: 320, required: true },
-      { key: "name", type: "string", size: 256, required: true },
-      { key: "createdAt", type: "datetime", required: true },
-    ],
-    indexes: [{ key: "email_unique", type: "unique", attributes: ["email"] }],
-  },
   {
     id: "projects",
     name: "Project",
@@ -102,7 +101,7 @@ export const COLLECTIONS: CollectionDef[] = [
       {
         key: "status",
         type: "enum",
-        elements: ["draft", "published", "archived"],
+        elements: ["draft", "published", "paused", "closed", "archived"],
         required: false,
         default: "draft",
       },
@@ -175,6 +174,8 @@ export const COLLECTIONS: CollectionDef[] = [
       { key: "maxUses", type: "integer", required: true },
       { key: "usedCount", type: "integer", required: false, default: 0 },
       { key: "expiresAt", type: "datetime", required: true },
+      { key: "isRevoked", type: "boolean", required: false, default: false },
+      { key: "label", type: "string", size: 256, required: false },
     ],
     indexes: [
       { key: "token_unique", type: "unique", attributes: ["token"] },
@@ -228,11 +229,15 @@ export const COLLECTIONS: CollectionDef[] = [
     documentSecurity: true,
     attributes: [
       { key: "sessionId", type: "string", size: 64, required: true },
+      { key: "ownerUserId", type: "string", size: 64, required: true },
       { key: "storageFileId", type: "string", size: 64, required: true },
       { key: "durationMs", type: "integer", required: true },
-      { key: "format", type: "enum", elements: ["mp3", "opus", "wav"], required: true },
+      { key: "format", type: "enum", elements: ["mp3", "opus", "wav", "mp4", "webm"], required: true },
     ],
-    indexes: [{ key: "by_session", type: "key", attributes: ["sessionId"] }],
+    indexes: [
+      { key: "by_session", type: "key", attributes: ["sessionId"] },
+      { key: "by_owner", type: "key", attributes: ["ownerUserId"] },
+    ],
   },
   {
     id: "analysis_reports",
@@ -304,10 +309,38 @@ export const COLLECTIONS: CollectionDef[] = [
       { key: "by_owner_created", type: "key", attributes: ["ownerUserId", "createdAt"] },
     ],
   },
+  {
+    id: "bookmarks",
+    name: "Bookmark",
+    permissions: OWNER_SCOPED,
+    documentSecurity: true,
+    attributes: [
+      { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "surveyId", type: "string", size: 64, required: true },
+      { key: "sessionId", type: "string", size: 64, required: true },
+      { key: "quote", type: "string", size: TEXT_SIZE, required: true },
+      { key: "source", type: "string", size: 512, required: true },
+      { key: "respondent", type: "string", size: 128, required: true },
+      { key: "segmentIndex", type: "integer", required: false },
+      { key: "createdAt", type: "datetime", required: true },
+    ],
+    indexes: [
+      { key: "by_owner_created", type: "key", attributes: ["ownerUserId", "createdAt"] },
+      { key: "by_owner_session", type: "key", attributes: ["ownerUserId", "sessionId"] },
+      { key: "by_session", type: "key", attributes: ["sessionId"] },
+    ],
+  },
 ];
 
 export const BUCKETS: BucketDef[] = [
-  { id: "recordings", name: "recordings", permissions: [], fileSecurity: true },
+  {
+    id: "recordings",
+    name: "recordings",
+    permissions: [],
+    fileSecurity: true,
+    maximumFileSize: 524_288_000,
+    allowedFileExtensions: ["mp4", "webm", "mp3", "opus", "wav"],
+  },
   { id: "reports", name: "reports", permissions: [], fileSecurity: true },
   {
     id: "survey-assets",

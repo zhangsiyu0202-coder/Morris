@@ -1,5 +1,6 @@
 import { RecruitView } from "@/components/studies/recruit-view";
-import { loadStudyRecruit } from "@/lib/workspace-data";
+import { getOrCreateTestInterviewLink, listInterviewLinks } from "@/lib/actions/links";
+import type { InterviewLink } from "@merism/contracts";
 
 export default async function RecruitTabPage({
   params,
@@ -7,6 +8,15 @@ export default async function RecruitTabPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const recruit = await loadStudyRecruit(id);
-  return <RecruitView recruit={recruit} />;
+
+  let initialLinks: InterviewLink[] = [];
+  let testLink: InterviewLink | null = null;
+  try {
+    initialLinks = await listInterviewLinks(id);
+    testLink = await getOrCreateTestInterviewLink(id);
+  } catch {
+    // appwrite_not_configured / survey_not_owned / not reachable → start empty.
+  }
+
+  return <RecruitView surveyId={id} initialLinks={initialLinks} testLink={testLink} />;
 }

@@ -6,7 +6,10 @@ credentials are present. It:
 1. resolves the workflow config from room metadata (pure),
 2. builds an ``AgentSession`` with Qwen STT/TTS + DeepSeek LLM,
 3. forwards finalized conversation turns into the ``TranscriptCollector``,
-4. starts the ``InterviewSupervisorAgent`` which runs the section/question loop
+4. publishes both speakers' transcription to the LiveKit room (so the web
+   client can subscribe via ``RoomEvent.TranscriptionReceived`` / the
+   ``lk.transcription`` text stream),
+5. starts the ``InterviewSupervisorAgent`` which runs the section/question loop
    and persists to Appwrite.
 
 livekit imports are lazy; the resolution / state logic lives in pure modules
@@ -14,9 +17,11 @@ livekit imports are lazy; the resolution / state logic lives in pure modules
 """
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from agent.contracts import InterviewRoomMetadata
+from agent.interview.egress_recorder import EgressRecorder, EgressSettings
 from agent.interview.supervisor import create_supervisor_agent_class
 from agent.interview.transcript import (
     SPEAKER_AGENT,
@@ -59,6 +64,8 @@ class InterviewEngine:
         session = self._build_session()
         self._wire_transcription(session)
 
+        egress_recorder = await self._start_egress_recording()
+
         supervisor_class = create_supervisor_agent_class()
         supervisor = supervisor_class(
             room=self._room,
@@ -66,6 +73,7 @@ class InterviewEngine:
             transcript=self._transcript,
             repository=self._repo,
             logger=self._log,
+            egress_recorder=egress_recorder,
         )
 
         self._log.info(
@@ -73,9 +81,34 @@ class InterviewEngine:
             sessionId=self._metadata.sessionId,
             sections=len(config.sections),
         )
-        await session.start(agent=supervisor, room=self._room)
+        await session.start(
+            agent=supervisor,
+            room=self._room,
+            room_options=self._build_room_options(),
+        )
 
     # -- internals --------------------------------------------------------
+
+    async def _start_egress_recording(self) -> EgressRecorder | None:
+        settings = EgressSettings.from_env(os.environ)
+        if settings is None:
+            self._log.warn(
+                "room composite egress skipped: LiveKit credentials missing",
+                sessionId=self._metadata.sessionId,
+            )
+            return None
+
+        room_name = getattr(self._room, "name", None)
+        if not room_name:
+            self._log.warn(
+                "room composite egress skipped: room name unavailable",
+                sessionId=self._metadata.sessionId,
+            )
+            return None
+
+        recorder = EgressRecorder(settings, self._log)
+        started = await recorder.start(room_name=room_name, session_id=self._metadata.sessionId)
+        return recorder if started else None
 
     def _build_session(self) -> Any:
         from livekit.agents import AgentSession
@@ -86,6 +119,23 @@ class InterviewEngine:
             tts=build_tts(self._settings.speech),
             llm=build_llm(self._settings.llm),
             vad=silero.VAD.load(),
+        )
+
+    def _build_room_options(self) -> Any:
+        """Enable LiveKit room transcription output for both speakers.
+
+        ``RoomIO`` publishes the agent's TTS transcription and the interviewee's
+        STT transcription to the room as LiveKit transcription segments, which
+        the web client reads via ``RoomEvent.TranscriptionReceived`` (or the
+        ``lk.transcription`` text stream). ``RoomOptions`` is the current API in
+        livekit-agents 1.5.x; ``RoomOutputOptions`` is deprecated. This only
+        controls in-room realtime output and is independent of the local
+        ``TranscriptCollector`` used for Appwrite persistence.
+        """
+        from livekit.agents.voice.room_io import RoomOptions, TextOutputOptions
+
+        return RoomOptions(
+            text_output=TextOutputOptions(sync_transcription=True),
         )
 
     def _wire_transcription(self, session: Any) -> None:

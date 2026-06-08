@@ -34,14 +34,22 @@ const NAV: NavItem[] = [
   { label: "项目设置", href: "#settings", icon: Settings },
 ];
 
-type StudyStatus = "live" | "draft" | "closed";
+type StudyStatus = "live" | "draft" | "paused" | "closed" | "archived";
 export type SidebarStudy = { id: string; title: string; status: StudyStatus };
 
 const DOT: Record<StudyStatus, string> = {
-  live: "#10B981",
-  draft: "#8B5CF6",
-  closed: "#D1D5DB",
+  live: "#0F172A",
+  draft: "#A78585",
+  paused: "#64748B",
+  closed: "#E2E8F0",
+  archived: "#E2E8F0",
 };
+
+function displayInitial(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "M";
+  return trimmed.charAt(0).toUpperCase();
+}
 
 const COLLAPSED_W = 48;
 const EXPANDED_W = 232;
@@ -50,7 +58,15 @@ const EXPANDED_W = 232;
  * Product sidebar, matched to the reference export:
  * collapsed 48px, hover-expanded 232px, compact 13px desktop density.
  */
-export function Sidebar({ studies = [] }: { studies?: SidebarStudy[] }) {
+export function Sidebar({
+  studies = [],
+  researcher = null,
+}: {
+  studies?: SidebarStudy[];
+  researcher?: { name: string; email: string } | null;
+}) {
+  const userLabel = researcher?.name?.trim() || researcher?.email || "账户设置";
+  const userInitial = displayInitial(researcher?.name || researcher?.email || "M");
   const pathname = usePathname();
   const [hovered, setHovered] = useState(false);
   const expanded = hovered;
@@ -156,13 +172,19 @@ export function Sidebar({ studies = [] }: { studies?: SidebarStudy[] }) {
             </div>
 
             <div style={{ borderTop: "1px solid #F3F4F6", padding: "12px 16px" }}>
-              <div className="flex items-center gap-2.5">
+              <Link
+                href="/settings/account"
+                title="账户设置"
+                aria-current={pathname.startsWith("/settings/account") ? "page" : undefined}
+                className="flex items-center gap-2.5 rounded-md transition-colors"
+                style={{ margin: "-4px -8px", padding: "4px 8px" }}
+              >
                 <div
                   style={{
                     width: 28,
                     height: 28,
                     borderRadius: "50%",
-                    backgroundColor: "#F97316",
+                    backgroundColor: "#A78585",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -172,17 +194,17 @@ export function Sidebar({ studies = [] }: { studies?: SidebarStudy[] }) {
                     flexShrink: 0,
                   }}
                 >
-                  O
+                  {userInitial}
                 </div>
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 500, color: "#111827", whiteSpace: "nowrap" }}>
-                    No Name
+                    {userLabel}
                   </div>
                   <div style={{ fontSize: 11, color: "#4B5563", whiteSpace: "nowrap" }}>
-                    Outset · Main account
+                    账户设置
                   </div>
                 </div>
-              </div>
+              </Link>
             </div>
           </div>
         ) : (
@@ -218,7 +240,26 @@ export function Sidebar({ studies = [] }: { studies?: SidebarStudy[] }) {
             </Link>
 
             <div className="flex-1" />
-            <div style={{ fontSize: 13, fontWeight: 600, color: "#374151", paddingBottom: 4 }}>O</div>
+            <Link
+              href="/settings/account"
+              title="账户设置"
+              aria-current={pathname.startsWith("/settings/account") ? "page" : undefined}
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                backgroundColor: "#A78585",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 13,
+                fontWeight: 700,
+                color: "#fff",
+                marginBottom: 4,
+              }}
+            >
+              {userInitial}
+            </Link>
           </div>
         )}
     </aside>

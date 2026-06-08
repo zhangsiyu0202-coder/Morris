@@ -21,7 +21,7 @@ export function WorkspaceTabs({ studyId }: { studyId: string }) {
   const base = `/studies/${studyId}`;
 
   return (
-    <nav className="flex shrink-0 items-end gap-1 border-b border-ink-200 px-4">
+    <nav className="flex shrink-0 items-end gap-2 border-b border-ink-200 px-6">
       {TABS.map((tab) => {
         const href = `${base}/${tab.slug}`;
         const active = pathname === href || pathname.startsWith(`${href}/`);
@@ -30,10 +30,10 @@ export function WorkspaceTabs({ studyId }: { studyId: string }) {
             key={tab.slug}
             href={href}
             aria-current={active ? "page" : undefined}
-            className={`relative px-2.5 py-2 font-ui text-body-sm transition-colors ${
+            className={`relative px-3 py-3 font-ui text-body transition-colors ${
               active
                 ? "font-medium text-ink-900"
-                : "text-ink-400 hover:text-ink-700"
+                : "text-ink-400 hover:text-ink-900"
             }`}
           >
             {tab.label}

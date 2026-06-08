@@ -15,11 +15,15 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 
-from agent.contracts import SessionState, TranscriptSegment
+from agent.contracts import RecordingFormat, SessionState, TranscriptSegment
 from agent.persistence.serializers import (
     DATABASE_ID,
+    RECORDINGS_BUCKET_ID,
+    RECORDINGS_COLLECTION_ID,
     SESSIONS_COLLECTION_ID,
+    SURVEYS_COLLECTION_ID,
     TRANSCRIPTS_COLLECTION_ID,
+    recording_document,
     session_completion_fields,
     session_failure_fields,
     session_progress_fields,
@@ -36,12 +40,34 @@ class DatabasesClient(Protocol):
     """Subset of the Appwrite ``Databases`` service the repository needs."""
 
     def create_document(
-        self, database_id: str, collection_id: str, document_id: str, data: Mapping[str, Any]
+        self,
+        database_id: str,
+        collection_id: str,
+        document_id: str,
+        data: Mapping[str, Any],
+        permissions: Sequence[str] | None = None,
     ) -> Any: ...
 
     def update_document(
         self, database_id: str, collection_id: str, document_id: str, data: Mapping[str, Any]
     ) -> Any: ...
+
+    def get_document(self, database_id: str, collection_id: str, document_id: str) -> Any: ...
+
+
+@runtime_checkable
+class StorageClient(Protocol):
+    """Subset of the Appwrite ``Storage`` service the repository needs."""
+
+    def create_file(
+        self,
+        bucket_id: str,
+        file_id: str,
+        file: Any,
+        permissions: Sequence[str] | None = None,
+    ) -> Any: ...
+
+    def delete_file(self, bucket_id: str, file_id: str) -> Any: ...
 
 
 @runtime_checkable
@@ -64,6 +90,7 @@ class InterviewRepository:
         databases: DatabasesClient,
         logger: Any,
         functions: FunctionsClient | None = None,
+        storage: StorageClient | None = None,
         *,
         analyze_session_fn: str = DEFAULT_ANALYZE_SESSION_FN,
         analyze_survey_fn: str = DEFAULT_ANALYZE_SURVEY_FN,
@@ -71,6 +98,7 @@ class InterviewRepository:
         self._db = databases
         self._log = logger
         self._functions = functions
+        self._storage = storage
         self._analyze_session_fn = analyze_session_fn
         self._analyze_survey_fn = analyze_survey_fn
 
@@ -87,6 +115,7 @@ class InterviewRepository:
             raise ValueError("APPWRITE_ENDPOINT / APPWRITE_PROJECT_ID / APPWRITE_API_KEY are required")
 
         from appwrite.services.functions import Functions
+        from appwrite.services.storage import Storage
 
         client = Client()
         client.set_endpoint(endpoint).set_project(project).set_key(api_key)
@@ -94,6 +123,7 @@ class InterviewRepository:
             _DatabasesAdapter(Databases(client)),
             logger,
             _FunctionsAdapter(Functions(client)),
+            _StorageAdapter(Storage(client)),
             analyze_session_fn=env.get("ANALYZE_SESSION_FUNCTION_ID", cls.DEFAULT_ANALYZE_SESSION_FN),
             analyze_survey_fn=env.get("ANALYZE_SURVEY_FUNCTION_ID", cls.DEFAULT_ANALYZE_SURVEY_FN),
         )
@@ -138,6 +168,112 @@ class InterviewRepository:
             except Exception as update_error:  # noqa: BLE001
                 self._log.error(
                     "failed to persist transcript",
+                    sessionId=session_id,
+                    createError=str(create_error),
+                    updateError=str(update_error),
+                )
+
+    def resolve_owner_user_id(self, survey_id: str) -> str | None:
+        """Read ``ownerUserId`` from the survey document for recording permissions."""
+        try:
+            survey = self._db.get_document(DATABASE_ID, SURVEYS_COLLECTION_ID, survey_id)
+            owner = getattr(survey, "ownerUserId", None) or (
+                survey.get("ownerUserId") if isinstance(survey, Mapping) else None
+            )
+            return owner if isinstance(owner, str) and owner else None
+        except Exception as error:  # noqa: BLE001
+            self._log.warn(
+                "failed to resolve survey owner for recording",
+                surveyId=survey_id,
+                error=str(error),
+            )
+            return None
+
+    def save_recording(
+        self,
+        session_id: str,
+        *,
+        owner_user_id: str,
+        file_bytes: bytes,
+        duration_ms: int,
+        format: RecordingFormat,
+    ) -> None:
+        """Upload the interview video to Storage and upsert the recordings document."""
+        if self._storage is None:
+            self._log.warn("recording persistence skipped: no Storage client configured", sessionId=session_id)
+            return
+
+        storage_file_id = session_id
+        mime_by_format: dict[RecordingFormat, str] = {
+            "mp4": "video/mp4",
+            "webm": "video/webm",
+            "mp3": "audio/mpeg",
+            "opus": "audio/ogg",
+            "wav": "audio/wav",
+        }
+        mime_type = mime_by_format.get(format, "application/octet-stream")
+        filename = f"interview-{session_id}.{format}"
+
+        try:
+            from appwrite.input_file import InputFile
+            from appwrite.permission import Permission
+            from appwrite.role import Role
+
+            permissions = [Permission.read(Role.user(owner_user_id))]
+            upload = InputFile.from_bytes(file_bytes, filename=filename, mime_type=mime_type)
+            try:
+                self._storage.create_file(
+                    RECORDINGS_BUCKET_ID,
+                    storage_file_id,
+                    upload,
+                    permissions,
+                )
+            except Exception as create_error:  # noqa: BLE001 - upsert fallback
+                try:
+                    self._storage.delete_file(RECORDINGS_BUCKET_ID, storage_file_id)
+                except Exception:  # noqa: BLE001 - best-effort replace
+                    pass
+                self._storage.create_file(
+                    RECORDINGS_BUCKET_ID,
+                    storage_file_id,
+                    upload,
+                    permissions,
+                )
+                self._log.warn(
+                    "replaced existing recording file",
+                    sessionId=session_id,
+                    createError=str(create_error),
+                )
+        except Exception as error:  # noqa: BLE001
+            self._log.error(
+                "failed to upload recording to storage",
+                sessionId=session_id,
+                error=str(error),
+            )
+            return
+
+        document = recording_document(
+            session_id=session_id,
+            owner_user_id=owner_user_id,
+            storage_file_id=storage_file_id,
+            duration_ms=duration_ms,
+            format=format,
+        )
+        permissions = [f'read("user:{owner_user_id}")']
+        try:
+            self._db.create_document(
+                DATABASE_ID,
+                RECORDINGS_COLLECTION_ID,
+                session_id,
+                document,
+                permissions,
+            )
+        except Exception as create_error:  # noqa: BLE001 - upsert fallback
+            try:
+                self._db.update_document(DATABASE_ID, RECORDINGS_COLLECTION_ID, session_id, document)
+            except Exception as update_error:  # noqa: BLE001
+                self._log.error(
+                    "failed to persist recording document",
                     sessionId=session_id,
                     createError=str(create_error),
                     updateError=str(update_error),
@@ -223,14 +359,22 @@ class _DatabasesAdapter:
         self._databases = databases
 
     def create_document(
-        self, database_id: str, collection_id: str, document_id: str, data: Mapping[str, Any]
+        self,
+        database_id: str,
+        collection_id: str,
+        document_id: str,
+        data: Mapping[str, Any],
+        permissions: Sequence[str] | None = None,
     ) -> Any:
-        return self._databases.create_document(
-            database_id=database_id,
-            collection_id=collection_id,
-            document_id=document_id,
-            data=dict(data),
-        )
+        kwargs: dict[str, Any] = {
+            "database_id": database_id,
+            "collection_id": collection_id,
+            "document_id": document_id,
+            "data": dict(data),
+        }
+        if permissions is not None:
+            kwargs["permissions"] = list(permissions)
+        return self._databases.create_document(**kwargs)
 
     def update_document(
         self, database_id: str, collection_id: str, document_id: str, data: Mapping[str, Any]
@@ -241,3 +385,36 @@ class _DatabasesAdapter:
             document_id=document_id,
             data=dict(data),
         )
+
+    def get_document(self, database_id: str, collection_id: str, document_id: str) -> Mapping[str, Any]:
+        return self._databases.get_document(
+            database_id=database_id,
+            collection_id=collection_id,
+            document_id=document_id,
+        )
+
+
+class _StorageAdapter:
+    """Adapts the Appwrite ``Storage`` service to ``StorageClient``."""
+
+    def __init__(self, storage: Any) -> None:
+        self._storage = storage
+
+    def create_file(
+        self,
+        bucket_id: str,
+        file_id: str,
+        file: Any,
+        permissions: Sequence[str] | None = None,
+    ) -> Any:
+        kwargs: dict[str, Any] = {
+            "bucket_id": bucket_id,
+            "file_id": file_id,
+            "file": file,
+        }
+        if permissions is not None:
+            kwargs["permissions"] = list(permissions)
+        return self._storage.create_file(**kwargs)
+
+    def delete_file(self, bucket_id: str, file_id: str) -> Any:
+        return self._storage.delete_file(bucket_id=bucket_id, file_id=file_id)

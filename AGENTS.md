@@ -48,7 +48,7 @@ The product is for qualitative voice interviews: survey design, anonymous interv
 - `packages/appwrite-schema`: declarative Appwrite schema (collections, attributes, indexes, permissions, storage buckets) with `apply` / `verify` tooling under `src/`.
 - `apps/agent`: Python LiveKit Agent Worker. Contains the realtime interview implementation: `agent/interview/{engine,supervisor,workflow,transcript}.py` (LiveKit Supervisor + ordered TaskGroups + AgentTasks), `agent/persistence/` (Appwrite repository + pure serializers), `agent/providers/` (DeepSeek LLM + Qwen ASR/TTS adapters), and the contracts mirror in `agent/contracts.py`. Realtime deps are an opt-in extra (`uv sync --extra realtime`).
 - `apps/functions/issueLivekitToken`: example Appwrite Function with pure-core / SDK-wrapper split.
-- `apps/web`: Next.js 15 (App Router) researcher web app. Hosts the page assistant Morris (`app/api/assistant/route.ts` + `lib/assistant/*` + `components/assistant/*` + standalone `/assistant`), the interviewee surfaces (`/interview` + `components/interview/*`), the editor surfaces (`/home`, `/studies/[id]`, `components/studies/*`), and the analysis surfaces (`/insights`, `/insights/[id]`, `/report`). The current editor is a v0-generated draft slated for redesign; do not treat its persistence layer (Drizzle/Postgres) as the architectural target.
+- `apps/web`: Next.js 15 (App Router) researcher web app. Hosts the page assistant Morris (`app/api/assistant/route.ts` + `lib/assistant/*` + `components/assistant/*` + standalone `/assistant`), the interviewee surfaces (`/interview` + `components/interview/*`; UI follows the *Design Interviewer Page* prototype — pre-interview flow, camera self-view + screen share, two-pane room, per `docs/design/multimodal-interview-and-structured-rendering.md §9`), the editor surfaces (`/home`, `/studies/[id]`, `components/studies/*`), and the analysis surfaces (`/insights`, `/insights/[id]`, `/report`). The current editor is a v0-generated draft slated for redesign; do not treat its persistence layer (Drizzle/Postgres) as the architectural target.
 - `docs/adr/`: architecture decision records. `0001-livekit-supervisor-interview-workflow.md` (interview controller), `0002-page-assistant-vercel-ai-sdk.md` (page assistant stack).
 - `docs/design/`: cross-cutting technical designs (e.g. `multimodal-interview-and-structured-rendering.md`).
 - `infra/docker/docker-compose.yml`: local Appwrite + LiveKit stack.
@@ -72,6 +72,7 @@ Current gaps and known drifts:
 - Run Python agent tests from root: `pnpm test:py`.
 - Run Python tests directly: `cd apps/agent && uv run pytest`.
 - Start local infra: `pnpm stack:up`.
+- **Local researcher login (manual QA):** see `docs/dev/local-researcher-account.md` (`researcher@merism.local` / pre-created on local Appwrite).
 - Stop local infra without deleting volumes: `pnpm stack:down`.
 - Reset local infra volumes: `pnpm stack:reset`.
 - Run agent with realtime deps: `cd apps/agent && uv sync --extra realtime && uv run python -m agent.main dev`.

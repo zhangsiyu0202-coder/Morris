@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
+import type { AnalysisReport } from "@merism/contracts";
 import { listStudies, getStudy } from "../studies";
 import { listSessions, countCompletedSessions } from "../sessions";
 import { searchTranscriptSegments } from "../transcripts";
-import { getLatestAnalysisReport } from "../reports";
+import { getLatestAnalysisReport, parseSessionReportBody } from "../reports";
 import { listInsights, getInsightById } from "../insights";
+import { listBookmarksForOwner, listBookmarksBySession } from "../bookmarks";
 import { makeFakeDatabases } from "./helpers";
 
 const owner = "user-owner";
@@ -222,6 +224,69 @@ describe("queries: reports", () => {
       getLatestAnalysisReport(owner, { surveyId: "sv1", scope: "session" }, databases),
     ).rejects.toThrow(/sessionId is required/);
   });
+
+  it("parseSessionReportBody rehydrates analyzeSession upsert shape", () => {
+    const bodyFixture = {
+      scope: "session" as const,
+      themes: [
+        {
+          id: "t1",
+          label: "Price",
+          description: "Price sensitivity theme",
+          evidence: [{ transcriptId: "tr1", segmentIndex: 0 }],
+        },
+      ],
+      insights: [
+        {
+          id: "i1",
+          statement: "Users care about price",
+          supportingThemes: ["t1"],
+          confidence: 0.9,
+        },
+      ],
+      citations: [
+        {
+          segmentRef: { transcriptId: "tr1", segmentIndex: 0 },
+          quote: "too expensive",
+          themeIds: ["t1"],
+        },
+      ],
+      perQuestionSummary: [
+        { questionId: "q1", summary: "Price is the main concern", sentiment: "negative" },
+      ],
+      rendered: null,
+    };
+
+    const report = {
+      $id: "ar_sess",
+      sessionId: "sess1",
+      surveyId: "sv1",
+      scope: "session" as const,
+      themes: bodyFixture.themes,
+      insights: {
+        insights: bodyFixture.insights,
+        perQuestionSummary: bodyFixture.perQuestionSummary,
+      },
+      citations: bodyFixture.citations,
+      generatedAt: "2026-06-06T00:00:00.000Z",
+    } as unknown as AnalysisReport;
+
+    const parsed = parseSessionReportBody(report);
+    expect(parsed).toEqual(bodyFixture);
+  });
+
+  it("parseSessionReportBody returns null for survey scope", () => {
+    const report = {
+      $id: "ar1",
+      surveyId: "sv1",
+      scope: "survey" as const,
+      themes: [],
+      insights: [],
+      citations: [],
+      generatedAt: "2026-06-06T00:00:00.000Z",
+    };
+    expect(parseSessionReportBody(report)).toBeNull();
+  });
 });
 
 describe("queries: insights", () => {
@@ -271,5 +336,44 @@ describe("queries: insights", () => {
     const result = await getInsightById(owner, "i1", databases);
     expect(result?.headline).toBe("Because of pricing");
     expect(result?.report.actions[0]?.priority).toBe("P0");
+  });
+});
+
+describe("queries: bookmarks", () => {
+  const bookmarkDoc = {
+    $id: "bm1",
+    ownerUserId: owner,
+    surveyId: "sv1",
+    sessionId: "sess1",
+    quote: "A memorable quote.",
+    source: "Study · Q1",
+    respondent: "受访者 · 01:23",
+    segmentIndex: 2,
+    createdAt: "2026-06-06T00:00:00.000Z",
+  };
+
+  it("listBookmarksForOwner filters by ownerUserId", async () => {
+    const { databases } = makeFakeDatabases({
+      bookmarks: {
+        documents: [bookmarkDoc, { ...bookmarkDoc, $id: "bm2", ownerUserId: stranger }],
+      },
+    });
+    const result = await listBookmarksForOwner(owner, 10, databases);
+    expect(result.map((b) => b.$id)).toEqual(["bm1"]);
+    expect(result[0]?.quote).toBe("A memorable quote.");
+  });
+
+  it("listBookmarksBySession scopes to owner and session", async () => {
+    const { databases } = makeFakeDatabases({
+      bookmarks: {
+        documents: [
+          bookmarkDoc,
+          { ...bookmarkDoc, $id: "bm3", sessionId: "sess2" },
+          { ...bookmarkDoc, $id: "bm4", ownerUserId: stranger },
+        ],
+      },
+    });
+    const result = await listBookmarksBySession(owner, "sess1", databases);
+    expect(result.map((b) => b.$id)).toEqual(["bm1"]);
   });
 });

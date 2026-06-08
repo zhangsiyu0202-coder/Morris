@@ -663,12 +663,12 @@ function Canvas({
         {(researchGoal || targetAudience) && (
           <div className="mt-6 flex flex-col gap-2 border-t border-ink-100 pt-5">
             {researchGoal && (
-              <p className="font-ui text-caption text-ink-400">
+              <p className="font-ui text-body-sm text-ink-400">
                 <span className="font-medium text-ink-600">研究目标:</span> {researchGoal}
               </p>
             )}
             {targetAudience && (
-              <p className="font-ui text-caption text-ink-400">
+              <p className="font-ui text-body-sm text-ink-400">
                 <span className="font-medium text-ink-600">目标受众:</span> {targetAudience}
               </p>
             )}
@@ -724,7 +724,7 @@ function Canvas({
         {question.probeInstruction && (
           <div className="mt-7 flex items-start gap-2 rounded border border-dashed border-mauve-200 bg-mauve-50 px-3 py-2">
             <CornerDownRight className="mt-0.5 size-3.5 shrink-0 text-mauve-400" strokeWidth={2} />
-            <p className="font-ui text-caption leading-5 text-ink-600">
+            <p className="font-ui text-body-sm leading-6 text-ink-600">
               <span className="font-medium text-ink-900">
                 {PROBE_LEVEL_LABELS[question.probeLevel]}
               </span>

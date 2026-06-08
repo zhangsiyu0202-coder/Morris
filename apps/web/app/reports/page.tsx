@@ -86,6 +86,12 @@ function SignedOutEmpty() {
         <p className="mt-2 font-ui text-body-sm leading-6 text-ink-400">
           只有研究员账号能查看分析报告。
         </p>
+        <Link
+          href="/login?callbackUrl=/reports"
+          className="mt-6 inline-flex h-10 items-center rounded-lg bg-mauve-200 px-5 font-ui text-body-sm font-medium text-ink-900 transition-colors hover:bg-mauve-100"
+        >
+          去登录
+        </Link>
       </div>
     </main>
   );

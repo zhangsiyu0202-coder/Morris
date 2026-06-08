@@ -15,18 +15,26 @@ export interface BootstrapResult {
  * Exchanges the interview link token for a LiveKit room token exactly once.
  *
  * Token issuance claims a single-use session slot server-side, so it must not
- * run more than once. This is an imperative external-system action (not render
- * data), so a ref-guarded effect is the correct pattern — re-runs are blocked
- * even under StrictMode double-invocation.
+ * run more than once — and it must not run until the interviewee has actively
+ * consented and chosen to start. The caller flips `enabled` to true only after
+ * the pre-interview consent flow completes; before that the hook stays idle and
+ * the one-time session slot is never spent on a page that is merely open.
+ *
+ * This is an imperative external-system action (not render data), so a
+ * ref-guarded effect is the correct pattern — re-runs are blocked even under
+ * StrictMode double-invocation.
  */
-export function useInterviewBootstrap(linkToken: string | null): BootstrapResult {
+export function useInterviewBootstrap(
+  linkToken: string | null,
+  enabled: boolean,
+): BootstrapResult {
   const [phase, setPhase] = useState<BootstrapPhase>("idle")
   const [connectArgs, setConnectArgs] = useState<BootstrapResult["connectArgs"]>(null)
   const [error, setError] = useState<string | null>(null)
   const startedRef = useRef(false)
 
   useEffect(() => {
-    if (!linkToken || startedRef.current) return
+    if (!enabled || !linkToken || startedRef.current) return
     startedRef.current = true
 
     let cancelled = false
@@ -46,7 +54,7 @@ export function useInterviewBootstrap(linkToken: string | null): BootstrapResult
     return () => {
       cancelled = true
     }
-  }, [linkToken])
+  }, [enabled, linkToken])
 
   return { phase, connectArgs, error }
 }

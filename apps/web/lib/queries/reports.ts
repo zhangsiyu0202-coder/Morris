@@ -1,5 +1,6 @@
 import type { Databases } from "node-appwrite";
 import {
+  AnalysisReportOutputSchema,
   AnalysisReportSchema,
   SurveyAnalysisReportOutputSchema,
 } from "@merism/contracts";
@@ -78,13 +79,38 @@ export function parseSurveyReportBody(report: AnalysisReport): SurveyAnalysisRep
 }
 
 /**
- * Parse a session-level report's body — defined for completeness but
- * currently unused by the read layer (the report viewer renders survey-level
- * only). The session body shape comes from `AnalysisReportOutputSchema` in
- * api.ts.
+ * Parse a session-level report's body. Persisted columns mirror
+ * `analyzeSession` upsert: `themes` / `citations` are direct JSON blobs;
+ * `insights` holds `{ insights, perQuestionSummary }`.
  */
-export function parseSessionReportBody(_report: AnalysisReport): AnalysisReportOutput | null {
-  return null;
+export function parseSessionReportBody(report: AnalysisReport): AnalysisReportOutput | null {
+  if (report.scope !== "session") return null;
+
+  const themes = Array.isArray(report.themes) ? report.themes : [];
+  const citations = Array.isArray(report.citations) ? report.citations : [];
+
+  let insights: unknown[] = [];
+  let perQuestionSummary: unknown[] = [];
+  const insightsBlob = report.insights as unknown;
+  if (insightsBlob && typeof insightsBlob === "object" && !Array.isArray(insightsBlob)) {
+    const blob = insightsBlob as Record<string, unknown>;
+    if (Array.isArray(blob.insights)) insights = blob.insights;
+    if (Array.isArray(blob.perQuestionSummary)) perQuestionSummary = blob.perQuestionSummary;
+  } else if (Array.isArray(insightsBlob)) {
+    insights = insightsBlob;
+  }
+
+  const candidate = {
+    scope: "session" as const,
+    themes,
+    insights,
+    citations,
+    perQuestionSummary,
+    rendered: null,
+  };
+
+  const parsed = AnalysisReportOutputSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : null;
 }
 
 function decodeReportColumns(raw: unknown): unknown {

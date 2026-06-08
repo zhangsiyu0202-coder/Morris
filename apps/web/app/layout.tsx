@@ -3,7 +3,9 @@ import { Inter, Inclusive_Sans, Istok_Web, Inika, Inknut_Antiqua } from "next/fo
 import "./globals.css";
 import { AssistantDock } from "@/components/assistant/assistant-dock";
 import { AppShell } from "@/components/shell/app-shell";
+import { getCurrentResearcher } from "@/lib/auth/current-user";
 import { listSurveysForOwner } from "@/lib/survey-read";
+import type { StudyStatus } from "@/lib/guide";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -56,8 +58,10 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const researcher = await getCurrentResearcher();
+
   // 侧边栏 Studies 列表用真实数据;未配置 stack / 出错时回退空列表(不挡渲染)。
-  let studies: { id: string; title: string; status: "draft" | "live" | "closed" }[] = [];
+  let studies: { id: string; title: string; status: StudyStatus }[] = [];
   try {
     studies = await listSurveysForOwner();
   } catch {
@@ -70,7 +74,7 @@ export default async function RootLayout({
       className={`bg-mauve-50 ${inter.variable} ${inclusive.variable} ${istok.variable} ${inika.variable} ${inknut.variable}`}
     >
       <body className="font-ui antialiased">
-        <AppShell studies={studies}>{children}</AppShell>
+        <AppShell studies={studies} researcher={researcher}>{children}</AppShell>
         <AssistantDock />
       </body>
     </html>

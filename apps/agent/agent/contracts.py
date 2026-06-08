@@ -11,6 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 SessionState = Literal["created", "in_progress", "completed", "abandoned", "failed"]
+RecordingFormat = Literal["mp3", "opus", "wav", "mp4", "webm"]
 QuestionType = Literal[
     "text",
     "open_ended",

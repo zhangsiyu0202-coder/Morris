@@ -89,7 +89,7 @@ Each sub-spec references this foundation as a prerequisite (see
 | Spec | Scope | Depends on |
 |---|---|---|
 | **survey-editor** | three-column editor, question types, skip logic, page-assistant tools | foundation-setup |
-| **interviewee-portal** | `/i/[linkToken]` landing, consent, device test, session join, reconnect | foundation-setup |
+| **interviewee-portal** | `/i/[linkToken]` landing, pre-interview flow (screen-share permission, device check, consent, loading), camera self-view + screen share, two-pane interview room (transcript + stimulus), session join, reconnect. UI follows the *Design Interviewer Page* prototype; see `docs/design/multimodal-interview-and-structured-rendering.md §9`. | foundation-setup |
 | **ai-interview-engine** | Agent Worker, LiveKit Supervisor/TaskGroup/AgentTask workflow, STT/TTS providers, transcript/recording | foundation-setup, survey-editor, interviewee-portal |
 | **analysis-report** ✅ | DeepSeek thematic coding via `analyzeSession` + `analyzeSurvey` Functions, citations, report viewer at `/reports/[surveyId]`, Morris read tools, Insights migrated to Appwrite. PDF/MD rendering deferred. See `.kiro/specs/analysis-report/` and `docs/adr/0003-analysis-report-architecture.md`. | foundation-setup, ai-interview-engine |
 

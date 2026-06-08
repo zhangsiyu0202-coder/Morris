@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   SlidersHorizontal,
@@ -11,16 +11,21 @@ import {
   CircleDot,
   Clock,
 } from "lucide-react";
+import type { Recording } from "@merism/contracts";
 import {
   SESSION_STATUS_LABELS,
   type ResultsTable,
   type SessionDisplayStatus,
 } from "@/lib/mock/workspace";
+import { buildResultsCsv } from "@/lib/export-results-csv";
+import { RecordingDownloadButton } from "@/components/studies/recording-download-button";
 
 /**
- * 结果大表:筛选 chip + 数据表 + 分页 + 导出(mock)。
+ * 结果大表:筛选 chip + 数据表 + 分页 + 导出。
  * 状态单色(图标 + 文案);表格正文用 font-data。
  */
+
+const PAGE_SIZE = 20;
 
 const FILTERS: { key: "all" | SessionDisplayStatus; label: string }[] = [
   { key: "all", label: "全部" },
@@ -48,22 +53,44 @@ function StatusBadge({ status }: { status: SessionDisplayStatus }) {
   );
 }
 
+function downloadCsv(content: string, filename: string) {
+  const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 export function ResultsTableView({
   studyId,
   table,
+  recordingsBySessionId,
 }: {
   studyId: string;
   table: ResultsTable;
+  recordingsBySessionId: Record<string, Recording>;
 }) {
   const [activeFilter, setActiveFilter] = useState<"all" | SessionDisplayStatus>("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(1);
 
   const rows =
     activeFilter === "all"
       ? table.rows
       : table.rows.filter((r) => r.status === activeFilter);
 
-  const allChecked = selected.size === rows.length && rows.length > 0;
+  useEffect(() => {
+    setPage(1);
+  }, [activeFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const paginatedRows = rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  const allChecked =
+    paginatedRows.length > 0 && paginatedRows.every((r) => selected.has(r.sessionId));
 
   const toggleRow = (id: string) => {
     setSelected((prev) => {
@@ -75,8 +102,39 @@ export function ResultsTableView({
   };
 
   const toggleAll = () => {
-    if (allChecked) setSelected(new Set());
-    else setSelected(new Set(rows.map((r) => r.sessionId)));
+    if (allChecked) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const r of paginatedRows) next.delete(r.sessionId);
+        return next;
+      });
+    } else {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const r of paginatedRows) next.add(r.sessionId);
+        return next;
+      });
+    }
+  };
+
+  const selectedIds = [...selected];
+  const singleSelectedId = selected.size === 1 ? selectedIds[0] : null;
+  const canDownloadRecording =
+    singleSelectedId !== null && recordingsBySessionId[singleSelectedId] !== undefined;
+
+  const recordingDisabledReason =
+    selected.size === 0
+      ? "请先选择一条记录"
+      : selected.size > 1
+        ? "请只选一条"
+        : !canDownloadRecording
+          ? "暂无录像"
+          : null;
+
+  const handleExportCsv = () => {
+    if (selected.size === 0) return;
+    const csv = buildResultsCsv(table, selectedIds);
+    downloadCsv(csv, `results-${studyId}.csv`);
   };
 
   return (
@@ -123,7 +181,7 @@ export function ResultsTableView({
                   type="checkbox"
                   checked={allChecked}
                   onChange={toggleAll}
-                  aria-label="全选"
+                  aria-label="全选当前页"
                   className="accent-ink-900"
                 />
               </th>
@@ -144,7 +202,7 @@ export function ResultsTableView({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => {
+            {paginatedRows.map((row) => {
               const isSelected = selected.has(row.sessionId);
               return (
                 <tr
@@ -168,7 +226,7 @@ export function ResultsTableView({
                       <StatusBadge status={row.status} />
                       <Link
                         href={`/studies/${studyId}/results/${row.sessionId}`}
-                        className="font-ui text-caption font-medium text-ink-900 transition-colors hover:text-ink-600"
+                        className="font-ui text-body-sm font-medium text-ink-900 transition-colors hover:text-ink-600"
                       >
                         查看转录
                       </Link>
@@ -188,21 +246,27 @@ export function ResultsTableView({
         </table>
       </div>
 
-      {/* 底部:分页 + 导出(mock) */}
+      {/* 底部:分页 + 导出 */}
       <div className="flex shrink-0 items-center justify-between border-t border-ink-200 bg-ink-0 px-4 py-2">
         <div className="flex items-center gap-2">
           <button
             type="button"
             aria-label="上一页"
-            className="grid size-7 place-items-center rounded border border-ink-200 text-ink-600 transition-colors hover:bg-mauve-50"
+            disabled={safePage <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            className="grid size-7 place-items-center rounded border border-ink-200 text-ink-600 transition-colors hover:bg-mauve-50 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <ChevronLeft className="size-3.5" strokeWidth={2} />
           </button>
-          <span className="font-ui text-caption font-medium text-ink-900">1</span>
+          <span className="font-ui text-caption font-medium text-ink-900">
+            {safePage} / {totalPages}
+          </span>
           <button
             type="button"
             aria-label="下一页"
-            className="grid size-7 place-items-center rounded border border-ink-200 text-ink-600 transition-colors hover:bg-mauve-50"
+            disabled={safePage >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            className="grid size-7 place-items-center rounded border border-ink-200 text-ink-600 transition-colors hover:bg-mauve-50 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <ChevronRight className="size-3.5" strokeWidth={2} />
           </button>
@@ -213,16 +277,30 @@ export function ResultsTableView({
         </span>
 
         <div className="flex items-center gap-2">
+          {singleSelectedId && canDownloadRecording ? (
+            <RecordingDownloadButton
+              sessionId={singleSelectedId}
+              label="下载录像"
+              className="inline-flex items-center gap-1.5 rounded border border-ink-200 px-2.5 py-1.5 font-ui text-caption text-ink-600 transition-colors hover:bg-mauve-50"
+            />
+          ) : (
+            <button
+              type="button"
+              disabled
+              aria-disabled
+              title={recordingDisabledReason ?? undefined}
+              className="inline-flex items-center gap-1.5 rounded border border-ink-200 px-2.5 py-1.5 font-ui text-caption text-ink-400"
+            >
+              <Download className="size-3.5" strokeWidth={2} />
+              下载录像
+            </button>
+          )}
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 rounded border border-ink-200 px-2.5 py-1.5 font-ui text-caption text-ink-600 transition-colors hover:bg-mauve-50"
-          >
-            <Download className="size-3.5" strokeWidth={2} />
-            下载录音
-          </button>
-          <button
-            type="button"
-            className="rounded border border-ink-200 px-2.5 py-1.5 font-ui text-caption text-ink-600 transition-colors hover:bg-mauve-50"
+            onClick={handleExportCsv}
+            disabled={selected.size === 0}
+            aria-disabled={selected.size === 0}
+            className="rounded border border-ink-200 px-2.5 py-1.5 font-ui text-caption text-ink-600 transition-colors hover:bg-mauve-50 disabled:cursor-not-allowed disabled:opacity-40"
           >
             导出 CSV
           </button>

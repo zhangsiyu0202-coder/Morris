@@ -34,27 +34,40 @@ async function ensureDatabase(db: Databases): Promise<void> {
   }
 }
 
-async function listAttrKeys(
+type DeployedAttr = { type: string; elements?: string[]; default?: string | number | boolean | null };
+
+async function listDeployedAttrs(
   db: Databases,
   collId: string,
-): Promise<Map<string, string>> {
+): Promise<Map<string, DeployedAttr>> {
   try {
     const res: any = await db.listAttributes(DATABASE_ID, collId);
-    return new Map(res.attributes.map((a: any) => [a.key, a.type]));
+    return new Map(
+      res.attributes.map((a: any) => [
+        a.key,
+        { type: a.type, elements: a.elements, default: a.default },
+      ]),
+    );
   } catch {
     return new Map();
   }
 }
 
+function enumElementsMatch(declared: string[], deployed?: string[]): boolean {
+  if (!deployed) return false;
+  if (declared.length !== deployed.length) return false;
+  return declared.every((v, i) => v === deployed[i]);
+}
+
 function collectConflicts(
   coll: CollectionDef,
-  existing: Map<string, string>,
+  existing: Map<string, DeployedAttr>,
 ): string[] {
   const conflicts: string[] = [];
   for (const attr of coll.attributes) {
     const cur = existing.get(attr.key);
-    if (cur && cur !== reportedType(attr.type)) {
-      conflicts.push(`${coll.id}.${attr.key}: ${cur} -> ${reportedType(attr.type)}`);
+    if (cur && cur.type !== reportedType(attr.type)) {
+      conflicts.push(`${coll.id}.${attr.key}: ${cur.type} -> ${reportedType(attr.type)}`);
     }
   }
   return conflicts;
@@ -99,7 +112,17 @@ async function ensureBuckets(st: Storage): Promise<void> {
     try {
       await st.getBucket(b.id);
     } catch {
-      await ignoreExists(st.createBucket(b.id, b.name, b.permissions, b.fileSecurity));
+      await ignoreExists(
+        st.createBucket(
+          b.id,
+          b.name,
+          b.permissions,
+          b.fileSecurity,
+          true,
+          b.maximumFileSize,
+          b.allowedFileExtensions,
+        ),
+      );
       console.log(`+ bucket ${b.id}`);
     }
   }
@@ -112,11 +135,11 @@ async function main(): Promise<void> {
   await ensureDatabase(db);
 
   // 1) Pre-scan for destructive type changes before mutating anything.
-  const existingByColl = new Map<string, Map<string, string>>();
+  const existingByColl = new Map<string, Map<string, DeployedAttr>>();
   const allConflicts: string[] = [];
   for (const coll of COLLECTIONS) {
     await ignoreExists(db.createCollection(DATABASE_ID, coll.id, coll.name, coll.permissions, coll.documentSecurity));
-    const existing = await listAttrKeys(db, coll.id);
+    const existing = await listDeployedAttrs(db, coll.id);
     existingByColl.set(coll.id, existing);
     allConflicts.push(...collectConflicts(coll, existing));
   }
@@ -130,14 +153,37 @@ async function main(): Promise<void> {
   for (const coll of COLLECTIONS) {
     const existing = existingByColl.get(coll.id)!;
     const created: string[] = [];
+    const updated: string[] = [];
     for (const a of coll.attributes) {
       if (!existing.has(a.key)) {
         await createAttribute(db, coll.id, a);
         created.push(a.key);
         console.log(`+ ${coll.id}.${a.key}`);
+        continue;
+      }
+      if (a.type === "enum") {
+        const cur = existing.get(a.key)!;
+        const elements = a.elements ?? [];
+        if (!enumElementsMatch(elements, cur.elements)) {
+          // SDK requires xdefault param; required attrs must use null (Appwrite rejects defaults on required).
+          const xdefault = (
+            a.required ? (cur.default ?? null) : (a.default ?? cur.default ?? null)
+          ) as string | null;
+          await db.updateEnumAttribute(
+            DATABASE_ID,
+            coll.id,
+            a.key,
+            elements,
+            a.required,
+            xdefault,
+          );
+          updated.push(a.key);
+          console.log(`~ ${coll.id}.${a.key} enum elements`);
+        }
       }
     }
-    if (created.length) await waitAttributesAvailable(db, coll.id, created);
+    const pending = [...created, ...updated];
+    if (pending.length) await waitAttributesAvailable(db, coll.id, pending);
 
     const idx: any = await ignoreExists(db.listIndexes(DATABASE_ID, coll.id));
     const idxKeys = new Set((idx?.indexes ?? []).map((i: any) => i.key));

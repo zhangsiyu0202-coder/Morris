@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { InterviewSession, Transcript } from "@merism/contracts";
-import { sessionsToOverview, sessionsToResults, transcriptToDetail } from "../workspace-map";
+import { sessionsToOverview, sessionsToResults, transcriptToDetail, sessionReportToSummary } from "../workspace-map";
+import type { AnalysisReportOutput } from "@merism/contracts";
 
 function session(over: Partial<InterviewSession>): InterviewSession {
   return {
@@ -95,5 +96,42 @@ describe("transcriptToDetail", () => {
     expect(d.aiSummary).toContain("暂无");
     const dur = d.metadata.find((m) => m.key === "duration");
     expect(dur?.value).toBe("14 分 0 秒");
+  });
+});
+
+describe("sessionReportToSummary", () => {
+  const base: AnalysisReportOutput = {
+    scope: "session",
+    themes: [
+      {
+        id: "t1",
+        label: "Theme",
+        description: "Theme description fallback",
+        evidence: [{ transcriptId: "tr1", segmentIndex: 0 }],
+      },
+    ],
+    insights: [
+      { id: "i1", statement: "First insight", supportingThemes: ["t1"], confidence: 0.8 },
+      { id: "i2", statement: "Second insight", supportingThemes: ["t1"], confidence: 0.7 },
+    ],
+    citations: [],
+    perQuestionSummary: [{ questionId: "q1", summary: "Question summary", sentiment: "neutral" }],
+    rendered: null,
+  };
+
+  it("prefers insight statements joined with semicolons", () => {
+    expect(sessionReportToSummary(base)).toBe("First insight；Second insight");
+  });
+
+  it("falls back to perQuestionSummary when insights are empty", () => {
+    expect(
+      sessionReportToSummary({ ...base, insights: [], perQuestionSummary: base.perQuestionSummary }),
+    ).toBe("Question summary");
+  });
+
+  it("falls back to first theme description when insights and summaries are empty", () => {
+    expect(
+      sessionReportToSummary({ ...base, insights: [], perQuestionSummary: [] }),
+    ).toBe("Theme description fallback");
   });
 });

@@ -8,9 +8,11 @@ import {
   type TranscriptDetail,
   type RecruitMock,
 } from "@/lib/mock/workspace";
-import { getOwnerUserId } from "@/lib/owner";
-import { sessionsToOverview, sessionsToResults, transcriptToDetail } from "@/lib/workspace-map";
+import { getOwnerUserIdOrNull } from "@/lib/owner";
+import { sessionsToOverview, sessionsToResults, transcriptToDetail, sessionReportToSummary } from "@/lib/workspace-map";
 import { listSessions } from "@/lib/queries";
+import { getLatestAnalysisReport, parseSessionReportBody } from "@/lib/queries/reports";
+import { getRecordingBySession } from "@/lib/queries/recordings";
 import { listQuestionRefs, getSessionById, getTranscriptBySession } from "@/lib/survey-read";
 
 /**
@@ -36,7 +38,9 @@ import { listQuestionRefs, getSessionById, getTranscriptBySession } from "@/lib/
 
 export async function loadStudyOverview(studyId: string): Promise<WorkspaceOverview> {
   try {
-    const sessions = await listSessions(getOwnerUserId(), studyId);
+    const owner = await getOwnerUserIdOrNull();
+    if (!owner) return getMockOverview(studyId);
+    const sessions = await listSessions(owner, studyId);
     // No sessions yet -> show the illustrative mock rather than an empty panel.
     if (sessions.length === 0) return getMockOverview(studyId);
     return sessionsToOverview(sessions);
@@ -48,7 +52,9 @@ export async function loadStudyOverview(studyId: string): Promise<WorkspaceOverv
 
 export async function loadStudyResults(studyId: string): Promise<ResultsTable> {
   try {
-    const sessions = await listSessions(getOwnerUserId(), studyId);
+    const owner = await getOwnerUserIdOrNull();
+    if (!owner) return getMockResults(studyId);
+    const sessions = await listSessions(owner, studyId);
     if (sessions.length === 0) return getMockResults(studyId);
     const questions = await listQuestionRefs(studyId);
     return sessionsToResults(questions, sessions);
@@ -62,10 +68,20 @@ export async function loadStudyTranscript(sessionId: string): Promise<Transcript
     const transcript = await getTranscriptBySession(sessionId);
     if (!transcript) return getMockTranscript(sessionId);
     const session = await getSessionById(sessionId);
-    // AI summary comes from the session-level AnalysisReport once
-    // analysis-report's parseSessionReportBody is implemented; "" for now ->
-    // transcriptToDetail renders a neutral placeholder.
-    return transcriptToDetail(transcript, session, "");
+    const owner = await getOwnerUserIdOrNull();
+    let aiSummary = "";
+    let recording = null;
+    if (owner && session?.surveyId) {
+      const report = await getLatestAnalysisReport(owner, {
+        scope: "session",
+        sessionId,
+        surveyId: session.surveyId,
+      });
+      const body = report ? parseSessionReportBody(report) : null;
+      if (body) aiSummary = sessionReportToSummary(body);
+      recording = await getRecordingBySession(sessionId);
+    }
+    return transcriptToDetail(transcript, session, aiSummary, recording);
   } catch {
     return getMockTranscript(sessionId);
   }

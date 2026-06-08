@@ -3,7 +3,7 @@ import { z } from "zod";
 // Reusable json field (Appwrite stores as stringified json / object attr)
 const json = z.record(z.string(), z.unknown());
 
-export const SurveyStatus = z.enum(["draft", "published", "archived"]);
+export const SurveyStatus = z.enum(["draft", "published", "paused", "closed", "archived"]);
 export const QuestionType = z.enum([
   "text",
   "open_ended",
@@ -22,14 +22,50 @@ export const SessionState = z.enum([
   "abandoned",
   "failed",
 ]);
-export const RecordingFormat = z.enum(["mp3", "opus", "wav"]);
+export const RecordingFormat = z.enum(["mp3", "opus", "wav", "mp4", "webm"]);
 export const ReportScope = z.enum(["session", "survey"]);
 
+/**
+ * @deprecated The researcher identity is owned by Appwrite's built-in Account
+ * service, not a business collection. The `users` collection was removed (see
+ * docs/design/auth-and-user-research.md §8.3); `ownerUserId` everywhere is the
+ * Appwrite Account `$id`. Use `CurrentResearcherSchema` for the read-side view
+ * of the logged-in researcher. This schema is kept only for backward type
+ * compatibility and must not be reintroduced as a stored collection.
+ */
 export const UserSchema = z.object({
   $id: z.string(),
   email: z.string().email(),
   name: z.string(),
   createdAt: z.string().datetime(),
+});
+
+/**
+ * Researcher preferences. Stored inside the Appwrite Account `prefs` JSON, not
+ * a collection. This is the contract for `account.updatePrefs` / `getPrefs`.
+ */
+export const ResearcherPrefsSchema = z.object({
+  locale: z.string().default("zh-CN"),
+  timeZone: z.string().optional(),
+  notifications: z
+    .object({
+      sessionCompleted: z.boolean().default(true),
+      reportReady: z.boolean().default(true),
+    })
+    .default({ sessionCompleted: true, reportReady: true }),
+});
+
+/**
+ * Read-only view of the currently authenticated researcher, projected from the
+ * Appwrite Account (`account.get()`), not a database row. `id` is the Account
+ * `$id` and equals `ownerUserId` on every owner-scoped collection.
+ */
+export const CurrentResearcherSchema = z.object({
+  id: z.string(),
+  email: z.string().email(),
+  name: z.string(),
+  emailVerified: z.boolean(),
+  prefs: ResearcherPrefsSchema,
 });
 
 export const ProjectSchema = z.object({
@@ -105,6 +141,8 @@ export const InterviewLinkSchema = z.object({
   maxUses: z.number().int().positive(),
   usedCount: z.number().int().nonnegative().default(0),
   expiresAt: z.string().datetime(),
+  isRevoked: z.boolean().default(false),
+  label: z.string().optional(),
 });
 
 export const TranscriptSegmentSchema = z.object({
@@ -138,9 +176,23 @@ export const TranscriptSchema = z.object({
 export const RecordingSchema = z.object({
   $id: z.string(),
   sessionId: z.string(),
+  ownerUserId: z.string(),
   storageFileId: z.string(),
   durationMs: z.number().int().nonnegative(),
   format: RecordingFormat,
+});
+
+/** Researcher-saved quote bookmark from an interview transcript turn. */
+export const BookmarkSchema = z.object({
+  $id: z.string(),
+  ownerUserId: z.string(),
+  surveyId: z.string(),
+  sessionId: z.string(),
+  quote: z.string(),
+  source: z.string(),
+  respondent: z.string(),
+  segmentIndex: z.number().int().nonnegative().optional(),
+  createdAt: z.string().datetime(),
 });
 
 /**
@@ -192,7 +244,39 @@ export const AnalysisReportSchema = z
     }
   });
 
+export type SurveyStatus = z.infer<typeof SurveyStatus>;
+
+/**
+ * Allowed survey status transitions. Each key maps to the set of statuses it
+ * may move to. Pure data — no I/O. Mirrors the study state graph:
+ *   draft → published
+ *   published → paused | closed
+ *   paused → published | closed
+ *   closed → archived
+ * `closed` stops new sessions; `archived` is terminal (read-only, hidden from main list).
+ */
+export const SURVEY_STATUS_TRANSITIONS: Record<SurveyStatus, SurveyStatus[]> = {
+  draft: ["published"],
+  published: ["paused", "closed"],
+  paused: ["published", "closed"],
+  closed: ["archived"],
+  archived: [],
+};
+
+/**
+ * Pure guard for survey status transitions. Returns true when moving from
+ * `from` to `to` is permitted by SURVEY_STATUS_TRANSITIONS. No side effects.
+ */
+export function canTransitionSurveyStatus(
+  from: SurveyStatus,
+  to: SurveyStatus,
+): boolean {
+  return SURVEY_STATUS_TRANSITIONS[from].includes(to);
+}
+
 export type User = z.infer<typeof UserSchema>;
+export type ResearcherPrefs = z.infer<typeof ResearcherPrefsSchema>;
+export type CurrentResearcher = z.infer<typeof CurrentResearcherSchema>;
 export type Project = z.infer<typeof ProjectSchema>;
 export type Survey = z.infer<typeof SurveySchema>;
 export type SurveySection = z.infer<typeof SurveySectionSchema>;
@@ -206,4 +290,5 @@ export type InterviewSession = z.infer<typeof InterviewSessionSchema>;
 export type TranscriptSegment = z.infer<typeof TranscriptSegmentSchema>;
 export type Transcript = z.infer<typeof TranscriptSchema>;
 export type Recording = z.infer<typeof RecordingSchema>;
+export type Bookmark = z.infer<typeof BookmarkSchema>;
 export type AnalysisReport = z.infer<typeof AnalysisReportSchema>;

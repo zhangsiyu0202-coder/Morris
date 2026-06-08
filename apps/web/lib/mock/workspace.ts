@@ -58,7 +58,13 @@ export type TranscriptTurn = {
   text: string;
   /** 当该轮对应某个提纲问题时,标注问题序号,如 "Q1"。 */
   questionTag?: string;
+  /** 原始 segments 数组下标,用于书签 segmentIndex。 */
+  segmentIndex: number;
+  /** 段起始毫秒,用于受访者时间标签。 */
+  startMs: number;
 };
+
+import type { Recording } from "@merism/contracts";
 
 export type TranscriptDetail = {
   sessionId: string;
@@ -67,6 +73,7 @@ export type TranscriptDetail = {
   turns: TranscriptTurn[];
   aiSummary: string;
   metadata: { key: string; value: string }[];
+  recording: Recording | null;
 };
 
 /** Recruit:范围安全的分享配置(匿名链接 + 完成跳转)。 */
@@ -162,33 +169,47 @@ export function getMockTranscript(sessionId: string): TranscriptDetail {
       {
         speaker: "respondent",
         text: "我刚在等零食送到门口。我很想试试,我喜欢尝新东西。从外观看就很好吃,尤其那个像罐子的,我想先试它。",
+        segmentIndex: 0,
+        startMs: 0,
       },
       {
         speaker: "interviewer",
         questionTag: "Q1",
         text: "很高兴听到!Fruitabar Clusters 具体哪里吸引你?是口味、配料还是别的?",
+        segmentIndex: 1,
+        startMs: 12000,
       },
       {
         speaker: "respondent",
         text: "包装挺酷的,质感和口味的呈现都不错。说实话包装这点就挺打动我。",
+        segmentIndex: 2,
+        startMs: 28000,
       },
       {
         speaker: "interviewer",
         questionTag: "Q2",
         text: "如果在超市看到这款零食、价格合理,你会买吗?说说你的想法。",
+        segmentIndex: 3,
+        startMs: 45000,
       },
       {
         speaker: "respondent",
         text: "会,看到这样的我会买,因为我相信看到的品质,也会推荐给亲友——光凭包装就够了。",
+        segmentIndex: 4,
+        startMs: 62000,
       },
       {
         speaker: "interviewer",
         questionTag: "Q3",
         text: "你觉得这种产品什么价位算合理?如果配料优质,你愿意付溢价吗?",
+        segmentIndex: 5,
+        startMs: 80000,
       },
       {
         speaker: "respondent",
         text: "三块左右算公道,品质真的好的话四块也行。东西好吃、配料好,我不介意多付一点,也要看分量。",
+        segmentIndex: 6,
+        startMs: 98000,
       },
     ],
     aiSummary:
@@ -200,6 +221,7 @@ export function getMockTranscript(sessionId: string): TranscriptDetail {
       { key: "duration", value: "14 分 23 秒" },
       { key: "status", value: "已完成" },
     ],
+    recording: null,
   };
 }
 
@@ -221,46 +243,6 @@ export type HomeBookmark = {
   source: string;
 };
 
-/** 首页报告预览卡。 */
-export type HomeReportPreview = {
-  id: string;
-  title: string;
-  subtitle: string;
-  lastRun: string;
-};
-
-export function getMockBookmarks(): HomeBookmark[] {
-  return [
-    {
-      id: "bm_1",
-      respondent: "受访者 · 10:36",
-      date: "2024-12-13",
-      quote:
-        "对我来说不只是配送的问题,我甚至没想到要去找我真正想要的东西,结果跳出来的选项就……",
-      source: "线上可用性测试 · 问题 2",
-    },
-    {
-      id: "bm_2",
-      respondent: "受访者 · 04:49",
-      date: "2024-12-13",
-      quote:
-        "它会给城市、给手指那些,主要还是工作时用我的个人账号,我太上瘾了,它就在那本书里……",
-      source: "线上可用性测试 · Airbnb 任务",
-    },
-    {
-      id: "bm_3",
-      respondent: "受访者 · 15:28",
-      date: "2024-12-13",
-      quote:
-        "我在计划八月份带家人去巴黎,有个还是小孩的宝宝,想找个好地方住,白天逛完能避避暑……",
-      source: "线上可用性测试 · Airbnb 任务",
-    },
-  ];
-}
-
-export function getMockHomeReports(): HomeReportPreview[] {
-  return [
-    { id: "rp_1", title: "零食概念报告 Final", subtitle: "已访问的调研", lastRun: "2 个月前" },
-    { id: "rp_2", title: "自定义报告", subtitle: "已访问的调研", lastRun: "2 个月前" },
-  ];
-}
+// ---------------------------------------------------------------------------
+// Removed: getMockBookmarks — real bookmarks load via lib/home-data.ts.
+// ---------------------------------------------------------------------------

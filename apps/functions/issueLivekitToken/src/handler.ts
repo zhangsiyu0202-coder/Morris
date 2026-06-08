@@ -17,6 +17,8 @@ export interface LinkRecord {
   maxUses: number;
   usedCount: number;
   expiresAt: string;
+  isRevoked: boolean;
+  surveyStatus: string;
 }
 
 export interface SessionInit {
@@ -63,6 +65,12 @@ export async function issueLivekitToken(
 
   if (deps.now() > Date.parse(link.expiresAt))
     return { status: 410, body: { error: "link_expired" } };
+
+  if (link.isRevoked)
+    return { status: 410, body: { error: "link_revoked" } };
+
+  if (link.surveyStatus !== "published")
+    return { status: 410, body: { error: "survey_not_published" } };
 
   const effectiveMax = link.mode === "single_use" ? 1 : link.maxUses;
   if (link.usedCount >= effectiveMax)

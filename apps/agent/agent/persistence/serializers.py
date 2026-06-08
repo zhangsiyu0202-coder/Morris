@@ -10,11 +10,17 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 
-from agent.contracts import SessionState, TranscriptSegment
+from agent.contracts import RecordingFormat, SessionState, TranscriptSegment
 
 DATABASE_ID = "merism"
 TRANSCRIPTS_COLLECTION_ID = "transcripts"
 SESSIONS_COLLECTION_ID = "interview_sessions"
+RECORDINGS_COLLECTION_ID = "recordings"
+SURVEYS_COLLECTION_ID = "surveys"
+RECORDINGS_BUCKET_ID = "recordings"
+RECORDINGS_COLLECTION_ID = "recordings"
+RECORDINGS_BUCKET_ID = "recordings"
+SURVEYS_COLLECTION_ID = "surveys"
 
 
 def transcript_document(
@@ -59,6 +65,24 @@ def session_completion_fields(
     }
 
 
+def recording_document(
+    *,
+    session_id: str,
+    owner_user_id: str,
+    storage_file_id: str,
+    duration_ms: int,
+    format: RecordingFormat,
+) -> dict[str, object]:
+    """Build a ``recordings`` collection document body."""
+    return {
+        "sessionId": session_id,
+        "ownerUserId": owner_user_id,
+        "storageFileId": storage_file_id,
+        "durationMs": duration_ms,
+        "format": format,
+    }
+
+
 def session_failure_fields(
     *,
     error_context: dict[str, object],
@@ -69,4 +93,22 @@ def session_failure_fields(
         "state": "failed",
         "errorContext": json.dumps(error_context, ensure_ascii=False),
         "endedAt": ended_at,
+    }
+
+
+def recording_document(
+    *,
+    session_id: str,
+    owner_user_id: str,
+    storage_file_id: str,
+    duration_ms: int,
+    format: str,
+) -> dict[str, object]:
+    """Build a ``recordings`` document body."""
+    return {
+        "sessionId": session_id,
+        "ownerUserId": owner_user_id,
+        "storageFileId": storage_file_id,
+        "durationMs": duration_ms,
+        "format": format,
     }

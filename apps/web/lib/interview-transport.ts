@@ -1,15 +1,20 @@
 import {
   type DataPacket_Kind,
+  type LocalVideoTrack,
   type Participant,
   type RemoteParticipant,
   Room,
   RoomEvent,
+  Track,
+  type TranscriptionSegment,
 } from "livekit-client"
 import {
   INTERVIEW_STATE_ATTRIBUTE,
   type InterviewAgentState,
   InterviewAgentStateSchema,
   type InterviewAnswerPayload,
+  type InterviewRoomMetadata,
+  InterviewRoomMetadataSchema,
   type SubmitInterviewAnswerRpcResponse,
   SUBMIT_ANSWER_RPC_METHOD,
 } from "@merism/contracts"
@@ -22,10 +27,53 @@ export type TransportPhase =
   | "disconnected"
   | "error"
 
+/** Who produced a transcript segment, from the interviewee's point of view. */
+export type TranscriptSpeaker = "agent" | "you"
+
+/**
+ * A single transcript update lifted off the LiveKit transcription stream.
+ * Segments arrive interim-then-final under a stable `id`, so the consumer
+ * upserts by id rather than appending blindly.
+ */
+export interface TranscriptSegmentUpdate {
+  id: string
+  text: string
+  final: boolean
+  speaker: TranscriptSpeaker
+}
+
+/** Snapshot of which local media tracks are currently publishing. */
+export interface LocalMediaState {
+  micEnabled: boolean
+  cameraEnabled: boolean
+  screenShareEnabled: boolean
+}
+
 export interface InterviewTransportCallbacks {
   onPhase?: (phase: TransportPhase) => void
   onState?: (state: InterviewAgentState) => void
   onError?: (message: string) => void
+  /** A transcript segment (interim or final) from the agent or the local user. */
+  onTranscription?: (update: TranscriptSegmentUpdate) => void
+  /** Parsed room metadata, used to derive interview progress. */
+  onMetadata?: (metadata: InterviewRoomMetadata) => void
+  /** Latest local mic/camera/screenshare publish state. */
+  onMediaState?: (state: LocalMediaState) => void
+  /** The local camera track for self-view rendering, or null when off. */
+  onLocalVideoTrack?: (track: LocalVideoTrack | null) => void
+}
+
+/** Parse and validate a raw `room.metadata` JSON string. Returns null when absent/invalid. */
+export function parseRoomMetadata(raw: string | undefined | null): InterviewRoomMetadata | null {
+  if (!raw) return null
+  let json: unknown
+  try {
+    json = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  const parsed = InterviewRoomMetadataSchema.safeParse(json)
+  return parsed.success ? parsed.data : null
 }
 
 /**
@@ -104,6 +152,11 @@ export class InterviewTransport {
       await this.room.connect(serverUrl, token)
       this.callbacks.onPhase?.("connected")
       this.refreshAgent()
+      this.emitMetadata()
+      // Voice interview: the microphone is the primary input channel, so it is
+      // enabled as soon as we are in the room. Camera/screenshare stay off
+      // until the interviewee explicitly opts in (consent gating lives upstream).
+      await this.setMicrophoneEnabled(true)
     } catch (error) {
       this.callbacks.onPhase?.("error")
       this.callbacks.onError?.(error instanceof Error ? error.message : "connect_failed")
@@ -113,6 +166,40 @@ export class InterviewTransport {
 
   async disconnect(): Promise<void> {
     await this.room.disconnect()
+  }
+
+  /** Toggle the microphone publish state. */
+  async setMicrophoneEnabled(enabled: boolean): Promise<void> {
+    await this.toggleMedia(() => this.room.localParticipant.setMicrophoneEnabled(enabled), "microphone_failed")
+  }
+
+  /** Toggle the camera publish state and surface the local track for self-view. */
+  async setCameraEnabled(enabled: boolean): Promise<void> {
+    await this.toggleMedia(() => this.room.localParticipant.setCameraEnabled(enabled), "camera_failed")
+    this.emitLocalVideoTrack()
+  }
+
+  /** Toggle screen-share publishing. */
+  async setScreenShareEnabled(enabled: boolean): Promise<void> {
+    await this.toggleMedia(
+      () => this.room.localParticipant.setScreenShareEnabled(enabled),
+      "screenshare_failed",
+    )
+  }
+
+  /**
+   * Run a media-publish toggle, then re-emit the media snapshot. Device/permission
+   * failures are expected (user denies prompt, no device) — surface them via
+   * `onError` and keep the snapshot consistent rather than tearing down the room.
+   */
+  private async toggleMedia(action: () => Promise<unknown>, errorCode: string): Promise<void> {
+    try {
+      await action()
+    } catch (error) {
+      this.callbacks.onError?.(error instanceof Error ? error.message : errorCode)
+    } finally {
+      this.emitMediaState()
+    }
   }
 
   /** Submit a structured answer; resolves with the agent's RPC acknowledgement. */
@@ -142,12 +229,58 @@ export class InterviewTransport {
       .on(RoomEvent.ParticipantAttributesChanged, (_changed, participant) => {
         this.handleAttributes(participant)
       })
+      .on(RoomEvent.TranscriptionReceived, (segments, participant) => {
+        this.handleTranscription(segments, participant)
+      })
+      .on(RoomEvent.RoomMetadataChanged, () => this.emitMetadata())
+      .on(RoomEvent.LocalTrackPublished, () => {
+        this.emitMediaState()
+        this.emitLocalVideoTrack()
+      })
+      .on(RoomEvent.LocalTrackUnpublished, () => {
+        this.emitMediaState()
+        this.emitLocalVideoTrack()
+      })
       .on(RoomEvent.Reconnecting, () => this.callbacks.onPhase?.("reconnecting"))
       .on(RoomEvent.Reconnected, () => {
         this.callbacks.onPhase?.("connected")
         this.refreshAgent()
       })
       .on(RoomEvent.Disconnected, () => this.callbacks.onPhase?.("disconnected"))
+  }
+
+  /** Forward each transcription segment, tagging the speaker as agent or local user. */
+  private handleTranscription(segments: TranscriptionSegment[], participant?: Participant): void {
+    if (!this.callbacks.onTranscription) return
+    const speaker: TranscriptSpeaker = participant?.isLocal ? "you" : "agent"
+    for (const segment of segments) {
+      this.callbacks.onTranscription({
+        id: segment.id,
+        text: segment.text,
+        final: segment.final,
+        speaker,
+      })
+    }
+  }
+
+  private emitMetadata(): void {
+    const metadata = parseRoomMetadata(this.room.metadata)
+    if (metadata) this.callbacks.onMetadata?.(metadata)
+  }
+
+  private emitMediaState(): void {
+    const local = this.room.localParticipant
+    this.callbacks.onMediaState?.({
+      micEnabled: local.isMicrophoneEnabled,
+      cameraEnabled: local.isCameraEnabled,
+      screenShareEnabled: local.isScreenShareEnabled,
+    })
+  }
+
+  private emitLocalVideoTrack(): void {
+    const track: LocalVideoTrack | null =
+      this.room.localParticipant.getTrackPublication(Track.Source.Camera)?.videoTrack ?? null
+    this.callbacks.onLocalVideoTrack?.(track)
   }
 
   /** Re-scan remote participants for the agent and read its current state. */

@@ -73,12 +73,14 @@ export type GuideQuestion = z.infer<typeof guideQuestionSchema>;
 export type GuideSection = z.infer<typeof guideSectionSchema>;
 export type Guide = z.infer<typeof guideSchema>;
 
-export type StudyStatus = "draft" | "live" | "closed";
+export type StudyStatus = "draft" | "live" | "paused" | "closed" | "archived";
 
 export const STATUS_LABELS: Record<StudyStatus, string> = {
   draft: "草稿",
   live: "进行中",
+  paused: "已暂停",
   closed: "已结束",
+  archived: "已归档",
 };
 
 /** 生成一个本地唯一 id(编辑态用,保存时一并落库)。 */

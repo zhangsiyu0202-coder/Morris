@@ -1,4 +1,4 @@
-import type { InterviewSession, Transcript } from "@merism/contracts";
+import type { AnalysisReportOutput, InterviewSession, Recording, Transcript } from "@merism/contracts";
 import type {
   WorkspaceOverview,
   SessionDisplayStatus,
@@ -111,14 +111,34 @@ const STATUS_TEXT: Record<SessionDisplayStatus, string> = {
   incomplete: "未完成",
 };
 
+/** Collapse a session-level analysis report into a short sidebar summary. */
+export function sessionReportToSummary(body: AnalysisReportOutput): string {
+  const fromInsights = body.insights
+    .slice(0, 3)
+    .map((i) => i.statement)
+    .filter(Boolean);
+  if (fromInsights.length > 0) return fromInsights.join("；");
+
+  const fromQuestions = body.perQuestionSummary
+    .map((p) => p.summary)
+    .filter(Boolean);
+  if (fromQuestions.length > 0) return fromQuestions.join("；");
+
+  const firstTheme = body.themes[0]?.description;
+  return firstTheme ?? "";
+}
+
 export function transcriptToDetail(
   transcript: Transcript,
   session: InterviewSession | null,
   aiSummary: string,
+  recording: Recording | null = null,
 ): TranscriptDetail {
-  const turns: TranscriptTurn[] = transcript.segments.map((seg) => ({
+  const turns: TranscriptTurn[] = transcript.segments.map((seg, index) => ({
     speaker: /interview|agent|主持|host/i.test(seg.speaker) ? "interviewer" : "respondent",
     text: seg.text,
+    segmentIndex: index,
+    startMs: seg.startMs,
   }));
 
   const status = session ? toDisplayStatus(session.state) : "completed";
@@ -137,5 +157,6 @@ export function transcriptToDetail(
     turns,
     aiSummary: aiSummary || "（本次访谈暂无 AI 摘要）",
     metadata,
+    recording,
   };
 }

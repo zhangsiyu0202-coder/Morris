@@ -22,6 +22,30 @@ describe("issueLivekitToken status routing", () => {
     expect(sessions.size).toBe(0);
   });
 
+  it("410 link_revoked when link.isRevoked is true, no session created", async () => {
+    const { deps, sessions } = makeFake({ isRevoked: true });
+    const r = await issueLivekitToken({ linkToken: "valid" }, deps);
+    expect(r.status).toBe(410);
+    if (r.status === 410) expect(r.body.error).toBe("link_revoked");
+    expect(sessions.size).toBe(0);
+  });
+
+  it("410 survey_not_published when surveyStatus is not published, no session created", async () => {
+    const { deps, sessions } = makeFake({ surveyStatus: "paused" });
+    const r = await issueLivekitToken({ linkToken: "valid" }, deps);
+    expect(r.status).toBe(410);
+    if (r.status === 410) expect(r.body.error).toBe("survey_not_published");
+    expect(sessions.size).toBe(0);
+  });
+
+  it("410 survey_not_published when surveyStatus is closed, no session created", async () => {
+    const { deps, sessions } = makeFake({ surveyStatus: "closed" });
+    const r = await issueLivekitToken({ linkToken: "valid" }, deps);
+    expect(r.status).toBe(410);
+    if (r.status === 410) expect(r.body.error).toBe("survey_not_published");
+    expect(sessions.size).toBe(0);
+  });
+
   it("200 on first valid use of a single_use link", async () => {
     const { deps, sessions } = makeFake();
     const r = await issueLivekitToken({ linkToken: "valid" }, deps);
