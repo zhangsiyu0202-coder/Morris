@@ -270,3 +270,161 @@ describe("analyzeSession handler", () => {
     expect(calls[0].surveyId).toBe(calls[1].surveyId);
   });
 });
+
+// =============================================================================
+// analysis-report-v2 新增测试 (T15)
+// 覆盖 R3 hallucination reject/retry + R1 qualityFlags 双写 + R2 generationMeta
+// =============================================================================
+
+describe("analyzeSession v2: hallucination + qualityFlags + generationMeta", () => {
+  function makeV2Deps(opts: {
+    llm?: any;
+    qualityLLM?: any;
+    updateFlags?: any;
+    updateErr?: any;
+    upsert?: any;
+  } = {}) {
+    const llmSpy = vi.fn(opts.llm ?? (async () => baseLlmOutput));
+    const qualitySpy = vi.fn(opts.qualityLLM ?? (async () => ({ flags: ["fluent"] })));
+    const flagsSpy = vi.fn(opts.updateFlags ?? (async () => undefined));
+    const errSpy = vi.fn(opts.updateErr ?? (async () => undefined));
+    const upsertSpy = vi.fn(opts.upsert ?? (async () => ({ reportId: "ar-1" })));
+    return {
+      now: () => Date.UTC(2026, 5, 6),
+      findSession: async () => baseSession,
+      findTranscript: async () => baseTranscript,
+      findSurveyContext: async () => baseSurvey,
+      analyzeWithLLM: llmSpy,
+      deriveQualityFlagsWithLLM: qualitySpy,
+      updateInterviewSessionFlags: flagsSpy,
+      updateSessionErrorContext: errSpy,
+      upsertSessionReport: upsertSpy,
+      llmSpy, qualitySpy, flagsSpy, errSpy, upsertSpy,
+    } as any;
+  }
+
+  it("happy path 短文本: 规则层 silent → LLM 跳过 (D10) + writeback ['silent']", async () => {
+    // baseTranscript 受访者只说了 22 字符 — 低于 SILENT_RESPONDENT_MIN_CHARS=50,
+    // 规则层判定 silent, 按 D10, LLM 阶段 (deriveQualityFlagsWithLLM) 跳过。
+    const deps = makeV2Deps();
+    const result = await analyzeSession({ sessionId: "sess1" }, deps);
+    expect(result.status).toBe(200);
+    expect(deps.llmSpy).toHaveBeenCalledTimes(1);
+    expect(deps.qualitySpy).not.toHaveBeenCalled(); // D10
+    expect(deps.upsertSpy).toHaveBeenCalledOnce();
+    const args = deps.upsertSpy.mock.calls[0][0];
+    expect(args.generationMeta).toMatchObject({
+      promptVersion: "session.v2.0",
+      attemptCount: 1,
+      hallucinationRatio: 0,
+    });
+    expect(args.generationMeta.createdWith.length).toBeGreaterThanOrEqual(2);
+    expect(deps.flagsSpy).toHaveBeenCalledOnce();
+    expect(deps.flagsSpy.mock.calls[0][0]).toBe("sess1");
+    expect(deps.flagsSpy.mock.calls[0][1]).toEqual(["silent"]);
+    expect(deps.errSpy).not.toHaveBeenCalled();
+  });
+
+  it("happy path 长文本: 规则层无 mechanical → LLM 介入 → flags 含 LLM 推导值", async () => {
+    // 给一个 long transcript 让规则层不触发 silent / too-short。
+    const longTranscript: TranscriptRecord = {
+      $id: "t1",
+      sessionId: "sess1",
+      language: "zh",
+      segments: [
+        { speaker: "interviewer", startMs: 0, endMs: 1000, text: "请展开讲讲。" },
+        { speaker: "respondent", startMs: 1000, endMs: 60000, text: "x".repeat(500) },
+      ],
+    };
+    const deps = makeV2Deps({ qualityLLM: async () => ({ flags: ["fluent", "deep-engagement"] }) });
+    deps.findTranscript = async () => longTranscript;
+
+    const result = await analyzeSession({ sessionId: "sess1" }, deps);
+    expect(result.status).toBe(200);
+    expect(deps.qualitySpy).toHaveBeenCalledOnce(); // 与 D10 反义路径
+    const flags = deps.flagsSpy.mock.calls[0][1];
+    expect(flags).toContain("fluent");
+    expect(flags).toContain("deep-engagement");
+  });
+
+  it("第一次幻觉 + 第二次过 → 重试时带 hint, attemptCount=2, ratio=通过那次", async () => {
+    const badThenGood = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ...baseLlmOutput,
+        themes: [
+          {
+            id: "t1",
+            label: "x",
+            description: "x",
+            evidence: [
+              { transcriptId: "sess1", segmentIndex: 0 },
+              { transcriptId: "sess1", segmentIndex: 99 },
+              { transcriptId: "sess1", segmentIndex: 88 },
+            ],
+          },
+        ],
+        citations: [
+          { segmentRef: { transcriptId: "sess1", segmentIndex: 77 }, quote: "x", themeIds: ["t1"] },
+        ],
+      })
+      .mockResolvedValueOnce(baseLlmOutput);
+    const deps = makeV2Deps({ llm: badThenGood });
+    const result = await analyzeSession({ sessionId: "sess1" }, deps);
+    expect(result.status).toBe(200);
+    expect(badThenGood).toHaveBeenCalledTimes(2);
+    // 第二次必须带 hallucinationHint
+    const secondCall = badThenGood.mock.calls[1];
+    expect(secondCall[1]).toMatchObject({ hallucinationHint: { badRefs: expect.any(Array) } });
+    expect(secondCall[1].hallucinationHint.badRefs.length).toBeGreaterThan(0);
+    // upsert 含 attemptCount=2 与 通过那次的 ratio (=0)
+    const args = deps.upsertSpy.mock.calls[0][0];
+    expect(args.generationMeta.attemptCount).toBe(2);
+    expect(args.generationMeta.hallucinationRatio).toBe(0);
+  });
+
+  it("两次都幻觉 → 409 analysis_rejected + 写 errorContext + 不落库 + 不双写 flags", async () => {
+    const allBad = {
+      ...baseLlmOutput,
+      themes: [
+        {
+          id: "t1",
+          label: "x",
+          description: "x",
+          evidence: [
+            { transcriptId: "sess1", segmentIndex: 99 },
+            { transcriptId: "sess1", segmentIndex: 88 },
+          ],
+        },
+      ],
+      citations: [
+        { segmentRef: { transcriptId: "sess1", segmentIndex: 77 }, quote: "x", themeIds: ["t1"] },
+      ],
+    };
+    const deps = makeV2Deps({ llm: async () => allBad });
+    const result = await analyzeSession({ sessionId: "sess1" }, deps);
+    expect(result.status).toBe(409);
+    expect(result.body).toMatchObject({ error: "analysis_rejected" });
+    expect(deps.llmSpy).toHaveBeenCalledTimes(2);
+    expect(deps.upsertSpy).not.toHaveBeenCalled();
+    expect(deps.flagsSpy).not.toHaveBeenCalled();
+    expect(deps.errSpy).toHaveBeenCalledOnce();
+    const ctx = deps.errSpy.mock.calls[0][1];
+    expect(ctx.reason).toBe("hallucination_threshold_exceeded");
+    expect(ctx.attemptCount).toBe(3);
+    expect(ctx.badRefs.length).toBeLessThanOrEqual(10);
+    expect(ctx.promptVersion).toBe("session.v2.0");
+  });
+
+  it("D6: qualityFlags 双写失败仍返回 200 (best-effort)", async () => {
+    const deps = makeV2Deps({
+      updateFlags: async () => {
+        throw new Error("appwrite write failed");
+      },
+    });
+    const result = await analyzeSession({ sessionId: "sess1" }, deps);
+    expect(result.status).toBe(200);
+    expect(deps.upsertSpy).toHaveBeenCalledOnce();
+    expect(deps.flagsSpy).toHaveBeenCalledOnce();
+  });
+});

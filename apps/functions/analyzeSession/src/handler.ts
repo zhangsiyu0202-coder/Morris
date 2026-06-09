@@ -14,10 +14,16 @@ import {
   type AnalyzeSessionResponse,
   type AnalysisReportInput,
   type AnalysisReportOutput,
+  type GenerationMeta,
+  type SessionQualityFlag,
   type VisualAnalysisOutput,
 } from "@merism/contracts";
 import type { RecordingBytes, RecordingRecord, VisualAnalyzer } from "./visual-analysis.js";
 import { calculateVideoSegmentSpecs } from "./video-segments.js";
+import { buildValidRefs, checkHallucinationRatio } from "./hallucination.js";
+import { deriveQualityFlags } from "./quality-flags.js";
+import { HALLUCINATION_RATIO_THRESHOLD } from "./constants.js";
+import { PROMPT_VERSION } from "./prompts/version.js";
 
 export interface SessionRecord {
   $id: string;
@@ -64,11 +70,52 @@ export interface AnalyzeSessionDeps {
    * Adapter for the LLM call. The adapter MUST validate the LLM output
    * against AnalysisReportOutputSchema before returning. The handler trusts
    * the returned payload to be schema-valid.
+   *
+   * `opts.hallucinationHint`: when present, the adapter prepends a reflection
+   * paragraph to the user prompt (system prompt unchanged, prompt-cache safe).
+   * See analysis-report-v2 design §6.3.
    */
-  analyzeWithLLM(input: AnalysisReportInput): Promise<AnalysisReportOutput>;
+  analyzeWithLLM(
+    input: AnalysisReportInput,
+    opts?: {
+      hallucinationHint?: { badRefs: Array<{ transcriptId: string; segmentIndex: number }> };
+    },
+  ): Promise<AnalysisReportOutput>;
   findRecording?(sessionId: string): Promise<RecordingRecord | null>;
   getRecordingBytes?(recording: RecordingRecord): Promise<RecordingBytes>;
   analyzeRecordingVisuals?: VisualAnalyzer;
+  /**
+   * LLM-based qualityFlags derivation (semantic flags subset). Mechanical
+   * flags are derived in `quality-flags.ts` outside this dep; the handler
+   * merges both and enforces mutex per design §5.
+   */
+  deriveQualityFlagsWithLLM(input: {
+    transcript: TranscriptRecord;
+    surveyContext: SurveyContext;
+  }): Promise<{ flags: SessionQualityFlag[] }>;
+  /**
+   * Best-effort writeback of qualityFlags to the InterviewSession document.
+   * Failure here MUST NOT fail the analysis (D6).
+   */
+  updateInterviewSessionFlags(
+    sessionId: string,
+    flags: SessionQualityFlag[],
+  ): Promise<void>;
+  /**
+   * Write a structured error context to InterviewSession when analysis is
+   * rejected (e.g. hallucination threshold exceeded after retry). Used by
+   * the v2 reject path (R3).
+   */
+  updateSessionErrorContext(
+    sessionId: string,
+    ctx: {
+      reason: string;
+      ratio?: number;
+      attemptCount?: number;
+      badRefs?: Array<{ transcriptId: string; segmentIndex: number }>;
+      promptVersion?: string;
+    },
+  ): Promise<void>;
   /**
    * Upsert keyed by (scope=session, sessionId). Implementation is responsible
    * for "find existing or create new" — the handler simply trusts a single
@@ -80,6 +127,8 @@ export interface AnalyzeSessionDeps {
     ownerUserId: string;
     body: AnalysisReportOutput;
     generatedAt: string;
+    /** Optional v2 generation metadata (analysis-report-v2 R2). */
+    generationMeta?: GenerationMeta;
   }): Promise<{ reportId: string }>;
   now(): number;
 }
@@ -137,11 +186,59 @@ export async function analyzeSession(
     collectedAnswers: session.collectedAnswers,
   };
 
+  // analysis-report-v2 R3: hallucination ratio reject + retry once
+  // (design §6). validRefs 由 transcript.segments 数算; LLM 输出的 segmentRef
+  // 必须落在这个集合内, 否则视为幻觉。
+  // transcriptId 与 deps.analyzeWithLLM 的 buildSessionAnalyzeUserPrompt 中一致 — 用 sessionId。
+  const validRefs = buildValidRefs(sessionId, transcript.segments.length);
+
   let body: AnalysisReportOutput;
-  try {
-    body = await deps.analyzeWithLLM(llmInput);
-  } catch {
-    return { status: 500, body: { error: "llm_unavailable" } };
+  let attemptCount = 0;
+  let hallucinationCheck:
+    | { ratio: number; ok: boolean; totalRefs: number; badRefs: { transcriptId: string; segmentIndex: number }[] }
+    | undefined;
+  let lastBadRefs: { transcriptId: string; segmentIndex: number }[] = [];
+
+  for (attemptCount = 1; attemptCount <= 2; attemptCount++) {
+    try {
+      body = await deps.analyzeWithLLM(
+        llmInput,
+        attemptCount === 2 ? { hallucinationHint: { badRefs: lastBadRefs } } : undefined,
+      );
+    } catch {
+      return { status: 500, body: { error: "llm_unavailable" } };
+    }
+    hallucinationCheck = checkHallucinationRatio({
+      themes: body.themes,
+      citations: body.citations,
+      validRefs,
+      threshold: HALLUCINATION_RATIO_THRESHOLD,
+    });
+    if (hallucinationCheck.ok) break;
+    lastBadRefs = hallucinationCheck.badRefs;
+  }
+
+  // body 由循环写入; TS 控制流分析在保证 ok=true 出循环时可见, 但用 ! 显式断言
+  // 来避免"在 break 之前 body 可能未赋值"的疑虑。逻辑上等价。
+  body = body!;
+
+  if (!hallucinationCheck!.ok) {
+    // R3.4: reject without writing dirty data (D4).
+    try {
+      await deps.updateSessionErrorContext(sessionId, {
+        reason: "hallucination_threshold_exceeded",
+        ratio: hallucinationCheck!.ratio,
+        attemptCount,
+        badRefs: hallucinationCheck!.badRefs.slice(0, 10),
+        promptVersion: PROMPT_VERSION,
+      });
+    } catch {
+      // best-effort: 即使写 errorContext 失败也要 reject, 不让脏数据落库。
+    }
+    return {
+      status: 409,
+      body: { error: "analysis_rejected" },
+    };
   }
 
   let visualAnalysis: VisualAnalysisOutput | null;
@@ -158,6 +255,27 @@ export async function analyzeSession(
     body = { ...body, visualAnalysis };
   }
 
+  // analysis-report-v2 R1: derive qualityFlags (规则 + LLM 混合) + R2: write generationMeta.
+  const totalDurationMs = transcript.segments.length
+    ? transcript.segments[transcript.segments.length - 1].endMs
+    : 0;
+  const qualityFlags = await deriveQualityFlags({
+    transcript,
+    surveyContext: survey,
+    totalDurationMs,
+    llm: deps.deriveQualityFlagsWithLLM,
+  });
+
+  const generationMeta: GenerationMeta = {
+    promptVersion: PROMPT_VERSION,
+    attemptCount,
+    hallucinationRatio: hallucinationCheck!.ratio,
+    createdWith: [
+      { stage: "session-main", model: "deepseek-chat" },
+      { stage: "quality-flags", model: "deepseek-chat" },
+    ],
+  };
+
   let saved: { reportId: string };
   try {
     saved = await deps.upsertSessionReport({
@@ -166,9 +284,17 @@ export async function analyzeSession(
       ownerUserId: survey.ownerUserId,
       body,
       generatedAt: new Date(deps.now()).toISOString(),
+      generationMeta,
     });
   } catch {
     return { status: 500, body: { error: "persist_failed" } };
+  }
+
+  // R1 D6: best-effort writeback of qualityFlags. Failure logs warn, doesn't fail analysis.
+  try {
+    await deps.updateInterviewSessionFlags(sessionId, qualityFlags);
+  } catch {
+    // intentional swallow — D6
   }
 
   return {

@@ -152,18 +152,69 @@ export const TranscriptSegmentSchema = z.object({
   text: z.string(),
 });
 
-export const InterviewSessionSchema = z.object({
-  $id: z.string(),
-  surveyId: z.string(),
-  linkId: z.string(),
-  intervieweeAlias: z.string().optional(),
-  state: SessionState.default("created"),
-  livekitRoom: z.string(),
-  collectedAnswers: json.default({}),
-  errorContext: json.optional(),
-  startedAt: z.string().datetime().optional(),
-  endedAt: z.string().datetime().optional(),
-});
+/**
+ * Quality flags derived by `analyzeSession` (rule + LLM mixed). These are
+ * *content quality* labels, orthogonal to the system-level `state` enum
+ * (created / in_progress / completed / abandoned / failed). A session can be
+ * `state=completed` and `qualityFlags=["off-topic", "shallow"]` at the same
+ * time — that's the whole point: state describes the flow, qualityFlags
+ * describe whether the conversation actually carried research value.
+ *
+ * See `.kiro/specs/analysis-report-v2/design.md` §4.1 for the derivation
+ * strategy and §3 P-ANL-06 for the mutex rules enforced below.
+ */
+export const SessionQualityFlagSchema = z.enum([
+  // mechanical (rule-derived in analyzeSession.qualityFlags.deriveQualityFlagsRule)
+  "silent",          // 受访者一句没说 (与 abandoned state 对偶但更细)
+  "too-short",       // 总发言文本 < SILENT_RESPONDENT_MIN_CHARS / TOO_SHORT_RESPONDENT_MAX_CHARS 阈值
+  "too-long",        // 总通话时长异常超长 (可能闲聊)
+  // semantic (LLM-derived in analyzeSession.qualityFlags.deriveQualityFlagsLLM)
+  "off-topic",       // 答非所问 / 偏离主题
+  "shallow",         // 浮于表面 / 没深度
+  "fluent",          // 表达清晰、信息密度高
+  "deep-engagement", // 真情流露、给出可操作洞察
+  "refused-topic",   // 明确拒绝深入某话题
+]);
+export type SessionQualityFlag = z.infer<typeof SessionQualityFlagSchema>;
+
+/**
+ * Mutex pairs enforced via superRefine (P-ANL-06). The derivation function
+ * resolves conflicts by "rule wins over LLM"; this schema-level guard catches
+ * any case where the resolution missed.
+ */
+const SESSION_QUALITY_FLAG_MUTEX_PAIRS: ReadonlyArray<readonly [SessionQualityFlag, SessionQualityFlag]> = [
+  ["silent", "fluent"],
+  ["silent", "deep-engagement"],
+  ["too-short", "deep-engagement"],
+  ["fluent", "shallow"],
+];
+
+export const InterviewSessionSchema = z
+  .object({
+    $id: z.string(),
+    surveyId: z.string(),
+    linkId: z.string(),
+    intervieweeAlias: z.string().optional(),
+    state: SessionState.default("created"),
+    livekitRoom: z.string(),
+    collectedAnswers: json.default({}),
+    errorContext: json.optional(),
+    startedAt: z.string().datetime().optional(),
+    endedAt: z.string().datetime().optional(),
+    qualityFlags: z.array(SessionQualityFlagSchema).default([]),
+  })
+  .superRefine((session, ctx) => {
+    const flagSet = new Set(session.qualityFlags);
+    for (const [a, b] of SESSION_QUALITY_FLAG_MUTEX_PAIRS) {
+      if (flagSet.has(a) && flagSet.has(b)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["qualityFlags"],
+          message: `qualityFlags conflict: "${a}" and "${b}" are mutually exclusive (P-ANL-06)`,
+        });
+      }
+    }
+  });
 
 export const TranscriptSchema = z.object({
   $id: z.string(),

@@ -3,10 +3,14 @@ import fc from "fast-check";
 import { analyzeSurvey } from "../../../apps/functions/analyzeSurvey/src/handler";
 import type {
   AnalyzeSurveyDeps,
-  LlmRollupOutput,
   SessionDigest,
   SessionLevelReport,
 } from "../../../apps/functions/analyzeSurvey/src/handler";
+import type {
+  ComposeInsightsOutput,
+  ExtractedThemes,
+  ThemeAssignments,
+} from "../../../apps/functions/analyzeSurvey/src/rollup";
 
 /**
  * P-ANL-03 — body.completedRespondents equals the number of completed
@@ -35,12 +39,14 @@ describe("P-ANL-03: completedRespondents equals count of completed sessions", ()
     }));
 
   function makeDeps(n: number): AnalyzeSurveyDeps {
-    const llm: LlmRollupOutput = {
-      themes: [],
+    const extracted: ExtractedThemes = { themes: [] };
+    const assignments: ThemeAssignments = { assignments: [] };
+    const compose: ComposeInsightsOutput = {
       insights: [],
       citations: [],
-      sentimentBreakdown: [],
       topics: [],
+      sentimentBreakdown: [],
+      themeSentiments: {},
       questionSummaries: {},
     };
     return {
@@ -54,7 +60,10 @@ describe("P-ANL-03: completedRespondents equals count of completed sessions", ()
       }),
       findCompletedSessions: async () => sessionArb(n),
       findSessionReports: async () => reportArb(n),
-      rollupWithLLM: vi.fn(async () => llm),
+      extractThemesWithLLM: vi.fn(async () => extracted),
+      combineThemesWithLLM: vi.fn(async (input: any) => input.rawThemesList[0] ?? extracted),
+      assignThemesWithLLM: vi.fn(async () => assignments),
+      composeInsightsWithLLM: vi.fn(async () => compose),
       upsertSurveyReport: vi.fn(async () => ({ reportId: "ar-survey" })),
     };
   }

@@ -269,6 +269,32 @@ const SegmentRefSchema = z.object({
   segmentIndex: z.number().int().nonnegative(),
 });
 
+/**
+ * Generation metadata recorded alongside every v2 AnalysisReport (session or
+ * survey). Lets us know "which prompt version produced this, how many LLM
+ * attempts it took, what hallucination ratio passed it through, and what
+ * model+token usage each stage consumed".
+ *
+ * See `.kiro/specs/analysis-report-v2/design.md` §4.2. The field is optional
+ * so historic v1 reports keep parsing without backfill (D12).
+ */
+export const GenerationMetaSchema = z
+  .object({
+    promptVersion: z.string(),
+    attemptCount: z.number().int().nonnegative(),
+    hallucinationRatio: z.number().min(0).max(1),
+    createdWith: z.array(
+      z.object({
+        stage: z.string(),
+        model: z.string(),
+        inputTokens: z.number().int().nonnegative().optional(),
+        outputTokens: z.number().int().nonnegative().optional(),
+      }),
+    ),
+  })
+  .passthrough();
+export type GenerationMeta = z.infer<typeof GenerationMetaSchema>;
+
 export const VisualAnalysisSegmentSchema = z.object({
   id: z.string(),
   startMs: z.number().int().nonnegative(),
@@ -343,6 +369,7 @@ export const AnalysisReportOutputSchema = z.object({
     })
     .nullable(),
   visualAnalysis: VisualAnalysisOutputSchema.nullable().optional(),
+  generationMeta: GenerationMetaSchema.optional(),
 });
 
 /**
@@ -468,6 +495,7 @@ export const SurveyAnalysisReportOutputSchema = z.object({
       format: z.string(),
     })
     .nullable(),
+  generationMeta: GenerationMetaSchema.optional(),
 });
 
 export const INTERVIEW_STATE_ATTRIBUTE = "merism.interviewState";

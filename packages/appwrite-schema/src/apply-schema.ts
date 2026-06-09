@@ -165,17 +165,25 @@ async function main(): Promise<void> {
         const cur = existing.get(a.key)!;
         const elements = a.elements ?? [];
         if (!enumElementsMatch(elements, cur.elements)) {
-          // SDK requires xdefault param; required attrs must use null (Appwrite rejects defaults on required).
-          const xdefault = (
-            a.required ? (cur.default ?? null) : (a.default ?? cur.default ?? null)
-          ) as string | null;
+          // SDK requires xdefault to be present (passing undefined throws
+          // `Missing required parameter`), so we must pass either a string or
+          // `null`. Required attrs must clear any existing default (Appwrite
+          // rejects defaults on required attrs); optional attrs fall back to
+          // the declared default, then the deployed default, then null to
+          // clear. The cast is needed because node-appwrite@14's `.d.ts`
+          // declares `xdefault?: string` even though the runtime accepts
+          // `null` and serializes it as `{"default": null}` (= clear default)
+          // — the type does not match the implementation.
+          const xdefault = a.required
+            ? (cur.default ?? null)
+            : (a.default ?? cur.default ?? null);
           await db.updateEnumAttribute(
             DATABASE_ID,
             coll.id,
             a.key,
             elements,
             a.required,
-            xdefault,
+            xdefault as unknown as string | undefined,
           );
           updated.push(a.key);
           console.log(`~ ${coll.id}.${a.key} enum elements`);

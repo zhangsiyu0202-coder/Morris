@@ -6,6 +6,8 @@ import {
   AnalysisReportOutputSchema,
   type AnalysisReportInput,
   type AnalysisReportOutput,
+  type GenerationMeta,
+  type SessionQualityFlag,
 } from "@merism/contracts";
 import type {
   AnalyzeSessionDeps,
@@ -17,6 +19,13 @@ import {
   SESSION_ANALYZE_SYSTEM,
   buildSessionAnalyzeUserPrompt,
 } from "./prompts/session-analyze.js";
+import {
+  QUALITY_FLAGS_SYSTEM,
+  QualityFlagsLLMOutputSchema,
+  buildQualityFlagsPromptInput,
+  buildQualityFlagsUserPrompt,
+} from "./prompts/quality-flags.js";
+import { SESSION_QUALITY_FLAG_LLM_TEMPERATURE } from "./constants.js";
 import { createGeminiVisualAnalyzerFromEnv } from "./gemini-visual-analyzer.js";
 import { createDeepSeekConsolidator } from "./gemini/deepseek-consolidator.js";
 import { isVisualRecording, recordingMimeType, type RecordingRecord } from "./visual-analysis.js";
@@ -182,17 +191,19 @@ export function createRealDeps(): AnalyzeSessionDeps {
       }
     },
 
-    async analyzeWithLLM(input: AnalysisReportInput): Promise<AnalysisReportOutput> {
-      const userPrompt = buildSessionAnalyzeUserPrompt({
+    async analyzeWithLLM(
+      input: AnalysisReportInput,
+      opts?: {
+        hallucinationHint?: { badRefs: Array<{ transcriptId: string; segmentIndex: number }> };
+      },
+    ): Promise<AnalysisReportOutput> {
+      const baseUserPrompt = buildSessionAnalyzeUserPrompt({
         surveyTitle: input.survey.title,
         questions: input.survey.questionBlocks.map((q) => ({
           questionId: q.$id,
           questionType: q.type,
           prompt: q.prompt,
         })),
-        // Synthesize transcriptId from input.sessionId so the LLM-produced
-        // segmentRefs can be mapped back. The real transcript id is fetched
-        // from findTranscript and we pass it through input.transcript.
         segments: input.transcript.segments.map((s, idx) => ({
           transcriptId: input.sessionId,
           segmentIndex: idx,
@@ -202,6 +213,26 @@ export function createRealDeps(): AnalyzeSessionDeps {
         collectedAnswers: input.collectedAnswers,
       });
 
+      // analysis-report-v2 R3 / design §6.3: 第二次调用时把 hallucination hint
+      // 前置到 user prompt 顶部, system prompt 不动以保 prompt cache 命中。
+      // 语义是"替换" not "删除", 找不到 valid refs 的 theme 整体丢弃。
+      const userPrompt = opts?.hallucinationHint
+        ? [
+            "你上一次输出的下列 segmentRef 不存在于 transcript 中, 这是不可接受的:",
+            opts.hallucinationHint.badRefs
+              .map((r) => `  - { transcriptId: "${r.transcriptId}", segmentIndex: ${r.segmentIndex} }`)
+              .join("\n"),
+            "",
+            "请重新输出。规则:",
+            "- **替换**, 不要删除: 把 bad refs 替换为 transcript 中真实存在的 (transcriptId, segmentIndex) 二元组。",
+            "- 每个 theme 必须保留 ≥ 1 条 valid evidence (P-ANL-01 要求)。",
+            "- 若某 theme 找不到任何 valid refs 可用, 该 theme **整体丢弃**, 而不是返回 0 个 evidence。",
+            "- 其余规则(citations.quote 必须逐字, themeIds 必须存在, 等等)保持不变。",
+            "",
+            baseUserPrompt,
+          ].join("\n")
+        : baseUserPrompt;
+
       const { experimental_output } = await generateText({
         model: deepseekModel,
         maxRetries: 2,
@@ -210,19 +241,47 @@ export function createRealDeps(): AnalyzeSessionDeps {
         prompt: userPrompt,
       });
 
-      // generateText output is already validated against the schema by the
-      // SDK, but re-parse defensively for clarity.
       return AnalysisReportOutputSchema.parse(experimental_output);
     },
 
-    async upsertSessionReport({ sessionId, surveyId, ownerUserId, body, generatedAt }) {
+    async deriveQualityFlagsWithLLM({ transcript, surveyContext }) {
+      const promptInput = buildQualityFlagsPromptInput({ transcript, surveyContext });
+      const userPrompt = buildQualityFlagsUserPrompt(promptInput);
+      const { experimental_output } = await generateText({
+        model: deepseekModel,
+        temperature: SESSION_QUALITY_FLAG_LLM_TEMPERATURE,
+        maxRetries: 1,
+        experimental_output: Output.object({ schema: QualityFlagsLLMOutputSchema }),
+        system: QUALITY_FLAGS_SYSTEM,
+        prompt: userPrompt,
+      });
+      const parsed = QualityFlagsLLMOutputSchema.parse(experimental_output);
+      // Semantic flags are a subset of SessionQualityFlag (compile-time asserted in
+      // prompts/quality-flags.ts), so widening cast is safe.
+      return { flags: parsed.flags as SessionQualityFlag[] };
+    },
+
+    async updateInterviewSessionFlags(sessionId, flags) {
+      // analysis-report-v2 D6: best-effort. The handler logs warn on throw.
+      await db.updateDocument(DB, "interview_sessions", sessionId, {
+        qualityFlags: flags,
+      });
+    },
+
+    async updateSessionErrorContext(sessionId, ctx) {
+      await db.updateDocument(DB, "interview_sessions", sessionId, {
+        errorContext: JSON.stringify(ctx),
+      });
+    },
+
+    async upsertSessionReport({ sessionId, surveyId, ownerUserId, body, generatedAt, generationMeta }) {
       // Find existing report for (scope=session, sessionId)
       const existing = await db.listDocuments(DB, "analysis_reports", [
         Query.equal("scope", "session"),
         Query.equal("sessionId", sessionId),
         Query.limit(1),
       ]);
-      const payload = {
+      const payload: Record<string, unknown> = {
         sessionId,
         surveyId,
         scope: "session" as const,
@@ -239,6 +298,9 @@ export function createRealDeps(): AnalyzeSessionDeps {
         citations: JSON.stringify(body.citations),
         generatedAt,
       };
+      if (generationMeta) {
+        payload.generationMeta = JSON.stringify(generationMeta);
+      }
       const permissions = [
         Permission.read(Role.user(ownerUserId)),
       ];

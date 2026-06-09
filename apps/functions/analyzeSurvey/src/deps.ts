@@ -2,19 +2,38 @@
 import { Client, Databases, ID, Permission, Query, Role } from "node-appwrite";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { generateText, Output } from "ai";
-import { z } from "zod";
 import type {
   AnalyzeSurveyDeps,
-  LlmRollupInput,
-  LlmRollupOutput,
+  AssignThemesInput,
+  CombineThemesInput,
+  ComposeInsightsInput,
+  ExtractThemesInput,
   SessionDigest,
   SessionLevelReport,
   SurveyContextLite,
 } from "./handler.js";
 import {
-  SURVEY_ROLLUP_SYSTEM,
-  buildSurveyRollupUserPrompt,
-} from "./prompts/survey-rollup.js";
+  THEME_EXTRACTION_SYSTEM,
+  buildThemeExtractionUserPrompt,
+} from "./prompts/theme-extraction.js";
+import {
+  THEME_ASSIGNMENT_SYSTEM,
+  buildThemeAssignmentUserPrompt,
+} from "./prompts/theme-assignment.js";
+import {
+  THEME_COMBINATION_SYSTEM,
+  buildThemeCombinationUserPrompt,
+} from "./prompts/theme-combination.js";
+import {
+  COMPOSE_INSIGHTS_SYSTEM,
+  buildComposeInsightsUserPrompt,
+} from "./prompts/compose-insights.js";
+import {
+  ComposeInsightsOutputSchema,
+  ExtractedThemesListSchema,
+  ThemeAssignmentListSchema,
+} from "./rollup.js";
+import { ROLLUP_LLM_TEMPERATURE } from "./constants.js";
 
 const DB = "merism";
 
@@ -55,43 +74,6 @@ function parseJson<T>(raw: unknown, fallback: T): T {
 
 // LLM-output schema for the rollup. Subset of SurveyAnalysisReportOutputSchema
 // with only the LLM-authored halves.
-const llmRollupSchema = z.object({
-  themes: z.array(
-    z.object({
-      id: z.string(),
-      label: z.string(),
-      mentions: z.number().int().nonnegative(),
-      pct: z.number().min(0).max(100),
-      sentiment: z.enum(["positive", "neutral", "negative"]),
-    }),
-  ),
-  insights: z.array(
-    z.object({
-      id: z.string(),
-      title: z.string(),
-      text: z.string(),
-      confidence: z.number().min(0).max(1),
-    }),
-  ),
-  citations: z.array(
-    z.object({
-      segmentRef: z.object({
-        transcriptId: z.string(),
-        segmentIndex: z.number().int().nonnegative(),
-      }),
-      quote: z.string(),
-      themeIds: z.array(z.string()),
-    }),
-  ),
-  sentimentBreakdown: z.array(
-    z.object({
-      sentiment: z.enum(["positive", "neutral", "negative"]),
-      count: z.number().int().nonnegative(),
-    }),
-  ),
-  topics: z.array(z.string()).default([]),
-  questionSummaries: z.record(z.string(), z.string()).default({}),
-});
 
 export function createRealDeps(): AnalyzeSurveyDeps {
   const env = requireEnv();
@@ -197,35 +179,86 @@ export function createRealDeps(): AnalyzeSurveyDeps {
       });
     },
 
-    async rollupWithLLM(input: LlmRollupInput): Promise<LlmRollupOutput> {
+    async extractThemesWithLLM(input: ExtractThemesInput) {
       const { experimental_output } = await generateText({
         model: deepseek(modelName),
+        temperature: ROLLUP_LLM_TEMPERATURE,
         maxRetries: 2,
-        experimental_output: Output.object({ schema: llmRollupSchema }),
-        system: SURVEY_ROLLUP_SYSTEM,
-        prompt: buildSurveyRollupUserPrompt({
-          surveyTitle: input.surveyTitle,
-          totalSessions: input.totalSessions,
-          sessionReports: input.sessionReports.map((r) => ({
-            sessionId: r.sessionId,
-            transcriptId: r.sessionId, // session-level reports synthesize transcriptId from sessionId
-            themes: r.themes,
-            insights: r.insights,
-            citations: r.citations,
-            perQuestionSummary: r.perQuestionSummary,
-          })),
-        }),
+        experimental_output: Output.object({ schema: ExtractedThemesListSchema }),
+        system: THEME_EXTRACTION_SYSTEM,
+        prompt: buildThemeExtractionUserPrompt(input),
       });
-      return llmRollupSchema.parse(experimental_output);
+      return ExtractedThemesListSchema.parse(experimental_output);
     },
 
-    async upsertSurveyReport({ surveyId, ownerUserId, body, generatedAt }) {
+    async assignThemesWithLLM(input: AssignThemesInput) {
+      const { experimental_output } = await generateText({
+        model: deepseek(modelName),
+        temperature: ROLLUP_LLM_TEMPERATURE,
+        maxRetries: 2,
+        experimental_output: Output.object({ schema: ThemeAssignmentListSchema }),
+        system: THEME_ASSIGNMENT_SYSTEM,
+        prompt: buildThemeAssignmentUserPrompt(input),
+      });
+      return ThemeAssignmentListSchema.parse(experimental_output);
+    },
+
+    async combineThemesWithLLM(input: CombineThemesInput) {
+      // Wave F (D15): combination LLM 把多份 chunked extraction 结果合一份。
+      // 输出 schema 复用 ExtractedThemesListSchema (合并后形态与单次抽取等价)。
+      const { experimental_output } = await generateText({
+        model: deepseek(modelName),
+        temperature: ROLLUP_LLM_TEMPERATURE,
+        maxRetries: 2,
+        experimental_output: Output.object({ schema: ExtractedThemesListSchema }),
+        system: THEME_COMBINATION_SYSTEM,
+        prompt: buildThemeCombinationUserPrompt(input),
+      });
+      return ExtractedThemesListSchema.parse(experimental_output);
+    },
+
+    async composeInsightsWithLLM(input: ComposeInsightsInput) {
+      const baseUserPrompt = buildComposeInsightsUserPrompt({
+        surveyTitle: input.surveyTitle,
+        totalSessions: input.totalSessions,
+        themes: input.themes,
+        themeContexts: input.themeContexts,
+        questionStats: input.questionStats,
+        sessionReports: input.sessionReports,
+      });
+      const userPrompt = input.hallucinationHint
+        ? [
+            "你上一次输出的下列 segmentRef 不存在于 sessionReports 的 themes/citations 集合中, 这是不可接受的:",
+            input.hallucinationHint.badRefs
+              .map((r) => `  - { transcriptId: "${r.transcriptId}", segmentIndex: ${r.segmentIndex} }`)
+              .join("\n"),
+            "",
+            "请重新输出。规则:",
+            "- 只引用 sessionReports 已有的 segmentRef (不能凭空造)。",
+            "- 若某 citation 找不到 valid segmentRef, 整条 citation 整体丢弃 (而不是返回 invalid segmentRef)。",
+            "- 其余规则保持不变。",
+            "",
+            baseUserPrompt,
+          ].join("\n")
+        : baseUserPrompt;
+      const { experimental_output } = await generateText({
+        model: deepseek(modelName),
+        temperature: ROLLUP_LLM_TEMPERATURE,
+        maxRetries: 2,
+        experimental_output: Output.object({ schema: ComposeInsightsOutputSchema }),
+        system: COMPOSE_INSIGHTS_SYSTEM,
+        prompt: userPrompt,
+      });
+      return ComposeInsightsOutputSchema.parse(experimental_output);
+    },
+
+    async upsertSurveyReport({ surveyId, ownerUserId, body, generatedAt, generationMeta }) {
       const existing = await db.listDocuments(DB, "analysis_reports", [
         Query.equal("scope", "survey"),
         Query.equal("surveyId", surveyId),
         Query.limit(1),
       ]);
-      const payload = {
+      const payload: Record<string, unknown> = {
         surveyId,
         scope: "survey" as const,
         ownerUserId,
@@ -237,6 +270,9 @@ export function createRealDeps(): AnalyzeSurveyDeps {
         citations: JSON.stringify(body.citations),
         generatedAt,
       };
+      if (generationMeta) {
+        payload.generationMeta = JSON.stringify(generationMeta);
+      }
       const permissions = [Permission.read(Role.user(ownerUserId))];
 
       if (existing.documents.length > 0) {

@@ -203,10 +203,13 @@ export const COLLECTIONS: CollectionDef[] = [
       { key: "errorContext", type: "string", size: JSON_SIZE, required: false },
       { key: "startedAt", type: "datetime", required: false },
       { key: "endedAt", type: "datetime", required: false },
+      // C2 复审决策: array 字段不写 default,由 contracts zod default([]) 兜底
+      { key: "qualityFlags", type: "string", size: 32, required: false, array: true },
     ],
     indexes: [
       { key: "by_survey", type: "key", attributes: ["surveyId"] },
       { key: "by_link", type: "key", attributes: ["linkId"] },
+      { key: "by_quality", type: "key", attributes: ["qualityFlags"] },
     ],
   },
   {
@@ -265,6 +268,9 @@ export const COLLECTIONS: CollectionDef[] = [
       { key: "citations", type: "string", size: JSON_SIZE, required: false, default: "[]" },
       { key: "storageFileId", type: "string", size: 64, required: false },
       { key: "generatedAt", type: "datetime", required: true },
+      // analysis-report-v2 R2: generation metadata as JSON. Optional so v1
+      // historic reports stay readable without backfill (D12).
+      { key: "generationMeta", type: "string", size: JSON_SIZE, required: false },
     ],
     // Idempotency at write time: handlers query (scope, sessionId|surveyId)
     // and update if found, insert otherwise. We use plain key indexes rather
