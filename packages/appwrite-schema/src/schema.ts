@@ -292,41 +292,6 @@ export const COLLECTIONS: CollectionDef[] = [
     ],
   },
   {
-    id: "insights",
-    name: "Insight",
-    // Owner-scoped: researchers create their own insights via the
-    // /api/insights server actions; per-document permissions are pinned at
-    // creation. See docs/adr/0003-analysis-report-architecture.md (D2).
-    //
-    // DEPRECATED (Wave A of notebooks spec): renamed to `notebooks`. This
-    // collection is kept declared so existing data remains accessible during
-    // the rename; nothing new is written here. Removed in Wave F.
-    permissions: OWNER_SCOPED,
-    documentSecurity: true,
-    attributes: [
-      { key: "studyId", type: "string", size: 64, required: true },
-      { key: "studyTitle", type: "string", size: 512, required: true },
-      { key: "question", type: "string", size: 4000, required: true },
-      // Card-view fast fields, redundantly stored alongside `report` so a
-      // listing query does not need to expand the full report jsonb.
-      { key: "headline", type: "string", size: 512, required: true },
-      { key: "summary", type: "string", size: 4000, required: true },
-      { key: "confidence", type: "enum", elements: ["high", "medium", "low"], required: true },
-      { key: "sampleSize", type: "integer", required: true },
-      // Full structured argumentative report (insightReportSchema in
-      // @merism/contracts/insight). Stored as JSON string per the convention
-      // used by other JSON fields in this schema.
-      { key: "report", type: "string", size: JSON_SIZE, required: true },
-      { key: "ownerUserId", type: "string", size: 64, required: true },
-      { key: "createdAt", type: "datetime", required: true },
-    ],
-    indexes: [
-      { key: "by_owner", type: "key", attributes: ["ownerUserId"] },
-      { key: "by_owner_study", type: "key", attributes: ["ownerUserId", "studyId"] },
-      { key: "by_owner_created", type: "key", attributes: ["ownerUserId", "createdAt"] },
-    ],
-  },
-  {
     id: "notebooks",
     name: "Notebook",
     // Owner-scoped: researchers create notebooks via Morris (createNotebook tool)
@@ -366,9 +331,8 @@ export const COLLECTIONS: CollectionDef[] = [
       // ~12KB / row.
       { key: "embedding", type: "string", size: 16_384, required: false, default: "" },
       { key: "embeddingModel", type: "string", size: 64, required: false, default: "" },
-      // Legacy fixed-shape report (notebookReportSchema in @merism/contracts/notebook).
-      // Wave D 起新写入 null, Wave F cleanup commit 删除。
-      { key: "report", type: "string", size: JSON_SIZE, required: false, default: "" },
+      // Wave F (T48): legacy `report` attribute removed. Notebook content
+      // lives entirely in `content` (ProseMirror JSON) since Wave D.
       { key: "ownerUserId", type: "string", size: 64, required: true },
       { key: "createdAt", type: "datetime", required: true },
     ],

@@ -1,5 +1,5 @@
 import { Lightbulb } from "lucide-react"
-import type { Insight } from "./shared"
+import type { Insight as ReportInsightItem } from "./shared"
 
 function ConfidenceBar({ value }: { value: number }) {
   const pct = Math.round(value * 100)
@@ -13,7 +13,7 @@ function ConfidenceBar({ value }: { value: number }) {
   )
 }
 
-export function HighlightsSection({ insights }: { insights: Insight[] }) {
+export function HighlightsSection({ insights }: { insights: ReportInsightItem[] }) {
   return (
     <section className="flex flex-col gap-4">
       <h2 className="font-display text-xl font-semibold tracking-tight text-ink-900">关键洞察</h2>

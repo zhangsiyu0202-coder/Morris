@@ -33,7 +33,7 @@ export const TOOLS_OVERVIEW = `Morris 当前可用工具:
 - searchInterviewData(query, studyId): 在指定调研的 transcript 中检索受访者原话片段。studyId 必填。
 - analyzeData(studyId): 返回该调研最新 survey 级聚合报告。
 - createStudyDraft: [临时] 根据研究目标产出一份草稿提案 (只在对话中展示, 不写入 Appwrite)。
-- createNotebook(studyId, question, content): 把当前对话或分析结果保存为一份新的 Notebook (研究员的洞察文档, 即旧 Insight)。content 是 Markdown 字符串, 允许嵌入 8 类 <merism-*/> tag (merism-quote / merism-video-clip / merism-theme / merism-video-observation / merism-insight-link / merism-question-stat / merism-cross-study-citation / merism-session-link)。永远 create 新一份, 不更新已有 (研究员不满意时让 Morris 重新生成新一份)。
+- createNotebook(studyId, question, content): 把当前对话或分析结果保存为一份新的 Notebook (研究员的洞察文档)。content 是 Markdown 字符串, 允许嵌入 8 类 <merism-*/> tag (merism-quote / merism-video-clip / merism-theme / merism-video-observation / merism-insight-link / merism-question-stat / merism-cross-study-citation / merism-session-link)。永远 create 新一份, 不更新已有 (研究员不满意时让 Morris 重新生成新一份)。
 - searchAcrossStudies(query, studyId, limit): 跨 study 在研究员所有 Notebook 中按语义检索相似的过往洞察 (Qwen text-embedding-v3 cosine)。返回 top-N 匹配 (notebookShortId / headline / snippet / score)。owner 级隔离。Notebook 数量过多或 embedding 不可用时自动 fulltext fallback (response.fallback 字段标记)。
 - todoWrite: 写入或更新当前任务的 todo 列表 (整体覆盖)。用于多步任务跟踪。`;
 

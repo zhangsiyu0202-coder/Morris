@@ -6,23 +6,20 @@ import { ArrowLeft, FileText, LayoutGrid } from "lucide-react";
 import type { Notebook } from "@merism/contracts";
 import { markdownToProseMirror } from "@/lib/notebooks/markdown-to-prose";
 import type { ProseMirrorDoc } from "@/lib/notebooks/types";
-import { extractCardSections } from "@/lib/notebooks/heading-template";
-import { CardView, CardViewOrFallback } from "./card-view";
+import { CardViewOrFallback } from "./card-view";
 import { DocumentView } from "./document-view";
-import { NotebookDetail } from "./notebook-detail";
 
 /**
- * Notebook 总入口 (Wave C T24).
+ * Notebook 总入口 (Wave F T48 cleanup).
  *
- * 渲染优先级:
- * 1. 优先 ProseMirror content (Wave D 起 Morris createNotebook 写入此字段);
- *    - 默认尝试卡片视图 (extractCardSections); 模板未命中 → 提示切到文档视图
- *    - 视图切换 toolbar 在右上角
- * 2. 退化路径 (旧 Wave A/B 数据): 用 report 字段 → NotebookDetail 旧 fixed-shape
- *    渲染器
- * 3. 都无 → 空状态提示
+ * 渲染路径:
+ * 1. 解析 ProseMirror content (Wave D 起 Morris createNotebook + 旧 server
+ *    action 都写入此字段); 优先尝试卡片视图 (extractCardSections); 模板
+ *    未命中 → 提示切到文档视图。
+ * 2. content="" 的极端情况 (旧 Wave A/B fallback) → 空状态提示;
+ *    Wave F (T48) 已删除 record.report 字段, 不再渲染 fixed-shape report。
  *
- * D10: 两种视图都只读, 无编辑按钮 / slash command / drag handle / Cmd+S 等。
+ * D10: 两种视图都只读, 无编辑按钮 / slash command / drag handle / Cmd+S 等.
  */
 
 type ViewMode = "card" | "document";
@@ -30,10 +27,6 @@ type ViewMode = "card" | "document";
 export function NotebookViewer({ notebook }: { notebook: Notebook }) {
   const [view, setView] = useState<ViewMode>("card");
 
-  // Try parse content as ProseMirror JSON first; if it's a Markdown string
-  // (Wave D Morris writes Markdown text into `content` after server-side
-  // markdownToProseMirror conversion stored as JSON). For Wave B we may also
-  // have content="" — in which case we fall through to the report fallback.
   const proseMirror = parseProseMirrorContent(notebook.content);
   const hasContent = proseMirror !== null && proseMirror.content.length > 0;
 
@@ -76,18 +69,7 @@ export function NotebookViewer({ notebook }: { notebook: Notebook }) {
     );
   }
 
-  // Wave A/B fallback: use the legacy fixed-shape report.
-  if (notebook.report) {
-    return (
-      <NotebookDetail
-        studyTitle={notebook.studyTitle}
-        question={notebook.question}
-        report={notebook.report}
-      />
-    );
-  }
-
-  // Empty notebook (rare — content="" and report=null)
+  // Empty notebook (rare — content="" without a populated ProseMirror)
   return (
     <div className="mx-auto max-w-2xl px-6 py-16 text-center">
       <p className="font-display text-h3 text-ink-900">{notebook.headline}</p>
@@ -131,19 +113,14 @@ function ViewModeButton({
 
 /**
  * Parse `Notebook.content` as a ProseMirror JSON doc. Storage convention
- * (Wave B+): `content` is JSON.stringify(ProseMirrorDoc). Returns null if the
- * field is empty / non-JSON / not a doc.
- *
- * Wave D may also write raw Markdown for streaming preview before converting;
- * detect string-shaped Markdown by looking for the typical leading "# " pattern
- * and lazy-converting on the fly (the server-side saver should always have
- * already converted, but we defensively cover both).
+ * (Wave B+): `content` is JSON.stringify(ProseMirrorDoc). Returns null if
+ * the field is empty / non-JSON / not a doc. Falls back to Markdown parsing
+ * defensively (server-side saver should always have converted).
  */
 function parseProseMirrorContent(raw: string): ProseMirrorDoc | null {
   if (!raw || typeof raw !== "string") return null;
   const trimmed = raw.trim();
   if (!trimmed) return null;
-  // Try JSON first
   if (trimmed.startsWith("{")) {
     try {
       const parsed = JSON.parse(trimmed) as ProseMirrorDoc;
@@ -154,10 +131,5 @@ function parseProseMirrorContent(raw: string): ProseMirrorDoc | null {
       // fall through
     }
   }
-  // Markdown fallback (defensive — server should have converted)
   return markdownToProseMirror(trimmed);
 }
-
-// Re-export so legacy callers that imported `NotebookDetail` can switch to
-// `NotebookViewer` incrementally.
-export { NotebookDetail };

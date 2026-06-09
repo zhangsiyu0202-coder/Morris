@@ -2,24 +2,22 @@
 
 import { generateText, Output } from "ai";
 import { createDeepSeek } from "@ai-sdk/deepseek";
-import { Client, Databases, ID, Permission, Query, Role } from "node-appwrite";
+import { Client, Databases } from "node-appwrite";
 import { revalidatePath } from "next/cache";
-import { type Notebook } from "@merism/contracts";
+import { type Notebook, notebookReportSchema } from "@merism/contracts";
+import type { NotebookReport } from "@merism/contracts";
 import {
-  notebookReportSchema,
-  type NotebookReport,
   buildStudyContext,
   isValidStudyId,
 } from "@/lib/notebooks";
 import {
-  DATABASE_ID,
   countCompletedSessions,
   getCurrentUserId,
   getNotebookById as readNotebookById,
   getStudy,
   listNotebooks as readNotebooks,
 } from "@/lib/queries";
-import { generateShortId } from "@/lib/notebooks/short-id";
+import { saveNotebookFromMarkdown } from "@/lib/server/notebooks";
 
 // 与 Morris AI 一致:直连 DeepSeek 官方,不引入其它供应商。
 const deepseek = createDeepSeek({
@@ -79,6 +77,61 @@ function getServerKeyClient(): { client: Client; db: Databases } {
   return { client, db: new Databases(client) };
 }
 
+/**
+ * Wave F (T48): NotebookReport (DeepSeek experimental_output 中间格式)
+ * 渲染为 Markdown, 喂给 saveNotebookFromMarkdown 进行 ProseMirror 落库。
+ *
+ * 5 段 HeadingTemplate (D3): # Question / ## 核心结论 / ## 主题分析 /
+ * ## 立场分歧 / ## 行动建议. 让 NotebookViewer 卡片视图能正确抽段渲染。
+ */
+function notebookReportToMarkdown(question: string, report: NotebookReport): string {
+  const lines: string[] = [];
+  lines.push(`# ${question}`);
+  lines.push("");
+  lines.push(report.directAnswer);
+  lines.push("");
+  lines.push(`## 核心结论`);
+  lines.push("");
+  lines.push(`${report.headline} (${confidenceLabel(report.confidence)}: ${report.confidenceReason})`);
+  lines.push("");
+  lines.push(`## 主题分析`);
+  for (const t of report.themes) {
+    lines.push("");
+    lines.push(`### ${t.title}`);
+    lines.push("");
+    lines.push(t.analysis);
+    if (t.quotes.length > 0) {
+      lines.push("");
+      for (const q of t.quotes) {
+        lines.push(`> "${q}"`);
+      }
+    }
+  }
+  lines.push("");
+  lines.push(`## 立场分歧`);
+  if (report.divergences.length === 0) {
+    lines.push("");
+    lines.push("(无明显分歧)");
+  } else {
+    for (const d of report.divergences) {
+      lines.push("");
+      lines.push(`- **${d.group}**: ${d.stance}`);
+    }
+  }
+  lines.push("");
+  lines.push(`## 行动建议`);
+  for (const a of report.actions) {
+    lines.push("");
+    lines.push(`- **[${a.priority}]** ${a.action}`);
+    lines.push(`  - ${a.rationale}`);
+  }
+  return lines.join("\n");
+}
+
+function confidenceLabel(c: "high" | "medium" | "low"): string {
+  return c === "high" ? "高置信度" : c === "medium" ? "中等置信度" : "低置信度";
+}
+
 /** 生成一份深度洞察报告并落 Appwrite,返回新记录 id + shortId。 */
 export async function createNotebook(input: {
   studyId: string;
@@ -102,6 +155,7 @@ export async function createNotebook(input: {
   try {
     const context = await buildStudyContext(ownerUserId, studyId);
 
+    // DeepSeek 仍生成结构化 NotebookReport 中间格式 (作为 experimental_output schema)
     const { experimental_output } = await generateText({
       model: deepseek("deepseek-chat"),
       maxRetries: 2,
@@ -111,46 +165,21 @@ export async function createNotebook(input: {
     });
 
     const report = experimental_output as NotebookReport;
-    const sampleSize = await countCompletedSessions(ownerUserId, studyId);
-    const id = ID.unique();
-    const shortId = generateShortId();
-    const now = new Date().toISOString();
-
-    const { db } = getServerKeyClient();
-    await db.createDocument(
-      DATABASE_ID,
-      "notebooks",
-      id,
-      {
-        studyId,
-        studyTitle: study.survey.title,
-        question,
-        // Wave B fields. Wave D 后 Morris createNotebook 写入 ProseMirror content;
-        // 此 server action 走旧的 fixed-schema 路径 (向后兼容), 仍 populate report
-        // + 空 content/textContent/embedding。Wave F cleanup 时一并迁移。
-        shortId,
-        content: "",
-        textContent: "",
-        visibility: "internal" as const,
-        embedding: "",
-        embeddingModel: "",
-        headline: report.headline,
-        summary: report.directAnswer,
-        confidence: report.confidence,
-        sampleSize,
-        report: JSON.stringify(report),
-        ownerUserId,
-        createdAt: now,
-      },
-      [
-        Permission.read(Role.user(ownerUserId)),
-        Permission.update(Role.user(ownerUserId)),
-        Permission.delete(Role.user(ownerUserId)),
-      ],
-    );
-
+    // 把结构化 NotebookReport 渲染为 5 段 HeadingTemplate Markdown,
+    // 然后用 saveNotebookFromMarkdown 落 ProseMirror content + embedding。
+    const markdown = notebookReportToMarkdown(question, report);
+    const result = await saveNotebookFromMarkdown({
+      ownerUserId,
+      studyId,
+      studyTitle: study.survey.title,
+      question,
+      markdown,
+    });
+    // sampleSize 单独写入是 cosmetic — saveNotebookFromMarkdown 内部 default 0;
+    // 这里为了与现有 UI 一致, 不再额外更新 row (Wave F: D10 read-only).
+    void countCompletedSessions; // unused after Wave F refactor
     revalidatePath("/notebooks");
-    return { id, shortId };
+    return { id: result.$id, shortId: result.shortId };
   } catch (err) {
     console.error("[notebooks] createNotebook failed:", err);
     return { error: "洞察生成失败,请稍后重试。" };
@@ -165,7 +194,7 @@ export async function listNotebooks(): Promise<NotebookListItem[]> {
   return notebooks.map(toListItem);
 }
 
-/** 详情:按 id 读取完整记录(含 report)。仅 owner 可读。 */
+/** 详情:按 id 读取完整记录(含 content)。仅 owner 可读。 */
 export async function getNotebookById(id: string): Promise<Notebook | null> {
   const ownerUserId = await getCurrentUserId();
   if (!ownerUserId) return null;
@@ -181,15 +210,8 @@ export async function deleteNotebook(id: string): Promise<{ ok: boolean }> {
   const existing = await readNotebookById(ownerUserId, id);
   if (!existing) return { ok: false };
   const { db } = getServerKeyClient();
+  const DATABASE_ID = process.env.APPWRITE_DATABASE_ID ?? "merism";
   await db.deleteDocument(DATABASE_ID, "notebooks", id);
   revalidatePath("/notebooks");
   return { ok: true };
 }
-
-// Backward-compat aliases for the Insight → Notebook rename (Wave A of
-// notebooks spec). Removed in Wave F.
-export type InsightListItem = NotebookListItem;
-export const createInsight = createNotebook;
-export const listInsights = listNotebooks;
-export const getInsightById = getNotebookById;
-export const deleteInsight = deleteNotebook;

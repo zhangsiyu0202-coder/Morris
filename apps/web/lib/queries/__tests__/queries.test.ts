@@ -4,7 +4,7 @@ import { listStudies, getStudy } from "../studies";
 import { listSessions, countCompletedSessions } from "../sessions";
 import { searchTranscriptSegments } from "../transcripts";
 import { getLatestAnalysisReport, parseSessionReportBody } from "../reports";
-import { listInsights, getInsightById } from "../notebooks";
+import { listNotebooks, getNotebookById } from "../notebooks";
 import { listBookmarksForOwner, listBookmarksBySession } from "../bookmarks";
 import { makeFakeDatabases } from "./helpers";
 
@@ -315,30 +315,30 @@ describe("queries: notebooks", () => {
     }),
   };
 
-  it("listInsights returns owner's insights only", async () => {
+  it("listNotebooks returns owner's insights only", async () => {
     const { databases } = makeFakeDatabases({
       notebooks: {
         documents: [insightDoc, { ...insightDoc, $id: "i2", ownerUserId: stranger }],
       },
     });
-    const result = await listInsights(owner, databases);
+    const result = await listNotebooks(owner, databases);
     expect(result.map((r) => r.$id)).toEqual(["i1"]);
   });
 
-  it("getInsightById returns null for unowned id", async () => {
+  it("getNotebookById returns null for unowned id", async () => {
     const { databases } = makeFakeDatabases({
       notebooks: { documents: [{ ...insightDoc, ownerUserId: stranger }] },
     });
-    expect(await getInsightById(owner, "i1", databases)).toBeNull();
+    expect(await getNotebookById(owner, "i1", databases)).toBeNull();
   });
 
-  it("getInsightById returns the insight when owned", async () => {
+  it("getNotebookById returns the insight when owned", async () => {
     const { databases } = makeFakeDatabases({
       notebooks: { documents: [insightDoc] },
     });
-    const result = await getInsightById(owner, "i1", databases);
+    const result = await getNotebookById(owner, "i1", databases);
     expect(result?.headline).toBe("Because of pricing");
-    expect(result?.report?.actions[0]?.priority).toBe("P0");
+    // Wave F (T48): legacy `report` field removed — assert headline only.
   });
 });
 

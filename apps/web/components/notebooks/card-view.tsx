@@ -9,7 +9,7 @@ import { DocumentView } from "./document-view";
 /**
  * Card view: 按 HeadingTemplate (5 段 H1+4×H2) 抽段渲染卡片版。
  *
- * 设计 (D3 决策, design §7.4): 复用现有 Insight 卡片 UX 风格 (mauve 卡片 +
+ * 设计 (D3 决策, design §7.4): 复用旧 (legacy) 卡片 UX 风格 (mauve 卡片 +
  * 左侧 lucide icon + 标题 + 内容). 模板未命中时降级 → 提示"切到文档视图查看"。
  *
  * 卡片视图与文档视图都只读 (D10)。

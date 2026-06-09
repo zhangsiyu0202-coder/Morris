@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 import fc from "fast-check";
 import {
-  getInsightById,
+  getNotebookById,
   getLatestAnalysisReport,
-  listInsights,
+  listNotebooks,
   listSessions,
   listStudies,
 } from "../../../apps/web/lib/queries";
@@ -141,7 +141,7 @@ describe("P-SEC-04: read layer enforces ownerUserId scoping", () => {
     );
   });
 
-  it("listInsights / getInsightById never leak stranger-owned insights", async () => {
+  it("listNotebooks / getNotebookById never leak stranger-owned insights", async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.tuple(fc.integer({ min: 0, max: 6 }), fc.integer({ min: 0, max: 6 })),
@@ -173,13 +173,13 @@ describe("P-SEC-04: read layer enforces ownerUserId scoping", () => {
           ];
           const { databases } = makeFakeDatabases({ notebooks: { documents } });
 
-          const list = await listInsights("owner", databases);
+          const list = await listNotebooks("owner", databases);
           expect(list).toHaveLength(ownerCount);
           for (const item of list) expect(item.ownerUserId).toBe("owner");
 
-          // Try to read a stranger-owned insight via getInsightById as owner.
+          // Try to read a stranger-owned insight via getNotebookById as owner.
           for (let i = 0; i < strangerCount; i++) {
-            const result = await getInsightById("owner", `i-s-${i}`, databases);
+            const result = await getNotebookById("owner", `i-s-${i}`, databases);
             expect(result).toBeNull();
           }
         },

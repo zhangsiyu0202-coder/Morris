@@ -4,9 +4,10 @@ import { COLLECTIONS, BUCKETS } from "../src/schema.js";
 const FORBIDDEN = /team|share|comment|billing|subscribe|quota|plan|seat|usage[-_]?meter/i;
 
 describe("appwrite schema declaration", () => {
-  it("declares all 16 collections (researcher identity is Appwrite Account, no users collection)", () => {
+  it("declares all 15 collections (researcher identity is Appwrite Account, no users collection)", () => {
     const ids = COLLECTIONS.map((c) => c.id).sort();
     expect(ids).not.toContain("users");
+    expect(ids).not.toContain("insights"); // Wave F: removed (renamed to notebooks)
     expect(ids).toEqual(
       [
         "analysis_reports",
@@ -14,7 +15,6 @@ describe("appwrite schema declaration", () => {
         "dashboard_tiles",
         "dashboard_widgets",
         "dashboards",
-        "insights",
         "interview_links",
         "interview_sessions",
         "notebook_publish_tokens",
@@ -100,28 +100,39 @@ describe("appwrite schema: analysis-report sub-spec (T2)", () => {
     }
   });
 
-  it("Insight collection is owner-scoped with the expected attributes", () => {
-    const ins = COLLECTIONS.find((c) => c.id === "insights")!;
-    expect(ins.permissions).toContain('create("users")');
-    expect(ins.documentSecurity).toBe(true);
-    const keys = ins.attributes.map((a) => a.key).sort();
+  it("Notebook collection is owner-scoped with the expected attributes (Wave F: legacy `insights` removed)", () => {
+    const nb = COLLECTIONS.find((c) => c.id === "notebooks")!;
+    expect(nb.permissions).toContain('create("users")');
+    expect(nb.documentSecurity).toBe(true);
+    const keys = nb.attributes.map((a) => a.key).sort();
     expect(keys).toEqual(
       [
         "confidence",
+        "content",
         "createdAt",
+        "embedding",
+        "embeddingModel",
         "headline",
         "ownerUserId",
         "question",
-        "report",
         "sampleSize",
+        "shortId",
         "studyId",
         "studyTitle",
         "summary",
+        "textContent",
+        "visibility",
       ].sort(),
     );
-    const confidence = ins.attributes.find((a) => a.key === "confidence")!;
+    const confidence = nb.attributes.find((a) => a.key === "confidence")!;
     expect(confidence.type).toBe("enum");
     expect(confidence.elements).toEqual(["high", "medium", "low"]);
+    // Wave F (T48): legacy `report` attribute is removed
+    expect(keys).not.toContain("report");
+    // Wave B/F: shortId is unique within owner
+    const idxKeys = nb.indexes.map((i) => i.key);
+    expect(idxKeys).toContain("by_owner_short");
+    expect(idxKeys).toContain("by_text_search");
   });
 
   it("Recording collection carries ownerUserId and video formats", () => {

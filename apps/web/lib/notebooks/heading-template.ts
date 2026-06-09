@@ -20,7 +20,7 @@
  *   ## 行动建议
  *   {paragraphs / list-like prose}
  *
- * 卡片视图按这 5 段抽出渲染 (复用现有 Insight 卡片 UX). 文档视图渲染完整
+ * 卡片视图按这 5 段抽出渲染 (复用 legacy 卡片 UX). 文档视图渲染完整
  * ProseMirror 树。
  *
  * P-NB-02 (Wave F PBT) 锁定: 给定符合模板的 PM doc, extractCardSections 一定

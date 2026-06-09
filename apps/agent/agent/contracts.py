@@ -234,7 +234,7 @@ class InterviewWorkflowState(BaseModel):  # ts: InterviewWorkflowState
     transcriptBuffer: list[TranscriptSegment] = Field(default_factory=list)
 
 
-# --- notebooks sub-spec (renamed from analysis-report's Insight) ---
+# --- notebooks sub-spec (renamed from analysis-report's legacy artifact) ---
 
 
 class NotebookReportTheme(BaseModel):  # zod: notebookReportSchema.themes[]
@@ -281,15 +281,9 @@ class Notebook(BaseModel):  # zod: NotebookSchema
     visibility: Literal["internal", "published"] = "internal"
     embedding: str = ""
     embeddingModel: str = ""
-    # Legacy fixed-shape report (Wave D 起新写入 None, Wave F cleanup 删除)
-    report: NotebookReport | None = None
+    # Wave F (T48): legacy `report` field removed.
     createdAt: str
 
 
-# Backward-compat aliases for the Insight → Notebook rename (Wave A of
-# notebooks spec). Removed in Wave F (T46) once all consumers migrate.
-InsightReportTheme = NotebookReportTheme
-InsightReportDivergence = NotebookReportDivergence
-InsightReportAction = NotebookReportAction
-InsightReport = NotebookReport
-Insight = Notebook
+# Wave F (T46): legacy alias removed (was Insight ↦ Notebook). All
+# consumers must use Notebook / NotebookReport.

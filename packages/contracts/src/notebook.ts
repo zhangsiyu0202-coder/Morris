@@ -3,7 +3,7 @@ import { z } from "zod";
 /**
  * 研究员针对某个 study 的"聚焦问题"的 LLM 论证型回答 schema (legacy fixed shape)。
  *
- * 背景: 在 Wave A 字面 rename 之前,Notebook (原 Insight) 的报告内容由这个固定 schema
+ * 背景: 在 Wave A 字面 rename 之前,Notebook (legacy 名) 的报告内容由这个固定 schema
  * 承载。Wave B 起新写入用 Markdown→ProseMirror content (字段 `Notebook.content`),
  * 这个 schema 仅作为旧数据 fallback 保留, Wave F 单独 cleanup commit 删除。
  *
@@ -102,9 +102,11 @@ export const NotebookSchema = z.object({
   // 1024 维 embedding (Qwen DashScope text-embedding-v3) JSON-serialized number[]
   embedding: z.string().default(""),
   embeddingModel: z.string().default(""),
-  // 完整论证报告 (旧 fixed-schema fallback). Wave D 起新写入 null,
-  // Wave F cleanup commit 从 schema + contracts 删除。
-  report: notebookReportSchema.nullable().default(null),
+  // Wave F (T48): legacy `report` field (fixed-shape NotebookReport) removed.
+  // Notebook content lives entirely in `content` (ProseMirror JSON) since
+  // Wave D. The NotebookReport schema is still exported below as the
+  // DeepSeek experimental_output shape used by server actions that produce
+  // a Markdown notebook from a structured intermediate.
   createdAt: z.string().datetime(),
 });
 

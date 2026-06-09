@@ -2,14 +2,22 @@ import { describe, it, expect } from "vitest";
 import fc from "fast-check";
 import {
   AnalysisReportSchema,
+  AnalysisReportOutputSchema,
+  DashboardSchema,
+  DashboardTileSchema,
+  DashboardWidgetRunInputSchema,
+  DashboardWidgetSchema,
+  RunDashboardWidgetsOutputSchema,
   buildInterviewRoomMetadataFromDraft,
   buildInterviewRuntimeStudy,
   buildInterviewWorkflowConfigFromDraft,
   canTransitionSurveyStatus,
-  InsightSchema,
+  NotebookSchema,
+  notebookReportSchema,
   RecordingFormat,
   InterviewWorkflowConfigSchema,
   IssueLivekitTokenRequestSchema,
+  IssueLivekitTokenResponseSchema,
   InterviewLinkSchema,
   QuestionTaskResultSchema,
   SurveyAnalysisReportOutputSchema,
@@ -23,6 +31,65 @@ describe("contracts: RecordingFormat", () => {
     for (const format of ["mp4", "webm", "mp3", "opus", "wav"] as const) {
       expect(RecordingFormat.parse(format)).toBe(format);
     }
+  });
+});
+
+describe("contracts: dashboard widgets", () => {
+  it("models a study dashboard with widget tiles and run results", () => {
+    const now = new Date().toISOString();
+    const dashboard = DashboardSchema.parse({
+      $id: "dash1",
+      ownerUserId: "owner1",
+      surveyId: "survey1",
+      scope: "study",
+      name: "Research dashboard",
+      presetId: "study_overview",
+      createdAt: now,
+      updatedAt: now,
+    });
+    const widget = DashboardWidgetSchema.parse({
+      $id: "widget1",
+      ownerUserId: dashboard.ownerUserId,
+      dashboardId: dashboard.$id,
+      surveyId: dashboard.surveyId,
+      widgetType: "study_progress",
+      config: {},
+      createdAt: now,
+      updatedAt: now,
+    });
+    const tile = DashboardTileSchema.parse({
+      $id: "tile1",
+      ownerUserId: dashboard.ownerUserId,
+      dashboardId: dashboard.$id,
+      surveyId: dashboard.surveyId,
+      widgetId: widget.$id,
+      layout: { x: 0, y: 0, w: 4, h: 2 },
+      order: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    expect(tile.widgetId).toBe(widget.$id);
+    expect(
+      DashboardWidgetRunInputSchema.parse({
+        dashboardId: dashboard.$id,
+        surveyId: dashboard.surveyId,
+        tileIds: [tile.$id],
+      }).tileIds,
+    ).toEqual(["tile1"]);
+    expect(
+      RunDashboardWidgetsOutputSchema.parse({
+        results: [
+          {
+            tileId: tile.$id,
+            widgetId: widget.$id,
+            widgetType: widget.widgetType,
+            result: { completedSessions: 1, totalSessions: 2, completionRate: 50 },
+            error: null,
+          },
+        ],
+      }).results[0]?.widgetType,
+    ).toBe("study_progress");
   });
 });
 
@@ -45,6 +112,29 @@ describe("contracts: issueLivekitToken request", () => {
   });
 });
 
+describe("contracts: IssueLivekitTokenResponse linkKind", () => {
+  it("defaults linkKind to production when omitted", () => {
+    const parsed = IssueLivekitTokenResponseSchema.parse({
+      sessionId: "sess1",
+      livekitUrl: "ws://localhost:7880",
+      token: "tok",
+      surveyMeta: { surveyId: "survey1", title: "Demo" },
+    });
+    expect(parsed.linkKind).toBe("production");
+  });
+
+  it("preserves linkKind=test when present", () => {
+    const parsed = IssueLivekitTokenResponseSchema.parse({
+      sessionId: "sess1",
+      livekitUrl: "ws://localhost:7880",
+      token: "tok",
+      surveyMeta: { surveyId: "survey1", title: "Demo" },
+      linkKind: "test",
+    });
+    expect(parsed.linkKind).toBe("test");
+  });
+});
+
 describe("contracts: InterviewLink usedCount invariant (P-DATA-05 shape)", () => {
   it("defaults usedCount to 0 and requires positive maxUses", () => {
     const link = InterviewLinkSchema.parse({
@@ -56,7 +146,21 @@ describe("contracts: InterviewLink usedCount invariant (P-DATA-05 shape)", () =>
       expiresAt: new Date().toISOString(),
     });
     expect(link.usedCount).toBe(0);
+    expect(link.kind).toBe("production");
     expect(InterviewLinkSchema.safeParse({ ...link, maxUses: 0 }).success).toBe(false);
+  });
+
+  it("accepts kind=test for researcher self-test links", () => {
+    const link = InterviewLinkSchema.parse({
+      $id: "l1",
+      surveyId: "s1",
+      token: "tok",
+      mode: "reusable",
+      kind: "test",
+      maxUses: 100,
+      expiresAt: new Date().toISOString(),
+    });
+    expect(link.kind).toBe("test");
   });
 });
 
@@ -280,6 +384,7 @@ describe("contracts: AnalysisReport scope invariants (ADR-0003 D1/D4)", () => {
       sessionId: "sess1",
       surveyId: "sv1",
       scope: "session",
+      ownerUserId: "user1",
       generatedAt: "2026-06-06T00:00:00.000Z",
     });
     expect(result.success).toBe(true);
@@ -290,7 +395,53 @@ describe("contracts: AnalysisReport scope invariants (ADR-0003 D1/D4)", () => {
       $id: "r5",
       surveyId: "sv1",
       scope: "survey",
+      ownerUserId: "user1",
       generatedAt: "2026-06-06T00:00:00.000Z",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a session report with recording visual analysis", () => {
+    const result = AnalysisReportOutputSchema.safeParse({
+      scope: "session",
+      themes: [
+        {
+          id: "theme1",
+          label: "Visual hesitation",
+          description: "Participant hesitated when reading the stimulus.",
+          evidence: [{ transcriptId: "sess1", segmentIndex: 0 }],
+        },
+      ],
+      insights: [],
+      citations: [],
+      perQuestionSummary: [],
+      rendered: null,
+      visualAnalysis: {
+        source: "recording",
+        recordingFileId: "file1",
+        durationMs: 45000,
+        visualConfirmation: true,
+        summary: "Participant paused on the stimulus before answering.",
+        segments: [
+          {
+            id: "vseg1",
+            startMs: 0,
+            endMs: 30000,
+            title: "Stimulus review",
+            description: "The participant visually reviewed the stimulus.",
+            evidence: [{ transcriptId: "sess1", segmentIndex: 0 }],
+          },
+        ],
+        keyMoments: [
+          {
+            id: "vmoment1",
+            timestampMs: 12000,
+            label: "Pause",
+            description: "A visible pause before answering.",
+            segmentId: "vseg1",
+          },
+        ],
+      },
     });
     expect(result.success).toBe(true);
   });
@@ -372,30 +523,43 @@ describe("contracts: survey status transitions", () => {
   });
 });
 
-describe("contracts: Insight entity (ADR-0003 D2)", () => {
-  it("accepts a fully-populated insight", () => {
-    const insight = InsightSchema.parse({
+describe("contracts: Notebook entity (Wave F: legacy Insight rename + report 字段已删除)", () => {
+  it("accepts a fully-populated notebook (Wave F shape)", () => {
+    const nb = NotebookSchema.parse({
       $id: "i1",
       studyId: "st1",
       studyTitle: "S",
       question: "Why did people churn?",
+      ownerUserId: "u1",
+      shortId: "abc123def456",
+      content: '{"type":"doc","content":[]}',
+      textContent: "Pricing analysis text content",
       headline: "Pricing is the leading driver",
       summary: "Direct answer",
       confidence: "high",
       sampleSize: 12,
-      ownerUserId: "u1",
+      visibility: "internal",
+      embedding: "",
+      embeddingModel: "",
       createdAt: "2026-06-06T00:00:00.000Z",
-      report: {
-        headline: "Pricing is the leading driver",
-        directAnswer: "Multiple respondents cited the new tier.",
-        confidence: "high",
-        confidenceReason: "12/15 quotes mention pricing.",
-        themes: [{ title: "Pricing", analysis: "...", quotes: ["..."] }],
-        divergences: [{ group: "power users", stance: "value-based" }],
-        actions: [{ priority: "P0", action: "...", rationale: "..." }],
-      },
     });
-    expect(insight.confidence).toBe("high");
-    expect(insight.report.actions[0]?.priority).toBe("P0");
+    expect(nb.confidence).toBe("high");
+    expect(nb.shortId).toBe("abc123def456");
+    expect(nb.visibility).toBe("internal");
+    // Wave F (T48): legacy `report` field is no longer part of NotebookSchema.
+    expect(nb).not.toHaveProperty("report");
+  });
+
+  it("notebookReportSchema is still exported as DeepSeek experimental_output 中间格式", () => {
+    const r = notebookReportSchema.parse({
+      headline: "X",
+      directAnswer: "Y",
+      confidence: "high",
+      confidenceReason: "z",
+      themes: [],
+      divergences: [],
+      actions: [],
+    });
+    expect(r.confidence).toBe("high");
   });
 });

@@ -14,7 +14,7 @@ function db(): Databases {
  * - `report` is stored as a JSON string; deserialize to an object (or null on
  *   parse failure / empty fallback).
  *
- * Wave B: new fields (shortId / content / textContent / visibility / embedding /
+ * Wave B+: new fields (shortId / content / textContent / visibility / embedding /
  * embeddingModel) are plain strings/enums and need no decoding; defaults applied
  * by the schema's `.default("")` cover legacy rows that pre-date Wave B.
  */
@@ -71,13 +71,8 @@ export async function getNotebookById(
   return parsed.success ? parsed.data : null;
 }
 
-/**
- * Read a single notebook by `shortId`, scoped to its owner. Wave B+:
+/** Read a single notebook by `shortId`, scoped to its owner. Wave B+:
  * URLs are `/notebooks/[shortId]`, so this is the primary read path.
- *
- * Returns null if no row matches OR the row's shortId is empty (Wave A
- * rows that haven't been lazy-backfilled yet — those still resolve via
- * getNotebookById($id) until visited).
  */
 export async function getNotebookByShortId(
   ownerUserId: string,
@@ -95,8 +90,3 @@ export async function getNotebookByShortId(
   const parsed = NotebookSchema.safeParse(decodeNotebook(raw));
   return parsed.success ? parsed.data : null;
 }
-
-// Backward-compat aliases for the Insight → Notebook rename (Wave A of
-// notebooks spec). Removed in Wave F.
-export const listInsights = listNotebooks;
-export const getInsightById = getNotebookById;

@@ -13,7 +13,7 @@ import {
   X,
   Trash2,
 } from "lucide-react";
-import { createInsight, deleteInsight, type InsightListItem } from "@/lib/actions/notebooks";
+import { createNotebook, deleteNotebook, type NotebookListItem } from "@/lib/actions/notebooks";
 
 type StudyOption = {
   id: string;
@@ -51,7 +51,7 @@ export function NotebooksWorkbench({
   cards,
 }: {
   studies: StudyOption[];
-  cards: InsightListItem[];
+  cards: NotebookListItem[];
 }) {
   const router = useRouter();
   const [createOpen, setCreateOpen] = useState(false);
@@ -61,7 +61,7 @@ export function NotebooksWorkbench({
   function handleDelete(id: string) {
     setDeletingId(id);
     startTransition(async () => {
-      await deleteInsight(id);
+      await deleteNotebook(id);
       router.refresh();
       setDeletingId(null);
     });
@@ -156,7 +156,7 @@ export function NotebooksWorkbench({
 
       {/* 创建 modal */}
       {createOpen && (
-        <CreateInsightModal
+        <CreateNotebookModal
           studies={studies}
           onClose={() => setCreateOpen(false)}
           onCreated={(shortId) => {
@@ -170,7 +170,7 @@ export function NotebooksWorkbench({
 }
 
 /* ---------- 创建 modal:含原表单 ---------- */
-function CreateInsightModal({
+function CreateNotebookModal({
   studies,
   onClose,
   onCreated,
@@ -190,7 +190,7 @@ function CreateInsightModal({
     if (!canGenerate) return;
     setStatus("loading");
     setErrorMsg("");
-    const result = await createInsight({ studyId, question: question.trim() });
+    const result = await createNotebook({ studyId, question: question.trim() });
     if ("error" in result) {
       setErrorMsg(result.error);
       setStatus("error");

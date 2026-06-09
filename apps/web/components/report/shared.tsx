@@ -72,11 +72,11 @@ import type {
 // arrays' element types stay in lockstep with the contract.
 export type ChoiceDatum = Extract<SurveyQuestionStat, { kind: "choice" }>["data"][number];
 export type RatingDatum = Extract<SurveyQuestionStat, { kind: "rating" }>["data"][number];
-// NOTE: This `Insight` is the AnalysisReport-embedded insight item (auto-generated
+// NOTE: This is the AnalysisReport-embedded insight item (auto-generated
 // from sessions during analysis rollup), NOT the researcher-authored Notebook
-// collection (formerly the `Insight` collection, renamed in Wave A of the
-// notebooks sub-spec). The two are intentionally separate (ADR-0003 D2,
-// AGENTS.md "Optimize technology" rule). Do NOT rename this alias.
+// collection (renamed in the notebooks sub-spec). The two are intentionally
+// separate (ADR-0003 D2, AGENTS.md "Optimize technology" rule). Kept named
+// `Insight` only for the AnalysisReport-internal alias.
 export type Insight = SurveyAnalysisReportOutput["insights"][number];
 export type Theme = SurveyAnalysisReportOutput["themes"][number];
 export type SentimentDatum = SurveyAnalysisReportOutput["sentimentBreakdown"][number];

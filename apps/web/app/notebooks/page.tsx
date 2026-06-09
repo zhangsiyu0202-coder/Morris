@@ -1,6 +1,6 @@
 import { NotebooksWorkbench } from "@/components/notebooks/notebooks-workbench";
 import { listStudyOptions } from "@/lib/notebooks";
-import { listInsights } from "@/lib/actions/notebooks";
+import { listNotebooks } from "@/lib/actions/notebooks";
 import { getCurrentUserId } from "@/lib/queries/auth";
 
 export const metadata = {
@@ -15,7 +15,7 @@ export default async function NotebooksPage() {
   const ownerUserId = await getCurrentUserId();
   const [studies, cards] = await Promise.all([
     ownerUserId ? listStudyOptions(ownerUserId) : Promise.resolve([]),
-    listInsights(),
+    listNotebooks(),
   ]);
 
   return (
