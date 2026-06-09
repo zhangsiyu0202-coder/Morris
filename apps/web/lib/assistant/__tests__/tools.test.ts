@@ -7,6 +7,10 @@ vi.mock("@/lib/queries", () => ({
   searchTranscriptSegments: vi.fn(),
   getLatestAnalysisReport: vi.fn(),
   parseSurveyReportBody: vi.fn(),
+  getStudy: vi.fn(),
+}));
+vi.mock("@/lib/server/notebooks", () => ({
+  saveNotebookFromMarkdown: vi.fn(),
 }));
 
 import * as queries from "@/lib/queries";

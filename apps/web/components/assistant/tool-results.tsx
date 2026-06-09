@@ -1,4 +1,5 @@
-import { FileText, Search, BarChart3, Layers, ArrowRight, AlertTriangle } from "lucide-react";
+import Link from "next/link";
+import { FileText, Search, BarChart3, Layers, ArrowRight, AlertTriangle, NotebookText } from "lucide-react";
 import { SentimentTag } from "@/components/report/shared";
 
 function ToolCard({
@@ -204,7 +205,44 @@ export function ToolResult({ toolName, output }: { toolName: string; output: unk
       return <AnalysisCard data={artifact as Analysis} />;
     case "listStudies":
       return <StudyListCard data={artifact as StudyList} />;
+    case "createNotebook":
+      return <NotebookCreatedCard data={artifact as NotebookCreated} />;
     default:
       return null;
   }
+}
+
+type NotebookCreated = {
+  notebookShortId: string;
+  $id: string;
+  studyId: string;
+  question: string;
+  sectionCount: number;
+  status: "created";
+};
+
+function NotebookCreatedCard({ data }: { data: NotebookCreated }) {
+  if (!data?.notebookShortId) {
+    return (
+      <ToolCard icon={<NotebookText size={14} />} title="Notebook 草稿">
+        <p className="font-ui text-body-sm text-ink-600">
+          已记录草稿 (未落库)。继续完善后再保存为正式 Notebook。
+        </p>
+      </ToolCard>
+    );
+  }
+  return (
+    <ToolCard icon={<NotebookText size={14} />} title="Notebook 已创建">
+      <h4 className="font-display text-body-lg text-ink-900">{data.question}</h4>
+      <p className="mt-1 font-ui text-body-sm text-ink-500">
+        含 {data.sectionCount} 个章节 · shortId {data.notebookShortId}
+      </p>
+      <Link
+        href={`/notebooks/${data.notebookShortId}`}
+        className="mt-3 inline-flex items-center gap-1.5 rounded bg-mauve-200 px-3 py-1.5 font-ui text-body-sm font-medium text-ink-900 transition-opacity hover:bg-mauve-100"
+      >
+        查看 Notebook <ArrowRight size={13} />
+      </Link>
+    </ToolCard>
+  );
 }

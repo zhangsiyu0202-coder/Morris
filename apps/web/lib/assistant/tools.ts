@@ -17,6 +17,7 @@ import { buildListStudiesTool } from "./tools/list-studies";
 import { buildSearchInterviewDataTool } from "./tools/search-interview-data";
 import { buildAnalyzeDataTool } from "./tools/analyze-data";
 import { buildCreateStudyDraftTool } from "./tools/create-study-draft";
+import { buildCreateNotebookTool } from "./tools/create-notebook";
 import { buildTodoWriteTool, type TodoState } from "./tools/todo-write";
 import type { TodoItem } from "./system-prompt";
 
@@ -61,6 +62,7 @@ export function buildAssistantTools(ctx: AssistantToolsCtx) {
     searchInterviewData: buildSearchInterviewDataTool(ctx).spec,
     analyzeData: buildAnalyzeDataTool(ctx).spec,
     createStudyDraft: buildCreateStudyDraftTool(ctx).spec,
+    createNotebook: buildCreateNotebookTool(ctx).spec,
     todoWrite: buildTodoWriteTool({ todoState }).spec,
   };
 }
@@ -82,6 +84,7 @@ export function buildToolContextTemplates(
     searchInterviewData: buildSearchInterviewDataTool(ctx).contextPromptTemplate,
     analyzeData: buildAnalyzeDataTool(ctx).contextPromptTemplate,
     createStudyDraft: buildCreateStudyDraftTool(ctx).contextPromptTemplate,
+    createNotebook: buildCreateNotebookTool(ctx).contextPromptTemplate,
     todoWrite: undefined,
   };
 }

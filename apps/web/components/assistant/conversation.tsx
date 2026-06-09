@@ -13,6 +13,7 @@ const TOOL_PENDING_LABEL: Record<string, string> = {
   searchInterviewData: "正在检索访谈数据…",
   analyzeData: "正在分析结果…",
   listStudies: "正在读取调研列表…",
+  createNotebook: "正在写 Notebook…",
 };
 
 function getMessageText(parts: { type: string; text?: string }[]): string {
