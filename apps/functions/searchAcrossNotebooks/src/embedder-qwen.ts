@@ -40,9 +40,15 @@ export class EmbeddingError extends Error {
  * Throws `EmbeddingError` on any failure; never returns null.
  */
 export async function embedText(text: string): Promise<number[]> {
-  const apiKey = process.env.DASHSCOPE_API_KEY;
+  // Match apps/agent/agent/providers/settings.py resolution order:
+  // DASHSCOPE_API_KEY > QWEN_API_KEY > STT_PROVIDER_KEY > TTS_PROVIDER_KEY.
+  const apiKey =
+    process.env.DASHSCOPE_API_KEY ||
+    process.env.QWEN_API_KEY ||
+    process.env.STT_PROVIDER_KEY ||
+    process.env.TTS_PROVIDER_KEY;
   if (!apiKey) {
-    throw new EmbeddingError("DASHSCOPE_API_KEY not set", "missing_api_key");
+    throw new EmbeddingError("DASHSCOPE_API_KEY / QWEN_API_KEY not set", "missing_api_key");
   }
   if (!text || typeof text !== "string") {
     throw new EmbeddingError("embedText: input must be a non-empty string", "shape_mismatch");
