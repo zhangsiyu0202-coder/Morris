@@ -12,6 +12,33 @@ vi.mock("@/lib/queries", () => ({
 vi.mock("@/lib/server/notebooks", () => ({
   saveNotebookFromMarkdown: vi.fn(),
 }));
+vi.mock("@/lib/server/embedder-qwen", () => ({
+  embedText: vi.fn(),
+  EMBEDDING_DIM: 1024,
+  EMBEDDING_MODEL_TAG: "qwen.text-embedding-v3",
+}));
+// node-appwrite is required by tools/search-across-studies.ts at module load
+// time. The tool itself only constructs the client inside execute(), so any
+// runtime call would fail without env vars set; for tools.test.ts we don't
+// invoke that path. Provide a minimal mock to satisfy ESM module resolution.
+vi.mock("node-appwrite", () => ({
+  Client: class {
+    setEndpoint() {
+      return this;
+    }
+    setProject() {
+      return this;
+    }
+    setKey() {
+      return this;
+    }
+  },
+  Databases: class {},
+  Query: { equal: () => ({}), search: () => ({}), select: () => ({}), limit: () => ({}) },
+  ID: { unique: () => "mock-id" },
+  Permission: { read: () => "", update: () => "", delete: () => "" },
+  Role: { user: () => "" },
+}));
 
 import * as queries from "@/lib/queries";
 import { buildAssistantTools } from "../tools";

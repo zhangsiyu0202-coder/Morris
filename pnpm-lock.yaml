@@ -120,6 +120,31 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
+  apps/functions/searchAcrossNotebooks:
+    dependencies:
+      node-appwrite:
+        specifier: ^14.1.0
+        version: 14.2.0
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@merism/contracts':
+        specifier: workspace:*
+        version: link:../../../packages/contracts
+      '@merism/observability':
+        specifier: workspace:*
+        version: link:../../../packages/observability
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(@swc/core@1.15.40(@swc/helpers@0.5.23))(jiti@2.7.0)(postcss@8.5.15)(tsx@4.22.4)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@22.19.19)(lightningcss@1.32.0)
+
   apps/web:
     dependencies:
       '@ai-sdk/deepseek':

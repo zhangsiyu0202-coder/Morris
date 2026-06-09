@@ -23,6 +23,7 @@ import { markdownToProseMirror } from "@/lib/notebooks/markdown-to-prose";
 import { extractTextContent } from "@/lib/notebooks/prose-to-markdown";
 import { extractCardSections } from "@/lib/notebooks/heading-template";
 import type { ProseMirrorDoc } from "@/lib/notebooks/types";
+import { embedText, EMBEDDING_MODEL_TAG } from "./embedder-qwen";
 
 const NOTEBOOKS_COLLECTION = "notebooks";
 
@@ -124,6 +125,28 @@ export async function saveNotebookFromMarkdown(
   const shortId = generateShortId();
   const now = new Date().toISOString();
 
+  // Wave E T38: stream 结束(整份 content 已确定)后**一次性**生成 embedding,
+  // 落 Notebook.embedding + embeddingModel 字段。D10: Notebook 只读, 一旦落库
+  // embedding 永不变化, 不需要 sha256 比较。失败 (Qwen API 错误 / 没 API key)
+  // 时不阻塞落库 — 继续以空 embedding 写入, 检索侧自动 fallback 为 fulltext。
+  let embeddingJson = "";
+  let embeddingModel = "";
+  if (textContent.trim().length > 0) {
+    try {
+      const vec = await embedText(textContent);
+      embeddingJson = JSON.stringify(vec);
+      embeddingModel = EMBEDDING_MODEL_TAG;
+    } catch (err) {
+      // best-effort: log via console; saveNotebookFromMarkdown still succeeds.
+      // searchAcrossNotebooks Function will see embedding="" and skip this row
+      // (or fall back to fulltext if the entire owner-set is sparse).
+      console.warn(
+        "[saveNotebookFromMarkdown] embedding generation failed, continuing with empty embedding:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
   await db.createDocument(
     DATABASE_ID,
     NOTEBOOKS_COLLECTION,
@@ -137,10 +160,8 @@ export async function saveNotebookFromMarkdown(
       content: JSON.stringify(doc),
       textContent,
       visibility: "internal" as const,
-      // Wave E T38 will populate embedding + embeddingModel here in a single
-      // synchronous embedder.embedText(textContent) call (B1 修订).
-      embedding: "",
-      embeddingModel: "",
+      embedding: embeddingJson,
+      embeddingModel: embeddingModel,
       headline,
       summary,
       confidence,
