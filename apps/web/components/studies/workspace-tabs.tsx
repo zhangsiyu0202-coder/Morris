@@ -10,6 +10,7 @@ import { usePathname } from "next/navigation";
 
 const TABS = [
   { slug: "overview", label: "概览" },
+  { slug: "dashboard", label: "仪表盘" },
   { slug: "guide", label: "提纲" },
   { slug: "screener", label: "筛选问卷" },
   { slug: "recruit", label: "招募" },

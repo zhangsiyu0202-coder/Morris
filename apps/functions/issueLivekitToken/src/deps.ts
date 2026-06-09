@@ -76,6 +76,7 @@ export function createRealDeps(): IssueDeps {
         surveyId: doc.surveyId,
         ownerUserId: project.ownerUserId,
         mode: doc.mode,
+        kind: doc.kind === "test" ? "test" : "production",
         maxUses: doc.maxUses,
         usedCount: doc.usedCount ?? 0,
         expiresAt: doc.expiresAt,

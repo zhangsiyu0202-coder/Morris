@@ -18,9 +18,6 @@ SESSIONS_COLLECTION_ID = "interview_sessions"
 RECORDINGS_COLLECTION_ID = "recordings"
 SURVEYS_COLLECTION_ID = "surveys"
 RECORDINGS_BUCKET_ID = "recordings"
-RECORDINGS_COLLECTION_ID = "recordings"
-RECORDINGS_BUCKET_ID = "recordings"
-SURVEYS_COLLECTION_ID = "surveys"
 
 
 def transcript_document(
@@ -65,24 +62,6 @@ def session_completion_fields(
     }
 
 
-def recording_document(
-    *,
-    session_id: str,
-    owner_user_id: str,
-    storage_file_id: str,
-    duration_ms: int,
-    format: RecordingFormat,
-) -> dict[str, object]:
-    """Build a ``recordings`` collection document body."""
-    return {
-        "sessionId": session_id,
-        "ownerUserId": owner_user_id,
-        "storageFileId": storage_file_id,
-        "durationMs": duration_ms,
-        "format": format,
-    }
-
-
 def session_failure_fields(
     *,
     error_context: dict[str, object],
@@ -102,9 +81,9 @@ def recording_document(
     owner_user_id: str,
     storage_file_id: str,
     duration_ms: int,
-    format: str,
+    format: RecordingFormat,
 ) -> dict[str, object]:
-    """Build a ``recordings`` document body."""
+    """Build a ``recordings`` collection document body."""
     return {
         "sessionId": session_id,
         "ownerUserId": owner_user_id,

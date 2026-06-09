@@ -1,80 +1,36 @@
 "use server";
 
-import { Storage } from "node-appwrite";
-import { DATABASE_ID, getServerClient } from "@/lib/queries/client";
 import { getRecordingBySession } from "@/lib/queries/recordings";
-import { getSessionById } from "@/lib/survey-read";
-import { requireOwnerUserId } from "@/lib/owner";
-
-const RECORDING_MIME: Record<string, string> = {
-  mp4: "video/mp4",
-  webm: "video/webm",
-  mp3: "audio/mpeg",
-  opus: "audio/ogg",
-  wav: "audio/wav",
-};
-
-function recordingFilename(sessionId: string, format: string): string {
-  return `interview-${sessionId}.${format}`;
-}
-
-function recordingContentType(format: string): string {
-  return RECORDING_MIME[format] ?? "application/octet-stream";
-}
-
-const RECORDINGS_BUCKET = "recordings";
-
-async function assertSessionOwned(sessionId: string, ownerUserId: string): Promise<boolean> {
-  const session = await getSessionById(sessionId);
-  if (!session) return false;
-  try {
-    const doc = await getServerClient().databases.getDocument(
-      DATABASE_ID,
-      "surveys",
-      session.surveyId,
-    );
-    return (doc as { ownerUserId?: string }).ownerUserId === ownerUserId;
-  } catch {
-    return false;
-  }
-}
+import { assertSessionOwned } from "@/lib/server/recordings";
+import { getOwnerUserIdOrNull } from "@/lib/owner";
 
 export type RecordingDownloadResult =
   | { url: string }
-  | { error: "no_recording" | "not_authorized" };
+  | { error: "no_recording" | "not_authorized" | "not_authenticated" };
 
 /**
  * Resolve a same-origin download URL for a session recording.
+ *
  * The client opens `/api/recordings/[sessionId]/download`, which re-validates
- * ownership and streams from Appwrite Storage.
+ * ownership and streams from Appwrite Storage. We never return a direct
+ * Storage URL: the bucket is `fileSecurity: true` with no public role, and we
+ * want the route handler to apply auth + cache-control + filename sanitation
+ * uniformly.
+ *
+ * Pure read action — no side effects, no exceptions across the boundary. A
+ * signed-out caller is mapped to `{ error: "not_authenticated" }` rather than
+ * throwing so the React `useTransition` caller does not see an unhandled
+ * rejection.
  */
 export async function getRecordingDownloadUrl(
   sessionId: string,
 ): Promise<RecordingDownloadResult> {
-  const owner = await requireOwnerUserId();
+  const owner = await getOwnerUserIdOrNull();
+  if (!owner) return { error: "not_authenticated" };
   if (!(await assertSessionOwned(sessionId, owner))) {
     return { error: "not_authorized" };
   }
   const recording = await getRecordingBySession(sessionId);
   if (!recording) return { error: "no_recording" };
   return { url: `/api/recordings/${sessionId}/download` };
-}
-
-/** Used by the download route handler after cookie auth is confirmed. */
-export async function streamRecordingForOwner(
-  sessionId: string,
-  ownerUserId: string,
-): Promise<{ buffer: ArrayBuffer; filename: string; contentType: string } | null> {
-  if (!(await assertSessionOwned(sessionId, ownerUserId))) return null;
-  const recording = await getRecordingBySession(sessionId);
-  if (!recording) return null;
-
-  const { client } = getServerClient();
-  const storage = new Storage(client);
-  const buffer = await storage.getFileDownload(RECORDINGS_BUCKET, recording.storageFileId);
-  return {
-    buffer,
-    filename: recordingFilename(sessionId, recording.format),
-    contentType: recordingContentType(recording.format),
-  };
 }

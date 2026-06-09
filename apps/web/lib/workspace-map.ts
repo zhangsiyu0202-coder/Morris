@@ -1,4 +1,10 @@
-import type { AnalysisReportOutput, InterviewSession, Recording, Transcript } from "@merism/contracts";
+import type {
+  AnalysisReportOutput,
+  InterviewSession,
+  Recording,
+  Transcript,
+  VisualAnalysisOutput,
+} from "@merism/contracts";
 import type {
   WorkspaceOverview,
   SessionDisplayStatus,
@@ -133,6 +139,7 @@ export function transcriptToDetail(
   session: InterviewSession | null,
   aiSummary: string,
   recording: Recording | null = null,
+  visualAnalysis: VisualAnalysisOutput | null = null,
 ): TranscriptDetail {
   const turns: TranscriptTurn[] = transcript.segments.map((seg, index) => ({
     speaker: /interview|agent|主持|host/i.test(seg.speaker) ? "interviewer" : "respondent",
@@ -156,6 +163,7 @@ export function transcriptToDetail(
     language: transcript.language,
     turns,
     aiSummary: aiSummary || "（本次访谈暂无 AI 摘要）",
+    visualAnalysis,
     metadata,
     recording,
   };

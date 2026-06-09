@@ -24,7 +24,9 @@ export function RecordingDownloadButton({
     startTransition(async () => {
       const result = await getRecordingDownloadUrl(sessionId);
       if ("error" in result) {
-        setError(result.error === "no_recording" ? "暂无录像" : "无法下载");
+        if (result.error === "no_recording") setError("暂无录像");
+        else if (result.error === "not_authenticated") setError("请先登录");
+        else setError("无法下载");
         return;
       }
       window.open(result.url, "_blank", "noopener,noreferrer");

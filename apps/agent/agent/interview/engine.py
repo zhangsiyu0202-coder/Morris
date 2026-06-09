@@ -7,7 +7,7 @@ credentials are present. It:
 2. builds an ``AgentSession`` with Qwen STT/TTS + DeepSeek LLM,
 3. forwards finalized conversation turns into the ``TranscriptCollector``,
 4. publishes both speakers' transcription to the LiveKit room (so the web
-   client can subscribe via ``RoomEvent.TranscriptionReceived`` / the
+   client can listen via ``RoomEvent.TranscriptionReceived`` / the
    ``lk.transcription`` text stream),
 5. starts the ``InterviewSupervisorAgent`` which runs the section/question loop
    and persists to Appwrite.

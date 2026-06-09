@@ -221,6 +221,13 @@ class EgressRecorder:
 
         local_path = self._resolve_local_path(location, filename)
         if local_path is None or not os.path.isfile(local_path):
+            self._log.warn(
+                "egress artifact unreachable: location is neither an HTTP URL "
+                "nor a resolvable local path. If LiveKit egress is configured "
+                "with S3, set EGRESS_LOCAL_MOUNT or rely on presigned URLs.",
+                location=location,
+                filename=filename,
+            )
             return None
         with open(local_path, "rb") as handle:
             return RecordingArtifact(

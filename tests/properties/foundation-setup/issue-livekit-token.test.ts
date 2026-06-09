@@ -46,12 +46,83 @@ describe("issueLivekitToken status routing", () => {
     expect(sessions.size).toBe(0);
   });
 
+  it("test-kind link bypasses publish gate on draft surveyStatus", async () => {
+    const { deps, sessions } = makeFake({ kind: "test", surveyStatus: "draft" });
+    const r = await issueLivekitToken({ linkToken: "valid" }, deps);
+    expect(r.status).toBe(200);
+    expect(sessions.size).toBe(1);
+  });
+
+  it("test-kind link bypasses publish gate on paused surveyStatus", async () => {
+    const { deps, sessions } = makeFake({ kind: "test", surveyStatus: "paused" });
+    const r = await issueLivekitToken({ linkToken: "valid" }, deps);
+    expect(r.status).toBe(200);
+    expect(sessions.size).toBe(1);
+  });
+
+  it("test-kind link still rejects closed surveyStatus", async () => {
+    const { deps, sessions } = makeFake({ kind: "test", surveyStatus: "closed" });
+    const r = await issueLivekitToken({ linkToken: "valid" }, deps);
+    expect(r.status).toBe(410);
+    if (r.status === 410) expect(r.body.error).toBe("survey_not_published");
+    expect(sessions.size).toBe(0);
+  });
+
+  it("test-kind link still rejects archived surveyStatus", async () => {
+    const { deps, sessions } = makeFake({ kind: "test", surveyStatus: "archived" });
+    const r = await issueLivekitToken({ linkToken: "valid" }, deps);
+    expect(r.status).toBe(410);
+    if (r.status === 410) expect(r.body.error).toBe("survey_not_published");
+    expect(sessions.size).toBe(0);
+  });
+
   it("200 on first valid use of a single_use link", async () => {
     const { deps, sessions } = makeFake();
     const r = await issueLivekitToken({ linkToken: "valid" }, deps);
     expect(r.status).toBe(200);
     expect(sessions.size).toBe(1);
-    if (r.status === 200) expect(r.body.token).toMatch(/^jwt\./);
+    if (r.status === 200) {
+      expect(r.body.token).toMatch(/^jwt\./);
+      expect(r.body.linkKind).toBe("production");
+    }
+  });
+
+  it("200 response carries linkKind=test for researcher self-test links", async () => {
+    const { deps } = makeFake({ kind: "test", surveyStatus: "draft" });
+    const r = await issueLivekitToken({ linkToken: "valid" }, deps);
+    expect(r.status).toBe(200);
+    if (r.status === 200) expect(r.body.linkKind).toBe("test");
+  });
+
+  it("createRoom failure rolls back session AND usedCount so the slot stays claimable", async () => {
+    const { deps, sessions, link } = makeFake({ mode: "single_use", maxUses: 1 });
+    deps.createRoom = async () => {
+      throw new Error("livekit_unreachable");
+    };
+
+    const r = await issueLivekitToken({ linkToken: "valid" }, deps);
+    expect(r.status).toBe(500);
+    if (r.status === 500) expect(r.body.error).toBe("internal_error");
+    // Rollback: session must not persist, usedCount must revert. Otherwise a
+    // single transient room/token failure would permanently exhaust a single_use
+    // link and leak an orphaned session row.
+    expect(sessions.size).toBe(0);
+    expect(link.usedCount).toBe(0);
+  });
+
+  it("signToken failure rolls back session AND usedCount so the slot stays claimable", async () => {
+    const { deps, sessions, link } = makeFake({ mode: "reusable", maxUses: 3 });
+    // Bump usedCount to 1 to confirm rollback restores the *previous* value,
+    // not zero.
+    link.usedCount = 1;
+    deps.signToken = async () => {
+      throw new Error("signing_failed");
+    };
+
+    const r = await issueLivekitToken({ linkToken: "valid" }, deps);
+    expect(r.status).toBe(500);
+    expect(sessions.size).toBe(0);
+    expect(link.usedCount).toBe(1);
   });
 });
 

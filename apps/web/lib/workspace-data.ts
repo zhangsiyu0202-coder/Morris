@@ -70,6 +70,7 @@ export async function loadStudyTranscript(sessionId: string): Promise<Transcript
     const session = await getSessionById(sessionId);
     const owner = await getOwnerUserIdOrNull();
     let aiSummary = "";
+    let visualAnalysis = null;
     let recording = null;
     if (owner && session?.surveyId) {
       const report = await getLatestAnalysisReport(owner, {
@@ -78,10 +79,13 @@ export async function loadStudyTranscript(sessionId: string): Promise<Transcript
         surveyId: session.surveyId,
       });
       const body = report ? parseSessionReportBody(report) : null;
-      if (body) aiSummary = sessionReportToSummary(body);
+      if (body) {
+        aiSummary = sessionReportToSummary(body);
+        visualAnalysis = body.visualAnalysis ?? null;
+      }
       recording = await getRecordingBySession(sessionId);
     }
-    return transcriptToDetail(transcript, session, aiSummary, recording);
+    return transcriptToDetail(transcript, session, aiSummary, recording, visualAnalysis);
   } catch {
     return getMockTranscript(sessionId);
   }

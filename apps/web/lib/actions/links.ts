@@ -26,6 +26,7 @@ function docToLink(d: Raw): InterviewLink {
     surveyId: String(d.surveyId),
     token: String(d.token),
     mode: (d.mode as InterviewLink["mode"]) ?? "single_use",
+    kind: d.kind === "test" ? "test" : "production",
     maxUses: Number(d.maxUses ?? 1),
     usedCount: Number(d.usedCount ?? 0),
     expiresAt: String(d.expiresAt ?? new Date().toISOString()),
@@ -50,6 +51,7 @@ export async function createInterviewLink(
     surveyId,
     token,
     mode: opts.mode,
+    kind: "production",
     maxUses: opts.maxUses,
     usedCount: 0,
     expiresAt: opts.expiresAt,
@@ -79,25 +81,65 @@ export async function listInterviewLinks(surveyId: string): Promise<InterviewLin
 
 const TEST_LINK_LABEL = "测试访谈";
 
-/** Find or create a reusable test interview link for researcher self-testing. */
+/**
+ * Find or create a reusable test interview link for researcher self-testing.
+ *
+ * Lookup order:
+ * 1. By `kind === "test"` — the post-migration canonical path.
+ * 2. By legacy `label === "测试访谈"` with no `kind === "test"` set —
+ *    backfills the new `kind` field on the existing doc so we keep the same
+ *    token (researcher won't see their pre-existing test URL silently rotate)
+ *    and don't accumulate duplicate test rows. Old docs predate the contract
+ *    change in `packages/contracts/src/entities.ts` and must be patched in
+ *    place; without this researchers on local installs would get a fresh test
+ *    link plus a stale "production"-kind one that fails the publish gate.
+ * 3. Create a new `kind === "test"` doc.
+ */
 export async function getOrCreateTestInterviewLink(surveyId: string): Promise<InterviewLink> {
   await assertLinkOwned(surveyId);
   const db = getServerClient().databases;
-  const existing = await db.listDocuments(DATABASE_ID, LINKS, [
+
+  // (1) Canonical path.
+  const byKind = await db.listDocuments(DATABASE_ID, LINKS, [
+    Query.equal("surveyId", surveyId),
+    Query.equal("kind", "test"),
+    Query.equal("isRevoked", false),
+    Query.limit(1),
+  ]);
+  const existing = byKind.documents[0];
+  if (existing) return docToLink(existing as unknown as Raw);
+
+  // (2) Legacy backfill. Only matches docs that did not yet receive the new
+  // `kind` value — Appwrite returns `null` for unset enum fields and
+  // `Query.equal("kind", "test")` already excluded any post-migration doc.
+  const byLabel = await db.listDocuments(DATABASE_ID, LINKS, [
     Query.equal("surveyId", surveyId),
     Query.equal("label", TEST_LINK_LABEL),
     Query.equal("isRevoked", false),
     Query.limit(1),
   ]);
-  const doc = existing.documents[0];
-  if (doc) return docToLink(doc as unknown as Raw);
+  const legacy = byLabel.documents[0];
+  if (legacy) {
+    const patched = await db.updateDocument(DATABASE_ID, LINKS, String(legacy.$id), {
+      kind: "test",
+    });
+    return docToLink(patched as unknown as Raw);
+  }
 
+  // (3) Fresh create.
   const expiresAt = new Date();
   expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-  return createInterviewLink(surveyId, {
+  const token = randomBytes(24).toString("base64url");
+  const created = await db.createDocument(DATABASE_ID, LINKS, ID.unique(), {
+    surveyId,
+    token,
     mode: "reusable",
+    kind: "test",
     maxUses: 100,
+    usedCount: 0,
     expiresAt: expiresAt.toISOString(),
+    isRevoked: false,
     label: TEST_LINK_LABEL,
   });
+  return docToLink(created as unknown as Raw);
 }

@@ -153,9 +153,13 @@ export class InterviewTransport {
       this.callbacks.onPhase?.("connected")
       this.refreshAgent()
       this.emitMetadata()
-      // Voice interview: the microphone is the primary input channel, so it is
-      // enabled as soon as we are in the room. Camera/screenshare stay off
-      // until the interviewee explicitly opts in (consent gating lives upstream).
+      // Voice interview: the microphone is the primary input channel, so we
+      // publish it as soon as we are in the room. The browser permission was
+      // already obtained inside the pre-interview flow's `PermissionStage`
+      // (which calls LiveKit's `createLocalAudioTrack` and only advances on a
+      // granted permission), so this call is a publish action. Camera /
+      // screenshare stay off until the interviewee explicitly opts in inside
+      // the room shell.
       await this.setMicrophoneEnabled(true)
     } catch (error) {
       this.callbacks.onPhase?.("error")

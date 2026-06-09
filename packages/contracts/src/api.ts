@@ -1,11 +1,14 @@
 import { z } from "zod";
 import {
+  LinkKind,
   ProbeConfigSchema,
   QuestionBlockSchema,
   QuestionType,
   StimulusSchema,
   SurveySectionSchema,
   TranscriptSegmentSchema,
+  DashboardTileLayoutSchema,
+  DashboardWidgetType,
 } from "./entities.js";
 
 // issueLivekitToken (§6.2)
@@ -24,6 +27,12 @@ export const IssueLivekitTokenResponseSchema = z.object({
   livekitUrl: z.string(),
   token: z.string(),
   surveyMeta: SurveyMetaSchema,
+  // Carries through whether this room was issued for a researcher-issued
+  // test link (`test`) or a recruitment link (`production`). The interviewee
+  // surface uses this to render a "test mode" indicator so a real interviewee
+  // who accidentally received a test URL knows they are in a researcher's
+  // self-test, not the live recruitment session.
+  linkKind: LinkKind.default("production"),
 });
 
 // analyzeSession + AnalysisReport IO (§6.5)
@@ -48,6 +57,123 @@ export const AnalyzeSurveyRequestSchema = z.object({
 export const AnalyzeSurveyResponseSchema = z.object({
   reportId: z.string(),
   scope: z.literal("survey"),
+});
+
+export const DashboardWidgetCatalogEntrySchema = z.object({
+  widgetType: DashboardWidgetType,
+  groupId: z.string(),
+  groupLabel: z.string(),
+  label: z.string(),
+  description: z.string(),
+  defaultConfig: z.record(z.string(), z.unknown()).default({}),
+  defaultLayout: DashboardTileLayoutSchema,
+});
+
+export const DashboardWidgetRunInputSchema = z.object({
+  dashboardId: z.string().min(1),
+  surveyId: z.string().min(1),
+  tileIds: z.array(z.string().min(1)).max(50).optional(),
+});
+
+const StudyProgressWidgetResultSchema = z.object({
+  totalSessions: z.number().int().nonnegative(),
+  completedSessions: z.number().int().nonnegative(),
+  completionRate: z.number().min(0).max(100),
+});
+
+const RecentSessionsWidgetResultSchema = z.object({
+  sessions: z.array(
+    z.object({
+      sessionId: z.string(),
+      respondent: z.string(),
+      state: z.string(),
+      startedAt: z.string().optional(),
+      endedAt: z.string().optional(),
+    }),
+  ),
+});
+
+const TopThemesWidgetResultSchema = z.object({
+  themes: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      mentions: z.number().int().nonnegative().optional(),
+      pct: z.number().optional(),
+      sentiment: z.string().optional(),
+    }),
+  ),
+});
+
+const TopInsightsWidgetResultSchema = z.object({
+  insights: z.array(
+    z.object({
+      id: z.string(),
+      title: z.string(),
+      text: z.string(),
+      confidence: z.number().optional(),
+    }),
+  ),
+});
+
+const SentimentBreakdownWidgetResultSchema = z.object({
+  sentimentBreakdown: z.array(
+    z.object({
+      sentiment: z.string(),
+      count: z.number().int().nonnegative(),
+    }),
+  ),
+});
+
+const BookmarkedQuotesWidgetResultSchema = z.object({
+  bookmarks: z.array(
+    z.object({
+      id: z.string(),
+      sessionId: z.string(),
+      quote: z.string(),
+      source: z.string(),
+      respondent: z.string(),
+      createdAt: z.string().datetime(),
+    }),
+  ),
+});
+
+const VisualMomentsWidgetResultSchema = z.object({
+  moments: z.array(
+    z.object({
+      sessionId: z.string(),
+      timestampMs: z.number().int().nonnegative(),
+      label: z.string(),
+      description: z.string(),
+    }),
+  ),
+});
+
+const QuestionStatsWidgetResultSchema = z.object({
+  questionStats: z.array(z.record(z.string(), z.unknown())),
+});
+
+export const DashboardWidgetResultSchema = z.discriminatedUnion("widgetType", [
+  z.object({ widgetType: z.literal("study_progress"), result: StudyProgressWidgetResultSchema }),
+  z.object({ widgetType: z.literal("recent_sessions"), result: RecentSessionsWidgetResultSchema }),
+  z.object({ widgetType: z.literal("top_themes"), result: TopThemesWidgetResultSchema }),
+  z.object({ widgetType: z.literal("top_insights"), result: TopInsightsWidgetResultSchema }),
+  z.object({ widgetType: z.literal("sentiment_breakdown"), result: SentimentBreakdownWidgetResultSchema }),
+  z.object({ widgetType: z.literal("bookmarked_quotes"), result: BookmarkedQuotesWidgetResultSchema }),
+  z.object({ widgetType: z.literal("visual_moments"), result: VisualMomentsWidgetResultSchema }),
+  z.object({ widgetType: z.literal("question_stats"), result: QuestionStatsWidgetResultSchema }),
+]);
+
+export const RunDashboardWidgetsOutputSchema = z.object({
+  results: z.array(
+    z.object({
+      tileId: z.string(),
+      widgetId: z.string(),
+      widgetType: DashboardWidgetType,
+      result: z.unknown().nullable(),
+      error: z.string().nullable(),
+    }),
+  ),
 });
 
 export const StudyQuestionTypeSchema = z.enum([

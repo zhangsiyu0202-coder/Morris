@@ -64,7 +64,7 @@ export type TranscriptTurn = {
   startMs: number;
 };
 
-import type { Recording } from "@merism/contracts";
+import type { Recording, VisualAnalysisOutput } from "@merism/contracts";
 
 export type TranscriptDetail = {
   sessionId: string;
@@ -72,6 +72,7 @@ export type TranscriptDetail = {
   language: string;
   turns: TranscriptTurn[];
   aiSummary: string;
+  visualAnalysis: VisualAnalysisOutput | null;
   metadata: { key: string; value: string }[];
   recording: Recording | null;
 };
@@ -214,6 +215,7 @@ export function getMockTranscript(sessionId: string): TranscriptDetail {
     ],
     aiSummary:
       "受访者最初给出 3 美元的心理价位,随后表示 4 美元也可接受;若产品达到预期,愿意支付更高价格。整体上,基于包装与感知价值,受访者表现出较强的尝试意愿。",
+    visualAnalysis: null,
     metadata: [
       { key: "profile_uid", value: "usr_9f3a12bc84d" },
       { key: "session_id", value: sessionId },

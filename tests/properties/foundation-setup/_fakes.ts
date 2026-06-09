@@ -19,6 +19,7 @@ export function makeFake(link: Partial<LinkRecord> = {}): Fake {
     surveyId: "survey1",
     ownerUserId: "owner1",
     mode: "single_use",
+    kind: "production",
     maxUses: 1,
     usedCount: 0,
     expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
@@ -40,7 +41,11 @@ export function makeFake(link: Partial<LinkRecord> = {}): Fake {
       sessions.delete(id);
     },
     setUsedCount: async (_id, count) => {
-      full.usedCount = Math.max(full.usedCount, count);
+      // last-write-wins, mirroring Appwrite's updateDocument semantics. P-DATA-05
+      // does not depend on monotonicity (sessions.size is the invariant, gated
+      // by createSession atomicity); the rollback path requires that revert-to-
+      // smaller-value actually decrements.
+      full.usedCount = count;
     },
     getSurveyMeta: async (surveyId) => ({ surveyId, title: "Demo Survey" }),
     createRoom: async (_room, _metadata) => {},

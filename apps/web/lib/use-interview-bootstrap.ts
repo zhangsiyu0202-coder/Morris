@@ -8,6 +8,16 @@ export type BootstrapPhase = "idle" | "issuing" | "ready" | "error"
 export interface BootstrapResult {
   phase: BootstrapPhase
   connectArgs: { serverUrl: string; token: string } | null
+  /**
+   * Kind of link that was just exchanged for the room token.
+   *
+   * `"test"` indicates a researcher self-test link (publish gate bypassed).
+   * The interview surface renders a "test mode" badge so a real interviewee
+   * who accidentally received a test URL is informed; the researcher self-
+   * testing also gets a clear visual confirmation. Falls back to
+   * `"production"` until the bootstrap resolves.
+   */
+  linkKind: "production" | "test"
   error: string | null
 }
 
@@ -30,6 +40,7 @@ export function useInterviewBootstrap(
 ): BootstrapResult {
   const [phase, setPhase] = useState<BootstrapPhase>("idle")
   const [connectArgs, setConnectArgs] = useState<BootstrapResult["connectArgs"]>(null)
+  const [linkKind, setLinkKind] = useState<BootstrapResult["linkKind"]>("production")
   const [error, setError] = useState<string | null>(null)
   const startedRef = useRef(false)
 
@@ -43,6 +54,7 @@ export function useInterviewBootstrap(
       .then((res) => {
         if (cancelled) return
         setConnectArgs({ serverUrl: res.livekitUrl, token: res.token })
+        setLinkKind(res.linkKind)
         setPhase("ready")
       })
       .catch((err: unknown) => {
@@ -56,5 +68,5 @@ export function useInterviewBootstrap(
     }
   }, [enabled, linkToken])
 
-  return { phase, connectArgs, error }
+  return { phase, connectArgs, linkKind, error }
 }

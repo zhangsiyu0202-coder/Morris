@@ -15,6 +15,10 @@ export const QuestionType = z.enum([
   "info",
 ]);
 export const LinkMode = z.enum(["single_use", "reusable"]);
+// Researcher-issued "test" links bypass the publish gate so the owner can
+// self-test a draft survey before opening recruitment. "production" links keep
+// the strict published-only gate. See issueLivekitToken handler.
+export const LinkKind = z.enum(["production", "test"]);
 export const SessionState = z.enum([
   "created",
   "in_progress",
@@ -24,6 +28,17 @@ export const SessionState = z.enum([
 ]);
 export const RecordingFormat = z.enum(["mp3", "opus", "wav", "mp4", "webm"]);
 export const ReportScope = z.enum(["session", "survey"]);
+export const DashboardScope = z.enum(["study"]);
+export const DashboardWidgetType = z.enum([
+  "study_progress",
+  "recent_sessions",
+  "top_themes",
+  "top_insights",
+  "sentiment_breakdown",
+  "bookmarked_quotes",
+  "visual_moments",
+  "question_stats",
+]);
 
 /**
  * @deprecated The researcher identity is owned by Appwrite's built-in Account
@@ -138,6 +153,7 @@ export const InterviewLinkSchema = z.object({
   surveyId: z.string(),
   token: z.string(),
   mode: LinkMode,
+  kind: LinkKind.default("production"),
   maxUses: z.number().int().positive(),
   usedCount: z.number().int().nonnegative().default(0),
   expiresAt: z.string().datetime(),
@@ -233,6 +249,51 @@ export const RecordingSchema = z.object({
   format: RecordingFormat,
 });
 
+export const DashboardSchema = z.object({
+  $id: z.string(),
+  ownerUserId: z.string(),
+  surveyId: z.string(),
+  scope: DashboardScope.default("study"),
+  name: z.string(),
+  presetId: z.string().optional(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const DashboardWidgetSchema = z.object({
+  $id: z.string(),
+  ownerUserId: z.string(),
+  dashboardId: z.string(),
+  surveyId: z.string(),
+  widgetType: DashboardWidgetType,
+  name: z.string().optional(),
+  description: z.string().optional(),
+  config: json.default({}),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const DashboardTileLayoutSchema = z.object({
+  x: z.number().int().nonnegative(),
+  y: z.number().int().nonnegative(),
+  w: z.number().int().positive(),
+  h: z.number().int().positive(),
+  minW: z.number().int().positive().optional(),
+  minH: z.number().int().positive().optional(),
+});
+
+export const DashboardTileSchema = z.object({
+  $id: z.string(),
+  ownerUserId: z.string(),
+  dashboardId: z.string(),
+  surveyId: z.string(),
+  widgetId: z.string(),
+  layout: DashboardTileLayoutSchema,
+  order: z.number().int().nonnegative(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
 /** Researcher-saved quote bookmark from an interview transcript turn. */
 export const BookmarkSchema = z.object({
   $id: z.string(),
@@ -262,6 +323,7 @@ export const AnalysisReportSchema = z
     sessionId: z.string().optional(),
     surveyId: z.string().optional(),
     scope: ReportScope,
+    ownerUserId: z.string(),
     themes: z.array(z.unknown()).default([]),
     insights: z.array(z.unknown()).default([]),
     citations: z.array(z.unknown()).default([]),
@@ -296,6 +358,9 @@ export const AnalysisReportSchema = z
   });
 
 export type SurveyStatus = z.infer<typeof SurveyStatus>;
+export type LinkKind = z.infer<typeof LinkKind>;
+export type DashboardScope = z.infer<typeof DashboardScope>;
+export type DashboardWidgetType = z.infer<typeof DashboardWidgetType>;
 
 /**
  * Allowed survey status transitions. Each key maps to the set of statuses it
@@ -343,3 +408,7 @@ export type Transcript = z.infer<typeof TranscriptSchema>;
 export type Recording = z.infer<typeof RecordingSchema>;
 export type Bookmark = z.infer<typeof BookmarkSchema>;
 export type AnalysisReport = z.infer<typeof AnalysisReportSchema>;
+export type Dashboard = z.infer<typeof DashboardSchema>;
+export type DashboardWidget = z.infer<typeof DashboardWidgetSchema>;
+export type DashboardTileLayout = z.infer<typeof DashboardTileLayoutSchema>;
+export type DashboardTile = z.infer<typeof DashboardTileSchema>;

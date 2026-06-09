@@ -84,19 +84,44 @@ export async function deleteBookmark(id: string): Promise<{ ok: boolean } | { er
   const ownerUserId = await requireOwnerUserId().catch(() => null);
   if (!ownerUserId) return { error: "请先登录。" };
 
+  // Read first to verify ownership; only the read may legitimately 404 (the
+  // bookmark was already gone, e.g. a duplicate click). Other errors must
+  // bubble — swallowing them hid network/permission failures behind the same
+  // "not found" message and made the action impossible to debug from the UI.
+  let doc: { ownerUserId?: string };
   try {
-    const doc = await getServerClient().databases.getDocument(
+    doc = (await getServerClient().databases.getDocument(
       DATABASE_ID,
       BOOKMARKS,
       bookmarkId,
-    );
-    if ((doc as { ownerUserId?: string }).ownerUserId !== ownerUserId) {
-      return { error: "无权删除此书签。" };
-    }
-    await getServerClient().databases.deleteDocument(DATABASE_ID, BOOKMARKS, bookmarkId);
-    revalidatePath("/home");
-    return { ok: true };
-  } catch {
-    return { error: "书签不存在。" };
+    )) as { ownerUserId?: string };
+  } catch (error) {
+    if (isAppwriteNotFound(error)) return { error: "书签不存在。" };
+    throw error;
   }
+  if (doc.ownerUserId !== ownerUserId) {
+    return { error: "无权删除此书签。" };
+  }
+
+  try {
+    await getServerClient().databases.deleteDocument(DATABASE_ID, BOOKMARKS, bookmarkId);
+  } catch (error) {
+    // Idempotent delete: if the doc was removed between our read and the delete,
+    // treat as success. Anything else is a real failure and must surface.
+    if (!isAppwriteNotFound(error)) throw error;
+  }
+  revalidatePath("/home");
+  return { ok: true };
+}
+
+/**
+ * Narrow check for Appwrite's "document_not_found" error shape (HTTP 404,
+ * `code === 404` on the SDK exception). Avoid `instanceof AppwriteException`
+ * to keep this file SDK-light.
+ */
+function isAppwriteNotFound(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = (error as { code?: unknown }).code;
+  const type = (error as { type?: unknown }).type;
+  return code === 404 || type === "document_not_found";
 }

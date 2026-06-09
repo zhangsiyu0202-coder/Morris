@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import type { Bookmark } from "@merism/contracts";
 import type { TranscriptDetail } from "@/lib/mock/workspace";
 import { RecordingDownloadButton } from "@/components/studies/recording-download-button";
+import { VisualAnalysisPanel } from "@/components/studies/visual-analysis-panel";
 import {
   TranscriptBookmarkSidebar,
   TranscriptTurnRow,
@@ -85,6 +86,17 @@ export function TranscriptView({
         </section>
 
         <div className="h-px bg-ink-100" />
+
+        {transcript.visualAnalysis ? (
+          <>
+            <VisualAnalysisPanel
+              sessionId={transcript.sessionId}
+              analysis={transcript.visualAnalysis}
+            />
+
+            <div className="h-px bg-ink-100" />
+          </>
+        ) : null}
 
         <TranscriptBookmarkSidebar bookmarks={bookmarks} />
 

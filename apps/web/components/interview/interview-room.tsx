@@ -73,7 +73,7 @@ export function InterviewRoom({ linkToken }: InterviewRoomProps) {
     return <InterviewLoadingScreen label={loadingLabel(bootstrap.phase, session.phase)} />
   }
 
-  return <InterviewRoomShell session={session} />
+  return <InterviewRoomShell session={session} linkKind={bootstrap.linkKind} />
 }
 
 function loadingLabel(

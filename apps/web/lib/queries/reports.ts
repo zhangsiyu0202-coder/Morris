@@ -91,11 +91,13 @@ export function parseSessionReportBody(report: AnalysisReport): AnalysisReportOu
 
   let insights: unknown[] = [];
   let perQuestionSummary: unknown[] = [];
+  let visualAnalysis: unknown = null;
   const insightsBlob = report.insights as unknown;
   if (insightsBlob && typeof insightsBlob === "object" && !Array.isArray(insightsBlob)) {
     const blob = insightsBlob as Record<string, unknown>;
     if (Array.isArray(blob.insights)) insights = blob.insights;
     if (Array.isArray(blob.perQuestionSummary)) perQuestionSummary = blob.perQuestionSummary;
+    visualAnalysis = blob.visualAnalysis ?? null;
   } else if (Array.isArray(insightsBlob)) {
     insights = insightsBlob;
   }
@@ -107,6 +109,7 @@ export function parseSessionReportBody(report: AnalysisReport): AnalysisReportOu
     citations,
     perQuestionSummary,
     rendered: null,
+    visualAnalysis,
   };
 
   const parsed = AnalysisReportOutputSchema.safeParse(candidate);

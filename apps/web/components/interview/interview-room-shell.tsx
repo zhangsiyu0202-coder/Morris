@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import {
   Clock,
+  FlaskConical,
   Loader2,
   Mic,
   MicOff,
@@ -11,7 +12,7 @@ import {
   Video,
   VideoOff,
 } from "lucide-react"
-import type { InterviewAnswerPayload } from "@merism/contracts"
+import type { InterviewAnswerPayload, LinkKind } from "@merism/contracts"
 import type { LiveInterviewSession } from "@/lib/use-live-interview"
 import { Brand } from "./pre-interview-flow"
 import { ConversationPanel } from "./conversation-panel"
@@ -20,17 +21,25 @@ import { SelfCam } from "./self-cam"
 
 interface InterviewRoomShellProps {
   session: LiveInterviewSession
+  /**
+   * Kind of link this room was issued for. When `"test"` the header renders a
+   * "测试模式" badge so a real interviewee who accidentally received a test
+   * URL (and the researcher self-testing) is visually informed that this is
+   * not the live recruitment session.
+   */
+  linkKind: LinkKind
 }
 
 /**
  * Dark two-pane interview room shell (visual source: docs/design/interviewer-page).
  *
- * Top bar: brand + client-side elapsed timer + derived progress. Left pane:
- * live transcript over the camera self-view. Right pane: the existing
- * contract-driven question stage on a light surface. Bottom bar: media toggles
- * only — push-to-talk is intentionally dropped (voice is always live).
+ * Top bar: brand + client-side elapsed timer + derived progress + (when
+ * applicable) a test-mode badge. Left pane: live transcript over the camera
+ * self-view. Right pane: the existing contract-driven question stage on a
+ * light surface. Bottom bar: media toggles only — push-to-talk is
+ * intentionally dropped (voice is always live).
  */
-export function InterviewRoomShell({ session }: InterviewRoomShellProps) {
+export function InterviewRoomShell({ session, linkKind }: InterviewRoomShellProps) {
   const elapsed = useElapsedSeconds()
   const reconnecting = session.phase === "reconnecting"
 
@@ -47,6 +56,7 @@ export function InterviewRoomShell({ session }: InterviewRoomShellProps) {
             <Clock className="size-3.5" aria-hidden="true" />
             <span className="font-data text-caption">{formatTime(elapsed)}</span>
           </span>
+          {linkKind === "test" ? <TestModeBadge /> : null}
         </div>
 
         <div className="mx-12 flex max-w-xs flex-1 items-center gap-3">
@@ -169,6 +179,25 @@ function useElapsedSeconds(): number {
     return () => clearInterval(id)
   }, [])
   return elapsed
+}
+
+/**
+ * Outline pill rendered in the dark room header when the session was opened
+ * via a researcher-issued test link. Stays inside the monochrome palette
+ * (mauve outline + mauve text on ink-900) per design-system.md — status is
+ * communicated by icon + copy + container, never color.
+ */
+function TestModeBadge() {
+  return (
+    <span
+      role="status"
+      aria-label="测试模式"
+      className="ml-2 flex items-center gap-1.5 rounded-full border border-mauve-200/40 px-2.5 py-0.5 text-mauve-200"
+    >
+      <FlaskConical className="size-3" aria-hidden="true" />
+      <span className="font-decor text-caption">测试模式</span>
+    </span>
+  )
 }
 
 function formatTime(totalSeconds: number): string {
