@@ -4,16 +4,20 @@ import { COLLECTIONS, BUCKETS } from "../src/schema.js";
 const FORBIDDEN = /team|share|comment|billing|subscribe|quota|plan|seat|usage[-_]?meter/i;
 
 describe("appwrite schema declaration", () => {
-  it("declares all 11 collections (researcher identity is Appwrite Account, no users collection)", () => {
+  it("declares all 15 collections (researcher identity is Appwrite Account, no users collection)", () => {
     const ids = COLLECTIONS.map((c) => c.id).sort();
     expect(ids).not.toContain("users");
     expect(ids).toEqual(
       [
         "analysis_reports",
         "bookmarks",
+        "dashboard_tiles",
+        "dashboard_widgets",
+        "dashboards",
         "insights",
         "interview_links",
         "interview_sessions",
+        "notebooks",
         "projects",
         "question_blocks",
         "recordings",
@@ -31,6 +35,16 @@ describe("appwrite schema declaration", () => {
   it("interview_links exposes no client permissions (server-only)", () => {
     const link = COLLECTIONS.find((c) => c.id === "interview_links")!;
     expect(link.permissions).toEqual([]);
+  });
+
+  it("interview_links carries a kind attribute (production|test) defaulting to production", () => {
+    const link = COLLECTIONS.find((c) => c.id === "interview_links")!;
+    const kind = link.attributes.find((a) => a.key === "kind")!;
+    expect(kind).toBeDefined();
+    expect(kind.type).toBe("enum");
+    expect(kind.elements).toEqual(["production", "test"]);
+    expect(kind.required).toBe(false);
+    expect(kind.default).toBe("production");
   });
 
   it("server-write collections grant no client create", () => {
@@ -134,6 +148,20 @@ describe("appwrite schema: analysis-report sub-spec (T2)", () => {
       ].sort(),
     );
     expect(bm.indexes.map((i) => i.key)).toContain("by_owner_created");
+  });
+
+  it("Dashboard collections model study-scoped widget tiles", () => {
+    const dashboard = COLLECTIONS.find((c) => c.id === "dashboards")!;
+    const widget = COLLECTIONS.find((c) => c.id === "dashboard_widgets")!;
+    const tile = COLLECTIONS.find((c) => c.id === "dashboard_tiles")!;
+
+    expect(dashboard.permissions).toContain('create("users")');
+    expect(widget.permissions).toContain('create("users")');
+    expect(tile.permissions).toContain('create("users")');
+    expect(dashboard.attributes.find((a) => a.key === "scope")?.elements).toEqual(["study"]);
+    expect(widget.attributes.find((a) => a.key === "widgetType")?.elements).toContain("visual_moments");
+    expect(tile.attributes.map((a) => a.key)).toContain("layout");
+    expect(tile.indexes.map((i) => i.key)).toContain("by_dashboard_order");
   });
 
   it("recordings bucket allows video extensions", () => {

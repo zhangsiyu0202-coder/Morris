@@ -2,6 +2,8 @@
 
 ## Feature: analysis-report-v2（分析报告 v2:质量分类 / 抗幻觉 / 二段式聚合）
 
+> **Footnote (notebooks sub-spec, 2026-06):** Same `Insight` → `Notebook` rename note as in `analysis-report/requirements.md`. The text below preserves the original wording.
+
 ## Introduction
 
 本需求文档对应 Spec **analysis-report-v2**，目的是把已落地的 `analysis-report` 子 spec（`analyzeSession` + `analyzeSurvey` + `/reports/[surveyId]`）从"能跑通"升级到"会议级可用、跨 session 数 N 增长后仍稳定准确"。

@@ -4,7 +4,7 @@ import { listStudies, getStudy } from "../studies";
 import { listSessions, countCompletedSessions } from "../sessions";
 import { searchTranscriptSegments } from "../transcripts";
 import { getLatestAnalysisReport, parseSessionReportBody } from "../reports";
-import { listInsights, getInsightById } from "../insights";
+import { listInsights, getInsightById } from "../notebooks";
 import { listBookmarksForOwner, listBookmarksBySession } from "../bookmarks";
 import { makeFakeDatabases } from "./helpers";
 
@@ -255,6 +255,7 @@ describe("queries: reports", () => {
         { questionId: "q1", summary: "Price is the main concern", sentiment: "negative" },
       ],
       rendered: null,
+      visualAnalysis: null,
     };
 
     const report = {
@@ -266,6 +267,7 @@ describe("queries: reports", () => {
       insights: {
         insights: bodyFixture.insights,
         perQuestionSummary: bodyFixture.perQuestionSummary,
+        visualAnalysis: bodyFixture.visualAnalysis,
       },
       citations: bodyFixture.citations,
       generatedAt: "2026-06-06T00:00:00.000Z",
@@ -280,6 +282,7 @@ describe("queries: reports", () => {
       $id: "ar1",
       surveyId: "sv1",
       scope: "survey" as const,
+      ownerUserId: owner,
       themes: [],
       insights: [],
       citations: [],
@@ -289,7 +292,7 @@ describe("queries: reports", () => {
   });
 });
 
-describe("queries: insights", () => {
+describe("queries: notebooks", () => {
   const insightDoc = {
     $id: "i1",
     studyId: "sv1",
@@ -314,7 +317,7 @@ describe("queries: insights", () => {
 
   it("listInsights returns owner's insights only", async () => {
     const { databases } = makeFakeDatabases({
-      insights: {
+      notebooks: {
         documents: [insightDoc, { ...insightDoc, $id: "i2", ownerUserId: stranger }],
       },
     });
@@ -324,14 +327,14 @@ describe("queries: insights", () => {
 
   it("getInsightById returns null for unowned id", async () => {
     const { databases } = makeFakeDatabases({
-      insights: { documents: [{ ...insightDoc, ownerUserId: stranger }] },
+      notebooks: { documents: [{ ...insightDoc, ownerUserId: stranger }] },
     });
     expect(await getInsightById(owner, "i1", databases)).toBeNull();
   });
 
   it("getInsightById returns the insight when owned", async () => {
     const { databases } = makeFakeDatabases({
-      insights: { documents: [insightDoc] },
+      notebooks: { documents: [insightDoc] },
     });
     const result = await getInsightById(owner, "i1", databases);
     expect(result?.headline).toBe("Because of pricing");

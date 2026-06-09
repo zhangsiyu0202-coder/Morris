@@ -234,37 +234,37 @@ class InterviewWorkflowState(BaseModel):  # ts: InterviewWorkflowState
     transcriptBuffer: list[TranscriptSegment] = Field(default_factory=list)
 
 
-# --- analysis-report sub-spec additions (ADR-0003) ---
+# --- notebooks sub-spec (renamed from analysis-report's Insight) ---
 
 
-class InsightReportTheme(BaseModel):  # zod: insightReportSchema.themes[]
+class NotebookReportTheme(BaseModel):  # zod: notebookReportSchema.themes[]
     title: str
     analysis: str
     quotes: list[str]
 
 
-class InsightReportDivergence(BaseModel):  # zod: insightReportSchema.divergences[]
+class NotebookReportDivergence(BaseModel):  # zod: notebookReportSchema.divergences[]
     group: str
     stance: str
 
 
-class InsightReportAction(BaseModel):  # zod: insightReportSchema.actions[]
+class NotebookReportAction(BaseModel):  # zod: notebookReportSchema.actions[]
     priority: Literal["P0", "P1", "P2"]
     action: str
     rationale: str
 
 
-class InsightReport(BaseModel):  # zod: insightReportSchema
+class NotebookReport(BaseModel):  # zod: notebookReportSchema
     headline: str
     directAnswer: str
     confidence: Literal["high", "medium", "low"]
     confidenceReason: str
-    themes: list[InsightReportTheme]
-    divergences: list[InsightReportDivergence]
-    actions: list[InsightReportAction]
+    themes: list[NotebookReportTheme]
+    divergences: list[NotebookReportDivergence]
+    actions: list[NotebookReportAction]
 
 
-class Insight(BaseModel):  # zod: InsightSchema
+class Notebook(BaseModel):  # zod: NotebookSchema
     id: str = Field(alias="$id")
     studyId: str
     studyTitle: str
@@ -273,6 +273,15 @@ class Insight(BaseModel):  # zod: InsightSchema
     summary: str
     confidence: Literal["high", "medium", "low"]
     sampleSize: int
-    report: InsightReport
+    report: NotebookReport
     ownerUserId: str
     createdAt: str
+
+
+# Backward-compat aliases for the Insight → Notebook rename (Wave A of
+# notebooks spec). Removed in Wave F (T46) once all consumers migrate.
+InsightReportTheme = NotebookReportTheme
+InsightReportDivergence = NotebookReportDivergence
+InsightReportAction = NotebookReportAction
+InsightReport = NotebookReport
+Insight = Notebook

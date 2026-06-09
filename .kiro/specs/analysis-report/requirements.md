@@ -2,6 +2,8 @@
 
 ## Feature: analysis-report（访谈分析报告）
 
+> **Footnote (notebooks sub-spec, 2026-06):** This already-shipped spec uses the original name `Insight` for the researcher-authored ad-hoc question + AI report artifact. That artifact has since been renamed to `Notebook` by the `notebooks` sub-spec (字面 rename + ProseMirror content + cross-study embedding). The text below preserves the original wording for historical accuracy. When reading: `Insight` collection → `notebooks` collection; `InsightSchema` / `insightReportSchema` → `NotebookSchema` / `notebookReportSchema`. The `AnalysisReport.insights[]` field is unchanged (separate semantic).
+
 ## Introduction
 
 本需求文档对应 Spec **analysis-report**，把 MerismV2 已落地的 LiveKit 实时访谈成果转化为研究员可读的结构化报告，并把当前以 mock 为支撑的两块功能迁到真实数据：

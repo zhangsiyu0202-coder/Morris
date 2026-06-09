@@ -27,7 +27,7 @@ type NavItem = {
 const NAV: NavItem[] = [
   { label: "首页", href: "/home", icon: Home },
   { label: "访谈", href: "/interview", icon: MessageSquare },
-  { label: "洞察", href: "/insights", icon: Lightbulb },
+  { label: "洞察", href: "/notebooks", icon: Lightbulb },
   { label: "Morris AI", href: "/assistant", icon: Sparkles },
   { label: "报告", href: "/reports", icon: PieChart },
   { label: "书签", href: "#bookmarks", icon: Bookmark },

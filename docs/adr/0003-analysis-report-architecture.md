@@ -25,6 +25,8 @@ Alternatives rejected:
 
 ### D2: Insights persistence — new `Insight` collection in Appwrite
 
+> **Footnote (notebooks sub-spec, 2026-06):** the `Insight` collection has since been renamed to `Notebook` and its fixed-schema `report` field evolved into ProseMirror JSON `content` + plain-text mirror + cross-study embedding. The structural decision below (researcher-authored, separate from `AnalysisReport`) is unchanged; only the artifact name and content storage shape evolve. See `.kiro/specs/notebooks/` for details. The text below preserves the original D2 reasoning for historical context.
+
 `apps/web/lib/actions/insights.ts` currently writes to a Drizzle/Postgres `insight` table. This sub-spec migrates the storage to a new Appwrite `Insight` collection, keeping the same domain shape but aligning with the backend single-source-of-truth rule.
 
 `Insight` and `AnalysisReport` stay separate collections because:

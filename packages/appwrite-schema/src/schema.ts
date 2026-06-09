@@ -171,6 +171,13 @@ export const COLLECTIONS: CollectionDef[] = [
       { key: "surveyId", type: "string", size: 64, required: true },
       { key: "token", type: "string", size: 128, required: true },
       { key: "mode", type: "enum", elements: ["single_use", "reusable"], required: true },
+      {
+        key: "kind",
+        type: "enum",
+        elements: ["production", "test"],
+        required: false,
+        default: "production",
+      },
       { key: "maxUses", type: "integer", required: true },
       { key: "usedCount", type: "integer", required: false, default: 0 },
       { key: "expiresAt", type: "datetime", required: true },
@@ -290,6 +297,10 @@ export const COLLECTIONS: CollectionDef[] = [
     // Owner-scoped: researchers create their own insights via the
     // /api/insights server actions; per-document permissions are pinned at
     // creation. See docs/adr/0003-analysis-report-architecture.md (D2).
+    //
+    // DEPRECATED (Wave A of notebooks spec): renamed to `notebooks`. This
+    // collection is kept declared so existing data remains accessible during
+    // the rename; nothing new is written here. Removed in Wave F.
     permissions: OWNER_SCOPED,
     documentSecurity: true,
     attributes: [
@@ -313,6 +324,118 @@ export const COLLECTIONS: CollectionDef[] = [
       { key: "by_owner", type: "key", attributes: ["ownerUserId"] },
       { key: "by_owner_study", type: "key", attributes: ["ownerUserId", "studyId"] },
       { key: "by_owner_created", type: "key", attributes: ["ownerUserId", "createdAt"] },
+    ],
+  },
+  {
+    id: "notebooks",
+    name: "Notebook",
+    // Owner-scoped: researchers create notebooks via Morris (createNotebook tool)
+    // or server actions; per-document permissions pinned at creation.
+    //
+    // Wave A of notebooks spec: schema is field-equivalent to legacy `insights`
+    // collection (字面 rename, 不加新字段). Wave B 演进 schema 加
+    // shortId / content / textContent / visibility / embedding / embeddingModel.
+    permissions: OWNER_SCOPED,
+    documentSecurity: true,
+    attributes: [
+      { key: "studyId", type: "string", size: 64, required: true },
+      { key: "studyTitle", type: "string", size: 512, required: true },
+      { key: "question", type: "string", size: 4000, required: true },
+      // Card-view fast fields, redundantly stored alongside `report` so a
+      // listing query does not need to expand the full report jsonb.
+      { key: "headline", type: "string", size: 512, required: true },
+      { key: "summary", type: "string", size: 4000, required: true },
+      { key: "confidence", type: "enum", elements: ["high", "medium", "low"], required: true },
+      { key: "sampleSize", type: "integer", required: true },
+      // Full structured argumentative report (notebookReportSchema in
+      // @merism/contracts/notebook). Stored as JSON string per the convention
+      // used by other JSON fields in this schema.
+      { key: "report", type: "string", size: JSON_SIZE, required: true },
+      { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "createdAt", type: "datetime", required: true },
+    ],
+    indexes: [
+      { key: "by_owner", type: "key", attributes: ["ownerUserId"] },
+      { key: "by_owner_study", type: "key", attributes: ["ownerUserId", "studyId"] },
+      { key: "by_owner_created", type: "key", attributes: ["ownerUserId", "createdAt"] },
+    ],
+  },
+  {
+    id: "dashboards",
+    name: "Dashboard",
+    permissions: OWNER_SCOPED,
+    documentSecurity: true,
+    attributes: [
+      { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "surveyId", type: "string", size: 64, required: true },
+      { key: "scope", type: "enum", elements: ["study"], required: true },
+      { key: "name", type: "string", size: 512, required: true },
+      { key: "presetId", type: "string", size: 128, required: false },
+      { key: "createdAt", type: "datetime", required: true },
+      { key: "updatedAt", type: "datetime", required: true },
+    ],
+    indexes: [
+      { key: "by_owner", type: "key", attributes: ["ownerUserId"] },
+      { key: "by_owner_survey", type: "key", attributes: ["ownerUserId", "surveyId"] },
+      { key: "by_survey", type: "key", attributes: ["surveyId"] },
+    ],
+  },
+  {
+    id: "dashboard_widgets",
+    name: "DashboardWidget",
+    permissions: OWNER_SCOPED,
+    documentSecurity: true,
+    attributes: [
+      { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "dashboardId", type: "string", size: 64, required: true },
+      { key: "surveyId", type: "string", size: 64, required: true },
+      {
+        key: "widgetType",
+        type: "enum",
+        elements: [
+          "study_progress",
+          "recent_sessions",
+          "top_themes",
+          "top_insights",
+          "sentiment_breakdown",
+          "bookmarked_quotes",
+          "visual_moments",
+          "question_stats",
+        ],
+        required: true,
+      },
+      { key: "name", type: "string", size: 512, required: false },
+      { key: "description", type: "string", size: 4000, required: false },
+      { key: "config", type: "string", size: JSON_SIZE, required: false, default: "{}" },
+      { key: "createdAt", type: "datetime", required: true },
+      { key: "updatedAt", type: "datetime", required: true },
+    ],
+    indexes: [
+      { key: "by_owner", type: "key", attributes: ["ownerUserId"] },
+      { key: "by_dashboard", type: "key", attributes: ["dashboardId"] },
+      { key: "by_survey", type: "key", attributes: ["surveyId"] },
+    ],
+  },
+  {
+    id: "dashboard_tiles",
+    name: "DashboardTile",
+    permissions: OWNER_SCOPED,
+    documentSecurity: true,
+    attributes: [
+      { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "dashboardId", type: "string", size: 64, required: true },
+      { key: "surveyId", type: "string", size: 64, required: true },
+      { key: "widgetId", type: "string", size: 64, required: true },
+      { key: "layout", type: "string", size: JSON_SIZE, required: true },
+      { key: "order", type: "integer", required: true },
+      { key: "createdAt", type: "datetime", required: true },
+      { key: "updatedAt", type: "datetime", required: true },
+    ],
+    indexes: [
+      { key: "by_owner", type: "key", attributes: ["ownerUserId"] },
+      { key: "by_dashboard", type: "key", attributes: ["dashboardId"] },
+      { key: "by_dashboard_order", type: "key", attributes: ["dashboardId", "order"] },
+      { key: "by_survey", type: "key", attributes: ["surveyId"] },
     ],
   },
   {

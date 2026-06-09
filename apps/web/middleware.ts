@@ -27,7 +27,7 @@ export const config = {
   matcher: [
     "/home/:path*",
     "/studies/:path*",
-    "/insights/:path*",
+    "/notebooks/:path*",
     "/reports/:path*",
     "/assistant/:path*",
     "/settings/:path*",

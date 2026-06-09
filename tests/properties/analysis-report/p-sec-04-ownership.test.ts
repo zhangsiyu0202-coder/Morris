@@ -171,7 +171,7 @@ describe("P-SEC-04: read layer enforces ownerUserId scoping", () => {
             ...Array.from({ length: ownerCount }, (_, i) => sample(`i-o-${i}`, "owner")),
             ...Array.from({ length: strangerCount }, (_, i) => sample(`i-s-${i}`, "stranger")),
           ];
-          const { databases } = makeFakeDatabases({ insights: { documents } });
+          const { databases } = makeFakeDatabases({ notebooks: { documents } });
 
           const list = await listInsights("owner", databases);
           expect(list).toHaveLength(ownerCount);
