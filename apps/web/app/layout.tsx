@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Inclusive_Sans, Istok_Web, Inika, Inknut_Antiqua } from "next/font/google";
 import "./globals.css";
 import { AssistantDock } from "@/components/assistant/assistant-dock";
+import { PageContextProvider } from "@/components/assistant/page-context-provider";
 import { AppShell } from "@/components/shell/app-shell";
 import { getCurrentResearcher } from "@/lib/auth/current-user";
 import { listSurveysForOwner } from "@/lib/survey-read";
@@ -74,8 +75,10 @@ export default async function RootLayout({
       className={`bg-mauve-50 ${inter.variable} ${inclusive.variable} ${istok.variable} ${inika.variable} ${inknut.variable}`}
     >
       <body className="font-ui antialiased">
-        <AppShell studies={studies} researcher={researcher}>{children}</AppShell>
-        <AssistantDock />
+        <PageContextProvider>
+          <AppShell studies={studies} researcher={researcher}>{children}</AppShell>
+          <AssistantDock />
+        </PageContextProvider>
       </body>
     </html>
   );

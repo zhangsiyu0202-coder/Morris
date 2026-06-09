@@ -28,7 +28,7 @@ describe("Morris tools factory: not-signed-in short circuit", () => {
   it("listStudies returns 'not signed in' error when ownerUserId is null", async () => {
     const tools = buildAssistantTools({ ownerUserId: null });
     const result = await (tools.listStudies as any).execute({});
-    expect(result).toMatchObject({ error: true });
+    expect(result).toMatchObject({ artifact: { error: true } });
     expect(mockListStudies).not.toHaveBeenCalled();
   });
 
@@ -38,14 +38,14 @@ describe("Morris tools factory: not-signed-in short circuit", () => {
       query: "x",
       studyId: "sv1",
     });
-    expect(result).toMatchObject({ error: true });
+    expect(result).toMatchObject({ artifact: { error: true } });
     expect(mockSearch).not.toHaveBeenCalled();
   });
 
   it("analyzeData returns 'not signed in' error when ownerUserId is null", async () => {
     const tools = buildAssistantTools({ ownerUserId: null });
     const result = await (tools.analyzeData as any).execute({ studyId: "sv1" });
-    expect(result).toMatchObject({ error: true });
+    expect(result).toMatchObject({ artifact: { error: true } });
     expect(mockLatestReport).not.toHaveBeenCalled();
   });
 });
@@ -66,7 +66,8 @@ describe("Morris tools factory: signed-in path", () => {
     const tools = buildAssistantTools({ ownerUserId: "user-1" });
     const result: any = await (tools.listStudies as any).execute({});
     expect(mockListStudies).toHaveBeenCalledWith("user-1");
-    expect(result.studies).toEqual([
+    expect(result.content).toContain("已读取 1 个调研");
+    expect(result.artifact.studies).toEqual([
       {
         id: "sv1",
         title: "Test",
@@ -100,8 +101,9 @@ describe("Morris tools factory: signed-in path", () => {
       surveyId: "sv1",
       limit: 20,
     });
-    expect(result.count).toBe(1);
-    expect(result.snippets[0]).toMatchObject({
+    expect(result.content).toContain("检索到 1 条访谈片段");
+    expect(result.artifact.count).toBe(1);
+    expect(result.artifact.snippets[0]).toMatchObject({
       sessionId: "sess1",
       transcriptId: "t1",
       segmentIndex: 0,
@@ -113,8 +115,8 @@ describe("Morris tools factory: signed-in path", () => {
     mockLatestReport.mockResolvedValue(null);
     const tools = buildAssistantTools({ ownerUserId: "user-1" });
     const result: any = await (tools.analyzeData as any).execute({ studyId: "sv1" });
-    expect(result.error).toBe(true);
-    expect(result.message).toContain("/reports/sv1");
+    expect(result.artifact.error).toBe(true);
+    expect(result.artifact.message).toContain("/reports/sv1");
     expect(mockParseBody).not.toHaveBeenCalled();
   });
 
@@ -148,11 +150,14 @@ describe("Morris tools factory: signed-in path", () => {
     const tools = buildAssistantTools({ ownerUserId: "user-1" });
     const result: any = await (tools.analyzeData as any).execute({ studyId: "sv1" });
     expect(result).toMatchObject({
-      studyTitle: "Test",
-      completedRespondents: 5,
+      content: expect.stringContaining("Test"),
+      artifact: {
+        studyTitle: "Test",
+        completedRespondents: 5,
+      },
     });
-    expect(result.topThemes[0].label).toBe("Pricing");
-    expect(result.topInsights[0].title).toBe("Top driver");
+    expect(result.artifact.topThemes[0].label).toBe("Pricing");
+    expect(result.artifact.topInsights[0].title).toBe("Top driver");
   });
 });
 
@@ -164,8 +169,9 @@ describe("Morris tools factory: createStudyDraft (mock)", () => {
       audience: "经常出差的上班族",
       questionCount: 5,
     });
-    expect(result.title).toContain("差旅");
-    expect(result.questions).toHaveLength(5);
-    expect(result.note).toContain("survey-editor");
+    expect(result.content).toContain("已生成");
+    expect(result.artifact.title).toContain("差旅");
+    expect(result.artifact.questions).toHaveLength(5);
+    expect(result.artifact.note).toContain("survey-editor");
   });
 });

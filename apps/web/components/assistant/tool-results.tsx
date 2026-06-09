@@ -174,22 +174,36 @@ function ToolErrorCard({ message }: { message: string }) {
   );
 }
 
+function unwrapToolOutput(output: unknown): unknown {
+  if (
+    output &&
+    typeof output === "object" &&
+    "artifact" in output &&
+    typeof (output as { artifact?: unknown }).artifact === "object"
+  ) {
+    return (output as { artifact: unknown }).artifact;
+  }
+  return output;
+}
+
 export function ToolResult({ toolName, output }: { toolName: string; output: unknown }) {
+  const artifact = unwrapToolOutput(output);
+
   // 统一拦截工具失败态:任意工具返回 { error: true, message } 时渲染错误卡。
-  if (output && typeof output === "object" && (output as { error?: boolean }).error === true) {
-    const message = (output as { message?: string }).message ?? "该操作未能完成,请重试。";
+  if (artifact && typeof artifact === "object" && (artifact as { error?: boolean }).error === true) {
+    const message = (artifact as { message?: string }).message ?? "该操作未能完成,请重试。";
     return <ToolErrorCard message={message} />;
   }
 
   switch (toolName) {
     case "createStudyDraft":
-      return <StudyDraftCard data={output as StudyDraft} />;
+      return <StudyDraftCard data={artifact as StudyDraft} />;
     case "searchInterviewData":
-      return <SearchResultCard data={output as SearchResult} />;
+      return <SearchResultCard data={artifact as SearchResult} />;
     case "analyzeData":
-      return <AnalysisCard data={output as Analysis} />;
+      return <AnalysisCard data={artifact as Analysis} />;
     case "listStudies":
-      return <StudyListCard data={output as StudyList} />;
+      return <StudyListCard data={artifact as StudyList} />;
     default:
       return null;
   }

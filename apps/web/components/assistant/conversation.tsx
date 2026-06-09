@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { ArrowUp, Loader2, Sparkles, AlertTriangle, RotateCcw } from "lucide-react";
 import { ToolResult } from "./tool-results";
 import { Markdown } from "./markdown";
+import { usePageContextRef } from "./page-context-provider";
 
 const TOOL_PENDING_LABEL: Record<string, string> = {
   createStudyDraft: "正在拟定调研草稿…",
@@ -29,8 +30,22 @@ export function Conversation({
   compact?: boolean;
 }) {
   const [input, setInput] = useState("");
+  // 拿到一个始终读最新 PageContext 的 ref。我们用 ref 而不是 state, 因为 transport
+  // 实例只在挂载时构造一次, 不会响应 React 状态变化。
+  const pageContextRef = usePageContextRef();
+  const transport = useMemo(
+    () =>
+      new DefaultChatTransport({
+        api: "/api/assistant",
+        // 每次发送把当前页面的 PageContext 注入到请求体, 路由层会校验 + 渲染到 system prompt 的动态段。
+        prepareSendMessagesRequest: ({ messages, body }) => ({
+          body: { ...(body ?? {}), messages, pageContext: pageContextRef.current },
+        }),
+      }),
+    [pageContextRef],
+  );
   const { messages, sendMessage, status, error, regenerate, clearError } = useChat({
-    transport: new DefaultChatTransport({ api: "/api/assistant" }),
+    transport,
   });
   const scrollRef = useRef<HTMLDivElement>(null);
   const isBusy = status === "submitted" || status === "streaming";

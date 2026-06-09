@@ -27,7 +27,22 @@ const PATTERNS: RegExp[] = [
   /\bmetering\b/i,
 ];
 // LiveKit grants legitimately use these; neutralize the line if present.
-const ALLOW = ["canSubscribe", "canPublish"];
+// Morris conversation-compaction module reuses the word "plan" in the hogai
+// "plan + apply" sense (CompactionPlan / planCompaction / plan.dropped / plan.keep
+// / plan.action). Whitelist those exact tokens so the scope guard does not
+// false-positive on the unrelated "subscription plan" sense.
+const ALLOW = [
+  "canSubscribe",
+  "canPublish",
+  "CompactionPlan",
+  "planCompaction",
+  "plan.action",
+  "plan.dropped",
+  "plan.keep",
+  "plan + apply",
+  "if (plan.",
+  "compaction_manager",
+];
 const SKIP_FILE = /(\.(test|spec)\.[tj]sx?|_test\.py|scope-guard\.ts)$/;
 
 const hits: string[] = [];

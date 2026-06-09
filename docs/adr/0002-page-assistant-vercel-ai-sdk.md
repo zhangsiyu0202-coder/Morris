@@ -44,8 +44,11 @@ The page assistant ("Morris") is implemented as:
   recent 16 messages.
 - **Tools** (`apps/web/lib/assistant/tools.ts`):
   `createStudyDraft / searchInterviewData / analyzeData / listStudies`. Each
-  tool wraps internal failures into a structured `{ error: true, message }`
-  payload so the UI can render a failure card without crashing the stream.
+  tool returns a PostHog-style `{ content, artifact }` envelope: `content` is
+  the short human/model-readable result, and `artifact` is the structured data
+  consumed by UI cards or later tool steps. Internal failures are represented
+  as `artifact: { error: true, message }` so the UI can render a failure card
+  without crashing the stream.
   Data source is currently mocked in `lib/agent-data.ts` and will be wired to
   real persistence when the editor and report subspecs land.
 - **API**: `apps/web/app/api/assistant/route.ts` runs on Node runtime,
