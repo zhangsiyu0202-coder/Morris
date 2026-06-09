@@ -25,7 +25,7 @@ export interface AttrDef {
 
 export interface IndexDef {
   key: string;
-  type: "key" | "unique";
+  type: "key" | "unique" | "fulltext";
   attributes: string[];
 }
 
@@ -332,32 +332,78 @@ export const COLLECTIONS: CollectionDef[] = [
     // Owner-scoped: researchers create notebooks via Morris (createNotebook tool)
     // or server actions; per-document permissions pinned at creation.
     //
-    // Wave A of notebooks spec: schema is field-equivalent to legacy `insights`
-    // collection (字面 rename, 不加新字段). Wave B 演进 schema 加
-    // shortId / content / textContent / visibility / embedding / embeddingModel.
+    // Wave B of notebooks spec: schema 演进 加 ProseMirror content + plain mirror
+    // + shortId + visibility + embedding + embeddingModel; report 改为可空 (旧
+    // 数据 fallback, Wave F cleanup commit 删除)。
     permissions: OWNER_SCOPED,
     documentSecurity: true,
     attributes: [
       { key: "studyId", type: "string", size: 64, required: true },
       { key: "studyTitle", type: "string", size: 512, required: true },
       { key: "question", type: "string", size: 4000, required: true },
+      // shortId: 12-char alphanumeric URL-friendly id, unique within owner
+      // (by_owner_short index). Wave A 数据用空字符串, 后端 lazy 补 (P-NB-01b)。
+      { key: "shortId", type: "string", size: 12, required: false, default: "" },
+      // ProseMirror JSON 文档 (Wave B 起 Morris createNotebook 写入此字段)。
+      { key: "content", type: "string", size: JSON_SIZE, required: false, default: "" },
+      // ProseMirror 抽出的 plain text, 用于 fulltext 检索 + embedding。
+      { key: "textContent", type: "string", size: 50_000, required: false, default: "" },
       // Card-view fast fields, redundantly stored alongside `report` so a
       // listing query does not need to expand the full report jsonb.
       { key: "headline", type: "string", size: 512, required: true },
       { key: "summary", type: "string", size: 4000, required: true },
       { key: "confidence", type: "enum", elements: ["high", "medium", "low"], required: true },
       { key: "sampleSize", type: "integer", required: true },
-      // Full structured argumentative report (notebookReportSchema in
-      // @merism/contracts/notebook). Stored as JSON string per the convention
-      // used by other JSON fields in this schema.
-      { key: "report", type: "string", size: JSON_SIZE, required: true },
+      // R6 分享: internal (默认, 只 owner 可见) | shared (可生成分享 token)
+      {
+        key: "visibility",
+        type: "enum",
+        elements: ["internal", "shared"],
+        required: false,
+        default: "internal",
+      },
+      // 1024-dim Qwen DashScope text-embedding-v3 vector, JSON-serialized number[].
+      // ~12KB / row.
+      { key: "embedding", type: "string", size: 16_384, required: false, default: "" },
+      { key: "embeddingModel", type: "string", size: 64, required: false, default: "" },
+      // Legacy fixed-shape report (notebookReportSchema in @merism/contracts/notebook).
+      // Wave D 起新写入 null, Wave F cleanup commit 删除。
+      { key: "report", type: "string", size: JSON_SIZE, required: false, default: "" },
       { key: "ownerUserId", type: "string", size: 64, required: true },
       { key: "createdAt", type: "datetime", required: true },
     ],
     indexes: [
       { key: "by_owner", type: "key", attributes: ["ownerUserId"] },
+      { key: "by_study", type: "key", attributes: ["studyId"] },
       { key: "by_owner_study", type: "key", attributes: ["ownerUserId", "studyId"] },
       { key: "by_owner_created", type: "key", attributes: ["ownerUserId", "createdAt"] },
+      // Wave B: shortId-based lookup; unique within owner.
+      { key: "by_owner_short", type: "unique", attributes: ["ownerUserId", "shortId"] },
+      // Wave E: fulltext fallback for searchAcrossNotebooks when embedding is unavailable.
+      { key: "by_text_search", type: "fulltext", attributes: ["textContent"] },
+    ],
+  },
+  {
+    id: "notebook_share_tokens",
+    name: "NotebookShareToken",
+    // Server-write only via dedicated Function; researchers do not write directly.
+    // Anonymous (token-bearer) read path goes through a Function as well.
+    permissions: [],
+    documentSecurity: true,
+    attributes: [
+      { key: "ownerUserId", type: "string", size: 64, required: true },
+      // Notebook.shortId — links the token to the notebook it grants access to.
+      { key: "notebookShortId", type: "string", size: 12, required: true },
+      // 32-byte random hex (64 chars). Looked up by `by_token` unique index.
+      { key: "token", type: "string", size: 64, required: true },
+      { key: "expiresAt", type: "datetime", required: true },
+      { key: "isRevoked", type: "boolean", required: false, default: false },
+      { key: "createdAt", type: "datetime", required: true },
+    ],
+    indexes: [
+      { key: "by_token", type: "unique", attributes: ["token"] },
+      { key: "by_notebook", type: "key", attributes: ["notebookShortId"] },
+      { key: "by_owner", type: "key", attributes: ["ownerUserId"] },
     ],
   },
   {

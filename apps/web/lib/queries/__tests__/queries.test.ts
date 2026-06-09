@@ -338,7 +338,7 @@ describe("queries: notebooks", () => {
     });
     const result = await getInsightById(owner, "i1", databases);
     expect(result?.headline).toBe("Because of pricing");
-    expect(result?.report.actions[0]?.priority).toBe("P0");
+    expect(result?.report?.actions[0]?.priority).toBe("P0");
   });
 });
 

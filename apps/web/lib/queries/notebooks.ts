@@ -1,61 +1,102 @@
 import type { Databases } from "node-appwrite";
-import { InsightSchema } from "@merism/contracts";
-import type { Insight } from "@merism/contracts";
+import { NotebookSchema } from "@merism/contracts";
+import type { Notebook } from "@merism/contracts";
 import { DATABASE_ID, getServerClient, Query } from "./client";
 
-const INSIGHTS = "insights";
+const NOTEBOOKS = "notebooks";
 
 function db(): Databases {
   return getServerClient().databases;
 }
 
-function decodeInsight(raw: unknown): unknown {
+/**
+ * Decode raw Appwrite document into a Notebook-shaped value:
+ * - `report` is stored as a JSON string; deserialize to an object (or null on
+ *   parse failure / empty fallback).
+ *
+ * Wave B: new fields (shortId / content / textContent / visibility / embedding /
+ * embeddingModel) are plain strings/enums and need no decoding; defaults applied
+ * by the schema's `.default("")` cover legacy rows that pre-date Wave B.
+ */
+function decodeNotebook(raw: unknown): unknown {
   if (!raw || typeof raw !== "object") return raw;
   const r = { ...(raw as Record<string, unknown>) };
   if (typeof r.report === "string") {
-    try {
-      r.report = JSON.parse(r.report);
-    } catch {
-      // The Insight write path always stringifies a valid InsightReport, so
-      // a parse failure here means corrupt data. Drop to null and the safeParse
-      // below will reject the row.
+    if (r.report === "") {
       r.report = null;
+    } else {
+      try {
+        r.report = JSON.parse(r.report);
+      } catch {
+        // Wave A 写入侧 stringifies a valid NotebookReport; corrupt → null.
+        r.report = null;
+      }
     }
   }
   return r;
 }
 
-/** List all insights owned by `ownerUserId`, newest first. */
-export async function listInsights(
+/** List all notebooks owned by `ownerUserId`, newest first. */
+export async function listNotebooks(
   ownerUserId: string,
   databases: Databases = db(),
-): Promise<Insight[]> {
-  const result = await databases.listDocuments(DATABASE_ID, INSIGHTS, [
+): Promise<Notebook[]> {
+  const result = await databases.listDocuments(DATABASE_ID, NOTEBOOKS, [
     Query.equal("ownerUserId", ownerUserId),
     Query.orderDesc("createdAt"),
     Query.limit(200),
   ]);
-  const out: Insight[] = [];
+  const out: Notebook[] = [];
   for (const raw of result.documents) {
-    const parsed = InsightSchema.safeParse(decodeInsight(raw));
+    const parsed = NotebookSchema.safeParse(decodeNotebook(raw));
     if (parsed.success) out.push(parsed.data);
   }
   return out;
 }
 
-/** Read a single insight by id, scoped to its owner. */
-export async function getInsightById(
+/** Read a single notebook by Appwrite `$id`, scoped to its owner. */
+export async function getNotebookById(
   ownerUserId: string,
   id: string,
   databases: Databases = db(),
-): Promise<Insight | null> {
-  const result = await databases.listDocuments(DATABASE_ID, INSIGHTS, [
+): Promise<Notebook | null> {
+  const result = await databases.listDocuments(DATABASE_ID, NOTEBOOKS, [
     Query.equal("$id", id),
     Query.equal("ownerUserId", ownerUserId),
     Query.limit(1),
   ]);
   const raw = result.documents[0];
   if (!raw) return null;
-  const parsed = InsightSchema.safeParse(decodeInsight(raw));
+  const parsed = NotebookSchema.safeParse(decodeNotebook(raw));
   return parsed.success ? parsed.data : null;
 }
+
+/**
+ * Read a single notebook by `shortId`, scoped to its owner. Wave B+:
+ * URLs are `/notebooks/[shortId]`, so this is the primary read path.
+ *
+ * Returns null if no row matches OR the row's shortId is empty (Wave A
+ * rows that haven't been lazy-backfilled yet — those still resolve via
+ * getNotebookById($id) until visited).
+ */
+export async function getNotebookByShortId(
+  ownerUserId: string,
+  shortId: string,
+  databases: Databases = db(),
+): Promise<Notebook | null> {
+  if (!shortId) return null;
+  const result = await databases.listDocuments(DATABASE_ID, NOTEBOOKS, [
+    Query.equal("ownerUserId", ownerUserId),
+    Query.equal("shortId", shortId),
+    Query.limit(1),
+  ]);
+  const raw = result.documents[0];
+  if (!raw) return null;
+  const parsed = NotebookSchema.safeParse(decodeNotebook(raw));
+  return parsed.success ? parsed.data : null;
+}
+
+// Backward-compat aliases for the Insight → Notebook rename (Wave A of
+// notebooks spec). Removed in Wave F.
+export const listInsights = listNotebooks;
+export const getInsightById = getNotebookById;

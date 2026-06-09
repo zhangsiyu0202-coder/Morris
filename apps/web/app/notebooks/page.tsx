@@ -1,6 +1,6 @@
-import { InsightsWorkbench } from "@/components/insights/insights-workbench";
-import { listStudyOptions } from "@/lib/insights";
-import { listInsights } from "@/lib/actions/insights";
+import { NotebooksWorkbench } from "@/components/notebooks/notebooks-workbench";
+import { listStudyOptions } from "@/lib/notebooks";
+import { listInsights } from "@/lib/actions/notebooks";
 import { getCurrentUserId } from "@/lib/queries/auth";
 
 export const metadata = {
@@ -11,7 +11,7 @@ export const metadata = {
 // 始终读取最新数据(洞察会被创建/删除)。
 export const dynamic = "force-dynamic";
 
-export default async function InsightsPage() {
+export default async function NotebooksPage() {
   const ownerUserId = await getCurrentUserId();
   const [studies, cards] = await Promise.all([
     ownerUserId ? listStudyOptions(ownerUserId) : Promise.resolve([]),
@@ -20,7 +20,7 @@ export default async function InsightsPage() {
 
   return (
     <main className="min-h-dvh bg-ink-0">
-      <InsightsWorkbench studies={studies} cards={cards} />
+      <NotebooksWorkbench studies={studies} cards={cards} />
     </main>
   );
 }

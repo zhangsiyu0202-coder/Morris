@@ -269,12 +269,20 @@ class Notebook(BaseModel):  # zod: NotebookSchema
     studyId: str
     studyTitle: str
     question: str
+    ownerUserId: str
+    # Wave B 字段 (旧数据 default ""; 后端 lazy 补 shortId 见 P-NB-01b)
+    shortId: str = ""
+    content: str = ""
+    textContent: str = ""
     headline: str
     summary: str
     confidence: Literal["high", "medium", "low"]
     sampleSize: int
-    report: NotebookReport
-    ownerUserId: str
+    visibility: Literal["internal", "shared"] = "internal"
+    embedding: str = ""
+    embeddingModel: str = ""
+    # Legacy fixed-shape report (Wave D 起新写入 None, Wave F cleanup 删除)
+    report: NotebookReport | None = None
     createdAt: str
 
 

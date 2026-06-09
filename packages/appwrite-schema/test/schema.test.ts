@@ -4,7 +4,7 @@ import { COLLECTIONS, BUCKETS } from "../src/schema.js";
 const FORBIDDEN = /team|share|comment|billing|subscribe|quota|plan|seat|usage[-_]?meter/i;
 
 describe("appwrite schema declaration", () => {
-  it("declares all 15 collections (researcher identity is Appwrite Account, no users collection)", () => {
+  it("declares all 16 collections (researcher identity is Appwrite Account, no users collection)", () => {
     const ids = COLLECTIONS.map((c) => c.id).sort();
     expect(ids).not.toContain("users");
     expect(ids).toEqual(
@@ -17,6 +17,7 @@ describe("appwrite schema declaration", () => {
         "insights",
         "interview_links",
         "interview_sessions",
+        "notebook_share_tokens",
         "notebooks",
         "projects",
         "question_blocks",

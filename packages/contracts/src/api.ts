@@ -658,5 +658,86 @@ export type QuestionTaskResult = z.infer<typeof QuestionTaskResultSchema>;
 export type SectionTaskGroupResult = z.infer<typeof SectionTaskGroupResultSchema>;
 export type AnalyzeSurveyRequest = z.infer<typeof AnalyzeSurveyRequestSchema>;
 export type AnalyzeSurveyResponse = z.infer<typeof AnalyzeSurveyResponseSchema>;
+export type DashboardWidgetCatalogEntry = z.infer<typeof DashboardWidgetCatalogEntrySchema>;
+export type DashboardWidgetRunInput = z.infer<typeof DashboardWidgetRunInputSchema>;
+export type DashboardWidgetResult = z.infer<typeof DashboardWidgetResultSchema>;
+export type RunDashboardWidgetsOutput = z.infer<typeof RunDashboardWidgetsOutputSchema>;
 export type SurveyQuestionStat = z.infer<typeof SurveyQuestionStatSchema>;
 export type SurveyAnalysisReportOutput = z.infer<typeof SurveyAnalysisReportOutputSchema>;
+
+
+// ============================================================================
+// notebooks sub-spec — Wave B contracts (R4 createNotebook + R5 searchAcrossNotebooks)
+// 见 .kiro/specs/notebooks/design.md §4.2.
+// ============================================================================
+
+/**
+ * Morris createNotebook 工具的入参契约。
+ *
+ * D10 决策: 永远 create 新 Notebook, 不存在 update existing 路径; 故不引入
+ * `existingNotebookShortId` / `artifact_id` 等 PostHog tool 中的更新参数。
+ * 研究员不满意时让 Morris 重新生成新一份。
+ *
+ * `content` 与 `draftContent` 互斥(借 PostHog `CreateNotebookToolArgs` 的 mutex):
+ * - `content`: Markdown 字符串, 立即流式给用户看 (R4.1 主路径)
+ * - `draftContent`: AI 内部"先想再写"草稿, 不流式展示, Wave D 备用
+ */
+export const CreateNotebookRequestSchema = z
+  .object({
+    studyId: z.string(),
+    question: z.string().min(1).max(2_000),
+    content: z.string().max(100_000).optional(),
+    draftContent: z.string().max(100_000).optional(),
+  })
+  .refine(
+    (v) => (v.content !== undefined) !== (v.draftContent !== undefined),
+    { message: "content 与 draftContent 必须二选一 (互斥)" },
+  );
+
+export const CreateNotebookResponseSchema = z.object({
+  notebookShortId: z.string().regex(/^[a-z0-9]{12}$/),
+  // status 永远是 "created" (D10 无 update 路径), 字段保留是为未来扩展不破坏 API
+  status: z.literal("created"),
+  sectionCount: z.number().int().nonnegative(),
+});
+
+export type CreateNotebookRequest = z.infer<typeof CreateNotebookRequestSchema>;
+export type CreateNotebookResponse = z.infer<typeof CreateNotebookResponseSchema>;
+
+/**
+ * Morris searchAcrossStudies 工具的入参契约 (R5)。
+ *
+ * 实现路径 (Wave E 落地):
+ * 1. 调 Qwen DashScope text-embedding-v3 把 query 转 1024 维向量
+ * 2. 拉 owner 全部 notebook 的 (shortId, embedding) 列表 (Query.select 投影只拉精简列)
+ * 3. brute-force cosine 计算 → top N 排序
+ *
+ * 当 owner 级 Notebook 数 > EMBEDDING_BRUTEFORCE_LIMIT(=100) 时 Function 自动
+ * fallback 为 `Query.search("textContent", query)` fulltext, 返回时 `fallback`
+ * 字段标 `"scale-fulltext-only"`。embedding API 失败时也 fallback 为 fulltext,
+ * 字段标 `"embedding-error"`。见 design §9.2 + R5.4。
+ */
+export const SearchAcrossNotebooksRequestSchema = z.object({
+  query: z.string().min(1).max(500),
+  ownerUserId: z.string(),
+  // 限定到某 study; 不传则跨所有 study
+  studyId: z.string().optional(),
+  limit: z.number().int().min(1).max(20).default(5),
+});
+
+export const SearchAcrossNotebooksResponseSchema = z.object({
+  matches: z.array(
+    z.object({
+      notebookShortId: z.string(),
+      studyId: z.string(),
+      studyTitle: z.string(),
+      headline: z.string(),
+      snippet: z.string(),
+      score: z.number(),
+    }),
+  ),
+  fallback: z.enum(["scale-fulltext-only", "embedding-error"]).optional(),
+});
+
+export type SearchAcrossNotebooksRequest = z.infer<typeof SearchAcrossNotebooksRequestSchema>;
+export type SearchAcrossNotebooksResponse = z.infer<typeof SearchAcrossNotebooksResponseSchema>;

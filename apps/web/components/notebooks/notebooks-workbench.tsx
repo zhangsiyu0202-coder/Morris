@@ -13,7 +13,7 @@ import {
   X,
   Trash2,
 } from "lucide-react";
-import { createInsight, deleteInsight, type InsightListItem } from "@/lib/actions/insights";
+import { createInsight, deleteInsight, type InsightListItem } from "@/lib/actions/notebooks";
 
 type StudyOption = {
   id: string;
@@ -46,7 +46,7 @@ const CONFIDENCE_LABEL: Record<string, string> = {
   low: "低置信度",
 };
 
-export function InsightsWorkbench({
+export function NotebooksWorkbench({
   studies,
   cards,
 }: {
@@ -124,7 +124,10 @@ export function InsightsWorkbench({
                   <Trash2 size={14} />
                 )}
               </button>
-              <Link href={`/insights/${card.id}`} className="flex flex-1 flex-col gap-3 px-5 py-5">
+              <Link
+                href={`/notebooks/${card.shortId || card.id}`}
+                className="flex flex-1 flex-col gap-3 px-5 py-5"
+              >
                 <div className="flex items-center gap-2 pr-7">
                   <p className="line-clamp-1 font-ui text-caption uppercase tracking-wide text-ink-400">
                     {card.studyTitle}
@@ -156,9 +159,9 @@ export function InsightsWorkbench({
         <CreateInsightModal
           studies={studies}
           onClose={() => setCreateOpen(false)}
-          onCreated={(id) => {
+          onCreated={(shortId) => {
             setCreateOpen(false);
-            router.push(`/insights/${id}`);
+            router.push(`/notebooks/${shortId}`);
           }}
         />
       )}
@@ -174,7 +177,7 @@ function CreateInsightModal({
 }: {
   studies: StudyOption[];
   onClose: () => void;
-  onCreated: (id: string) => void;
+  onCreated: (shortId: string) => void;
 }) {
   const [studyId, setStudyId] = useState(studies[0]?.id ?? "");
   const [question, setQuestion] = useState("");
@@ -193,7 +196,7 @@ function CreateInsightModal({
       setStatus("error");
       return;
     }
-    onCreated(result.id);
+    onCreated(result.shortId);
   }
 
   return (

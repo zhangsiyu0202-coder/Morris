@@ -19,7 +19,7 @@ import {
 
 // 报告契约统一在 @merism/contracts/insight 维护;本文件只 re-export 以保持
 // 现有 import 路径(lib/actions/insights.ts 等)不破裂。
-export { insightReportSchema, type InsightReport } from "@merism/contracts";
+export { notebookReportSchema, type NotebookReport } from "@merism/contracts";
 
 /**
  * 供前端下拉选择的调研列表(只暴露需要的字段)。

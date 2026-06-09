@@ -6,9 +6,9 @@ import {
   GitCompareArrows,
   ListChecks,
 } from "lucide-react";
-import type { InsightReport } from "@/lib/insights";
+import type { NotebookReport } from "@/lib/notebooks";
 
-const CONFIDENCE_LABEL: Record<InsightReport["confidence"], string> = {
+const CONFIDENCE_LABEL: Record<NotebookReport["confidence"], string> = {
   high: "高置信度",
   medium: "中等置信度",
   low: "低置信度",
@@ -20,20 +20,20 @@ const PRIORITY_STYLE: Record<string, string> = {
   P2: "bg-mauve-100 text-ink-600",
 };
 
-export function InsightDetail({
+export function NotebookDetail({
   studyTitle,
   question,
   report,
 }: {
   studyTitle: string;
   question: string;
-  report: InsightReport;
+  report: NotebookReport;
 }) {
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
       {/* 返回 */}
       <Link
-        href="/insights"
+        href="/notebooks"
         className="inline-flex items-center gap-1.5 font-ui text-body-sm text-ink-500 transition-colors hover:text-ink-900"
       >
         <ArrowLeft size={14} /> 全部洞察

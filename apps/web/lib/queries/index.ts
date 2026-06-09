@@ -4,6 +4,6 @@ export { listSessions, countCompletedSessions } from "./sessions";
 export { searchTranscriptSegments } from "./transcripts";
 export type { TranscriptHit } from "./transcripts";
 export { getLatestAnalysisReport, parseSurveyReportBody, parseSessionReportBody } from "./reports";
-export { listNotebooks, getNotebookById, listInsights, getInsightById } from "./notebooks";
+export { listNotebooks, getNotebookById, getNotebookByShortId, listInsights, getInsightById } from "./notebooks";
 export { listBookmarksForOwner, listBookmarksBySession } from "./bookmarks";
 export { getCurrentUserId } from "./auth";
