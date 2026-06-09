@@ -1,5 +1,8 @@
 # Requirements Document
 
+
+> **Footnote (Wave C T17 实施期):** spec 中 R6 / D9 描述的 "share notebook" / "share token" / `filter_for_sharing` / `SHARED_ALLOWLIST` / `Notebook.visibility = "shared"` / `notebook_share_tokens` collection, 在实施时统一重命名为 **publishing** 语义 (`filter_for_publishing` / `PUBLISHED_ALLOWLIST` / `visibility = "published"` / `notebook_publish_tokens`), 以避免与 AGENTS.md scope-guard 中明确禁止的 "team / collaboration sharing" 概念混淆。语义不变 — 仍是 researcher 把 notebook 单向发布给外部受众的只读链接 (类似 publish-to-blog 而非 multi-user collaboration), 不引入第二个用户 / 协作 / 评论 / 权限矩阵。
+
 ## Feature: notebooks（Insight 演进为 Notebook）
 
 ## Introduction

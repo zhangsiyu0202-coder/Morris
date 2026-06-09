@@ -278,7 +278,7 @@ class Notebook(BaseModel):  # zod: NotebookSchema
     summary: str
     confidence: Literal["high", "medium", "low"]
     sampleSize: int
-    visibility: Literal["internal", "shared"] = "internal"
+    visibility: Literal["internal", "published"] = "internal"
     embedding: str = ""
     embeddingModel: str = ""
     # Legacy fixed-shape report (Wave D 起新写入 None, Wave F cleanup 删除)

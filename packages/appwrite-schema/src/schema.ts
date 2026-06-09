@@ -56,7 +56,7 @@ const JSON_SIZE = 1_000_000;
 // Long free-text fields. Kept above Appwrite's ~16381-char VARCHAR threshold so
 // the underlying column is stored off-row as (MEDIUM)TEXT. Inline VARCHARs at
 // utf8mb4 (4 bytes/char) otherwise overflow MariaDB's 65535-byte row limit when
-// several large strings share a collection (see survey_sections instructions).
+// several large strings publish a collection (see survey_sections instructions).
 const TEXT_SIZE = 100_000;
 
 // Permission model (§6.1 / Req 2.4):
@@ -354,11 +354,11 @@ export const COLLECTIONS: CollectionDef[] = [
       { key: "summary", type: "string", size: 4000, required: true },
       { key: "confidence", type: "enum", elements: ["high", "medium", "low"], required: true },
       { key: "sampleSize", type: "integer", required: true },
-      // R6 分享: internal (默认, 只 owner 可见) | shared (可生成分享 token)
+      // R6 分享: internal (默认, 只 owner 可见) | published (可生成分享 token)
       {
         key: "visibility",
         type: "enum",
-        elements: ["internal", "shared"],
+        elements: ["internal", "published"],
         required: false,
         default: "internal",
       },
@@ -384,8 +384,8 @@ export const COLLECTIONS: CollectionDef[] = [
     ],
   },
   {
-    id: "notebook_share_tokens",
-    name: "NotebookShareToken",
+    id: "notebook_publish_tokens",
+    name: "NotebookPublishToken",
     // Server-write only via dedicated Function; researchers do not write directly.
     // Anonymous (token-bearer) read path goes through a Function as well.
     permissions: [],

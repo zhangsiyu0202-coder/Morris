@@ -49,10 +49,10 @@ export const notebookReportSchema = z.object({
 export type NotebookReport = z.infer<typeof notebookReportSchema>;
 
 /**
- * Notebook.visibility — `internal` (默认, 只 owner 可见) | `shared` (可生成
+ * Notebook.visibility — `internal` (默认, 只 owner 可见) | `published` (可生成
  * 分享 token, 第三方凭 token 只读访问)。见 R6 + design §7。
  */
-export const NotebookVisibilitySchema = z.enum(["internal", "shared"]);
+export const NotebookVisibilitySchema = z.enum(["internal", "published"]);
 export type NotebookVisibility = z.infer<typeof NotebookVisibilitySchema>;
 
 /**
@@ -97,7 +97,7 @@ export const NotebookSchema = z.object({
   summary: z.string(),
   confidence: z.enum(["high", "medium", "low"]),
   sampleSize: z.number().int().nonnegative(),
-  // R6 分享: internal (只 owner 可见) | shared (可生成分享 token)
+  // R6 分享: internal (只 owner 可见) | published (可生成分享 token)
   visibility: NotebookVisibilitySchema.default("internal"),
   // 1024 维 embedding (Qwen DashScope text-embedding-v3) JSON-serialized number[]
   embedding: z.string().default(""),

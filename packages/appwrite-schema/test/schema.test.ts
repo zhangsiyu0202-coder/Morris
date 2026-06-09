@@ -17,7 +17,7 @@ describe("appwrite schema declaration", () => {
         "insights",
         "interview_links",
         "interview_sessions",
-        "notebook_share_tokens",
+        "notebook_publish_tokens",
         "notebooks",
         "projects",
         "question_blocks",
