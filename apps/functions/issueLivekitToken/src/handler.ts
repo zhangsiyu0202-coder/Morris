@@ -13,6 +13,7 @@ export interface LinkRecord {
   $id: string;
   surveyId: string;
   ownerUserId: string;
+  workspaceId?: string;
   mode: "single_use" | "reusable";
   kind: "production" | "test";
   maxUses: number;
@@ -26,6 +27,7 @@ export interface SessionInit {
   surveyId: string;
   linkId: string;
   ownerUserId: string;
+  workspaceId?: string;
   livekitRoom: string;
   intervieweeAlias?: string;
 }
@@ -34,6 +36,9 @@ export interface IssueDeps {
   livekitUrl: string;
   now(): number;
   findLink(token: string): Promise<LinkRecord | null>;
+  /** Workspace quota gate (ADR 0006 M6). Optional: absent => no quota gating.
+   *  Returns "over" when the workspace is past its hard ceiling. */
+  checkQuota?: (workspaceId: string) => Promise<"ok" | "over">;
   /** Create session with the given $id; return false on id collision (409). */
   createSession(sessionId: string, data: SessionInit): Promise<boolean>;
   deleteSession(sessionId: string): Promise<void>;
@@ -51,7 +56,7 @@ export interface IssueDeps {
 
 export type IssueResult =
   | { status: 200; body: IssueLivekitTokenResponse }
-  | { status: 400 | 404 | 410 | 500; body: { error: string } };
+  | { status: 400 | 402 | 404 | 410 | 500; body: { error: string } };
 
 export async function issueLivekitToken(
   rawInput: unknown,
@@ -85,6 +90,14 @@ export async function issueLivekitToken(
   if (link.usedCount >= effectiveMax)
     return { status: 410, body: { error: "link_exhausted" } };
 
+  // Workspace quota gate (ADR 0006 M6). Only when the link is workspace-scoped
+  // and a quota checker is wired; over-ceiling blocks NEW interviews (the
+  // billable unit) and never touches existing data (degrade-never-delete).
+  if (link.workspaceId && deps.checkQuota) {
+    const quota = await deps.checkQuota(link.workspaceId);
+    if (quota === "over") return { status: 402, body: { error: "quota_exceeded" } };
+  }
+
   // Claim a slot via unique session $id. Skip slots already taken by concurrent
   // requests; if every slot up to the ceiling is taken, the link is exhausted.
   let sessionId = "";
@@ -96,6 +109,7 @@ export async function issueLivekitToken(
       surveyId: link.surveyId,
       linkId: link.$id,
       ownerUserId: link.ownerUserId,
+      workspaceId: link.workspaceId,
       livekitRoom: candidate,
       intervieweeAlias: alias,
     });

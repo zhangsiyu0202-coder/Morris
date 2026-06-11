@@ -75,6 +75,7 @@ export function createRealDeps(): IssueDeps {
         $id: doc.$id,
         surveyId: doc.surveyId,
         ownerUserId: project.ownerUserId,
+        workspaceId: doc.workspaceId ?? project.workspaceId ?? undefined,
         mode: doc.mode,
         kind: doc.kind === "test" ? "test" : "production",
         maxUses: doc.maxUses,
@@ -83,6 +84,15 @@ export function createRealDeps(): IssueDeps {
         isRevoked: doc.isRevoked ?? false,
         surveyStatus: survey.status,
       };
+    },
+
+    async checkQuota(workspaceId: string): Promise<"ok" | "over"> {
+      try {
+        const q = (await db.getDocument(DB, "workspace_quota", `wq_${workspaceId}`)) as any;
+        return q.state === "over" ? "over" : "ok";
+      } catch {
+        return "ok"; // no quota row yet => not gated
+      }
     },
 
     async createSession(sessionId: string, data: SessionInit): Promise<boolean> {
@@ -94,6 +104,7 @@ export function createRealDeps(): IssueDeps {
           {
             surveyId: data.surveyId,
             linkId: data.linkId,
+            ...(data.workspaceId ? { workspaceId: data.workspaceId } : {}),
             state: "created",
             livekitRoom: data.livekitRoom,
             intervieweeAlias: data.intervieweeAlias,
