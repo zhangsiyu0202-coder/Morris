@@ -469,6 +469,41 @@ export const COLLECTIONS: CollectionDef[] = [
       { key: "by_session", type: "key", attributes: ["sessionId"] },
     ],
   },
+  {
+    // ADR 0005: tracks the async post-session Gemini visual-analysis job +
+    // its uploaded Gemini file. $id is deterministic (`vis_<sessionId>`) so
+    // concurrent analyzeSessionVisual claims collide (409 = dedup). Function
+    // writes only (API key bypasses SERVER_ONLY); owner reads per-document.
+    id: "visual_analysis_jobs",
+    name: "VisualAnalysisJob",
+    permissions: SERVER_ONLY,
+    documentSecurity: true,
+    attributes: [
+      { key: "sessionId", type: "string", size: 64, required: true },
+      { key: "surveyId", type: "string", size: 64, required: true },
+      { key: "ownerUserId", type: "string", size: 64, required: true },
+      {
+        key: "status",
+        type: "enum",
+        elements: ["queued", "uploading", "analyzing", "consolidating", "succeeded", "failed"],
+        required: false,
+        default: "queued",
+      },
+      // Gemini Files API resource name; null until upload returns one. The sweep's delete target.
+      { key: "geminiFileName", type: "string", size: 256, required: false },
+      { key: "geminiUploadedAt", type: "datetime", required: false },
+      { key: "attemptCount", type: "integer", required: false, default: 0 },
+      { key: "errorContext", type: "string", size: JSON_SIZE, required: false },
+      { key: "createdAt", type: "datetime", required: true },
+      { key: "updatedAt", type: "datetime", required: true },
+    ],
+    indexes: [
+      // Drives the sweep scan: orphans by status + upload age.
+      { key: "by_status_uploaded", type: "key", attributes: ["status", "geminiUploadedAt"] },
+      { key: "by_session", type: "key", attributes: ["sessionId"] },
+      { key: "by_owner", type: "key", attributes: ["ownerUserId"] },
+    ],
+  },
 ];
 
 export const BUCKETS: BucketDef[] = [

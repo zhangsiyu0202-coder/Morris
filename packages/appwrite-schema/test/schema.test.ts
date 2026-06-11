@@ -4,7 +4,7 @@ import { COLLECTIONS, BUCKETS } from "../src/schema.js";
 const FORBIDDEN = /team|share|comment|billing|subscribe|quota|plan|seat|usage[-_]?meter/i;
 
 describe("appwrite schema declaration", () => {
-  it("declares all 15 collections (researcher identity is Appwrite Account, no users collection)", () => {
+  it("declares all 16 collections (researcher identity is Appwrite Account, no users collection)", () => {
     const ids = COLLECTIONS.map((c) => c.id).sort();
     expect(ids).not.toContain("users");
     expect(ids).not.toContain("insights"); // Wave F: removed (renamed to notebooks)
@@ -25,6 +25,7 @@ describe("appwrite schema declaration", () => {
         "surveys",
         "survey_sections",
         "transcripts",
+        "visual_analysis_jobs",
       ].sort(),
     );
   });
@@ -179,5 +180,43 @@ describe("appwrite schema: analysis-report sub-spec (T2)", () => {
   it("recordings bucket allows video extensions", () => {
     const bucket = BUCKETS.find((b) => b.id === "recordings")!;
     expect(bucket?.allowedFileExtensions).toEqual(["mp4", "webm", "mp3", "opus", "wav"]);
+  });
+});
+
+describe("visual_analysis_jobs collection (ADR 0005)", () => {
+  const job = COLLECTIONS.find((c) => c.id === "visual_analysis_jobs")!;
+
+  it("is declared", () => {
+    expect(job).toBeDefined();
+  });
+
+  it("is server-write only with document security (owner-read pinned at creation)", () => {
+    expect(job.permissions).toEqual([]);
+    expect(job.documentSecurity).toBe(true);
+  });
+
+  it("carries the sweep scan index on status + geminiUploadedAt", () => {
+    const idx = job.indexes.find((i) => i.key === "by_status_uploaded");
+    expect(idx).toBeDefined();
+    expect(idx!.attributes).toEqual(["status", "geminiUploadedAt"]);
+  });
+
+  it("status enum mirrors the contract", () => {
+    const status = job.attributes.find((a) => a.key === "status")!;
+    expect(status.type).toBe("enum");
+    expect(status.elements).toEqual([
+      "queued",
+      "uploading",
+      "analyzing",
+      "consolidating",
+      "succeeded",
+      "failed",
+    ]);
+  });
+
+  it("tracks geminiFileName as an optional string (null until upload)", () => {
+    const f = job.attributes.find((a) => a.key === "geminiFileName")!;
+    expect(f.type).toBe("string");
+    expect(f.required).toBe(false);
   });
 });
