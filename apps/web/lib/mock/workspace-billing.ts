@@ -36,3 +36,25 @@ export function getMockMembers(): WorkspaceMembersView {
     ],
   };
 }
+
+export interface BillingView {
+  workspaceName: string;
+  planKey: "plus" | "pro";
+  status: "trialing" | "active" | "past_due" | "canceled";
+  seats: number;
+  periodEnd: string;
+  usedInterviews: number;
+  includedInterviews: number;
+}
+
+export function getMockBilling(): BillingView {
+  return {
+    workspaceName: "Acme Research",
+    planKey: "pro",
+    status: "active",
+    seats: 5,
+    periodEnd: "2026-07-01",
+    usedInterviews: 137,
+    includedInterviews: 200,
+  };
+}
