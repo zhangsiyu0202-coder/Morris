@@ -113,6 +113,15 @@ const ALLOW = [
   "./billing.js",
   "workspaces-billing",
   "Appwrite Team id",
+  // morris-conversation-persistence borrows PostHog Conversation model shape;
+  // the comparison table comment lists rejected PostHog fields.
+  "拒绝 22+ 字段",
+  "Python mirror, 留 comment",
+  // morris-memory borrows PostHog AgentMemory model shape; rejected-fields list.
+  "拒绝 6 字段",
+  // feedback module comment mentions "team" as the audience for the signal —
+  // the word is descriptive prose, not a tenancy concept.
+  "the team can hand-eyeball",
 ];
 const SKIP_FILE = /(\.(test|spec)\.[tj]sx?|_test\.py|scope-guard\.ts)$/;
 
