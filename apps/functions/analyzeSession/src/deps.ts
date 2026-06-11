@@ -2,6 +2,7 @@
 import { Client, Databases, Functions, ID, Permission, Query, Role } from "node-appwrite";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { generateText, Output } from "ai";
+import { withLLMCall, createLogger } from "@merism/observability";
 import {
   AnalysisReportOutputSchema,
   visualAnalysisJobId,
@@ -239,13 +240,22 @@ export function createRealDeps(): AnalyzeSessionDeps {
           ].join("\n")
         : baseUserPrompt;
 
-      const { experimental_output } = await generateText({
-        model: deepseekModel,
-        maxRetries: 2,
-        experimental_output: Output.object({ schema: AnalysisReportOutputSchema }),
-        system: SESSION_ANALYZE_SYSTEM,
-        prompt: userPrompt,
-      });
+      const log = createLogger("function.analyzeSession.text-pass");
+      const { experimental_output } = await withLLMCall(
+        {
+          scope: "function.analyzeSession.text-pass",
+          traceId: log.traceId,
+          defaultModel: "deepseek-chat",
+        },
+        () =>
+          generateText({
+            model: deepseekModel,
+            maxRetries: 2,
+            experimental_output: Output.object({ schema: AnalysisReportOutputSchema }),
+            system: SESSION_ANALYZE_SYSTEM,
+            prompt: userPrompt,
+          }),
+      );
 
       return AnalysisReportOutputSchema.parse(experimental_output);
     },
@@ -253,14 +263,23 @@ export function createRealDeps(): AnalyzeSessionDeps {
     async deriveQualityFlagsWithLLM({ transcript, surveyContext }) {
       const promptInput = buildQualityFlagsPromptInput({ transcript, surveyContext });
       const userPrompt = buildQualityFlagsUserPrompt(promptInput);
-      const { experimental_output } = await generateText({
-        model: deepseekModel,
-        temperature: SESSION_QUALITY_FLAG_LLM_TEMPERATURE,
-        maxRetries: 1,
-        experimental_output: Output.object({ schema: QualityFlagsLLMOutputSchema }),
-        system: QUALITY_FLAGS_SYSTEM,
-        prompt: userPrompt,
-      });
+      const log = createLogger("function.analyzeSession.quality-flags");
+      const { experimental_output } = await withLLMCall(
+        {
+          scope: "function.analyzeSession.quality-flags",
+          traceId: log.traceId,
+          defaultModel: "deepseek-chat",
+        },
+        () =>
+          generateText({
+            model: deepseekModel,
+            temperature: SESSION_QUALITY_FLAG_LLM_TEMPERATURE,
+            maxRetries: 1,
+            experimental_output: Output.object({ schema: QualityFlagsLLMOutputSchema }),
+            system: QUALITY_FLAGS_SYSTEM,
+            prompt: userPrompt,
+          }),
+      );
       const parsed = QualityFlagsLLMOutputSchema.parse(experimental_output);
       // Semantic flags are a subset of SessionQualityFlag (compile-time asserted in
       // prompts/quality-flags.ts), so widening cast is safe.

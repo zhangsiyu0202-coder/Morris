@@ -11,6 +11,7 @@
 
 import type { UIMessage } from "ai";
 import { generateText } from "ai";
+import { withLLMCall, createLogger } from "@merism/observability";
 
 import { CHAT_MODEL } from "./model";
 
@@ -148,18 +149,27 @@ export const summarizeMessages: Summarizer = async (messages) => {
     .join("\n");
   if (corpus.length === 0) return "";
 
+  const log = createLogger("morris.compaction.summarize");
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 10_000);
   try {
-    const result = await generateText({
-      model: CHAT_MODEL,
-      temperature: 0.2,
-      abortSignal: ctrl.signal,
-      messages: [
-        { role: "system", content: "你是一个专业的中文摘要器。" },
-        { role: "user", content: `${SUMMARY_PROMPT}${corpus}` },
-      ],
-    });
+    const result = await withLLMCall(
+      {
+        scope: "morris.compaction.summarize",
+        traceId: log.traceId,
+        defaultModel: "deepseek-chat",
+      },
+      () =>
+        generateText({
+          model: CHAT_MODEL,
+          temperature: 0.2,
+          abortSignal: ctrl.signal,
+          messages: [
+            { role: "system", content: "你是一个专业的中文摘要器。" },
+            { role: "user", content: `${SUMMARY_PROMPT}${corpus}` },
+          ],
+        }),
+    );
     return result.text ?? "";
   } finally {
     clearTimeout(timer);

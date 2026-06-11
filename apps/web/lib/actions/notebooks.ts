@@ -1,6 +1,7 @@
 "use server";
 
 import { generateText, Output } from "ai";
+import { withLLMCall, createLogger } from "@merism/observability";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { Client, Databases } from "node-appwrite";
 import { revalidatePath } from "next/cache";
@@ -154,15 +155,24 @@ export async function createNotebook(input: {
 
   try {
     const context = await buildStudyContext(ownerUserId, studyId);
+    const log = createLogger("action.notebooks.generateReport");
 
     // DeepSeek 仍生成结构化 NotebookReport 中间格式 (作为 experimental_output schema)
-    const { experimental_output } = await generateText({
-      model: deepseek("deepseek-chat"),
-      maxRetries: 2,
-      experimental_output: Output.object({ schema: notebookReportSchema }),
-      system: ANALYSIS_INSTRUCTIONS,
-      prompt: `调研上下文:\n${context}\n\n用户的问题:${question}\n\n请基于上述上下文生成深入论证型分析报告。`,
-    });
+    const { experimental_output } = await withLLMCall(
+      {
+        scope: "action.notebooks.generateReport",
+        traceId: log.traceId,
+        defaultModel: "deepseek-chat",
+      },
+      () =>
+        generateText({
+          model: deepseek("deepseek-chat"),
+          maxRetries: 2,
+          experimental_output: Output.object({ schema: notebookReportSchema }),
+          system: ANALYSIS_INSTRUCTIONS,
+          prompt: `调研上下文:\n${context}\n\n用户的问题:${question}\n\n请基于上述上下文生成深入论证型分析报告。`,
+        }),
+    );
 
     const report = experimental_output as NotebookReport;
     // 把结构化 NotebookReport 渲染为 5 段 HeadingTemplate Markdown,
