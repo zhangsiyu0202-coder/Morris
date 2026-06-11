@@ -192,3 +192,35 @@ export function isBillableInterview(input: {
 export function hardCeilingFor(includedInterviews: number): number {
   return includedInterviews * QUOTA_HARD_CEILING_MULTIPLE;
 }
+
+// --- API payloads (M3 Functions) ---
+// Request parsing happens in each Function's pure core (architecture.md).
+
+export const CreateWorkspaceRequestSchema = z.object({
+  name: z.string().min(1).max(120),
+});
+export type CreateWorkspaceRequest = z.infer<typeof CreateWorkspaceRequestSchema>;
+
+export const CreateWorkspaceResponseSchema = z.object({
+  workspaceId: z.string(),
+  ownerUserId: z.string(),
+  planKey: PlanKey,
+});
+export type CreateWorkspaceResponse = z.infer<typeof CreateWorkspaceResponseSchema>;
+
+/** Members can be invited as admin or member only — owner is the creator alone. */
+export const InvitableRole = z.enum(["admin", "member"]);
+export type InvitableRoleValue = z.infer<typeof InvitableRole>;
+
+export const InviteMemberRequestSchema = z.object({
+  workspaceId: z.string().min(1),
+  email: z.string().email(),
+  role: InvitableRole,
+});
+export type InviteMemberRequest = z.infer<typeof InviteMemberRequestSchema>;
+
+export const InviteMemberResponseSchema = z.object({
+  membershipId: z.string(),
+  status: MembershipStatus,
+});
+export type InviteMemberResponse = z.infer<typeof InviteMemberResponseSchema>;
