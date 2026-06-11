@@ -412,3 +412,54 @@ export type Dashboard = z.infer<typeof DashboardSchema>;
 export type DashboardWidget = z.infer<typeof DashboardWidgetSchema>;
 export type DashboardTileLayout = z.infer<typeof DashboardTileLayoutSchema>;
 export type DashboardTile = z.infer<typeof DashboardTileSchema>;
+
+// --- visual analysis jobs (ADR 0005) ---------------------------------------
+// Tracks the async post-session Gemini visual-analysis pipeline, one row per
+// session. The `$id` is deterministic (`vis_<sessionId>`) so concurrent
+// analyzeSessionVisual invocations collide on create (Appwrite 409) and dedup
+// per the architecture concurrency contract. The row is also the orphan-file
+// record: `geminiFileName` is written BEFORE the ACTIVE-wait so a hard-killed
+// run still leaves the file visible to the sweepGeminiFiles Function.
+export const VisualAnalysisJobStatus = z.enum([
+  "queued",
+  "uploading",
+  "analyzing",
+  "consolidating",
+  "succeeded",
+  "failed",
+]);
+
+/** Statuses past which no further work happens; the sweep may reclaim the file. */
+export const VISUAL_ANALYSIS_JOB_TERMINAL_STATUSES = ["succeeded", "failed"] as const;
+
+export const VisualAnalysisJobSchema = z.object({
+  $id: z.string(),
+  sessionId: z.string(),
+  surveyId: z.string(),
+  ownerUserId: z.string(),
+  status: VisualAnalysisJobStatus.default("queued"),
+  // Gemini Files API resource name (e.g. "files/abc123"). Null until the upload
+  // returns a name; cleared once the file is deleted. The sweep's delete target.
+  geminiFileName: z.string().nullable().default(null),
+  // ISO 8601 of upload time; drives the sweep age threshold.
+  geminiUploadedAt: z.string().datetime().nullable().default(null),
+  attemptCount: z.number().int().nonnegative().default(0),
+  errorContext: json.nullable().default(null),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+/** Deterministic job id — the 409-CAS dedup gate (ADR 0005 D3). */
+export function visualAnalysisJobId(sessionId: string): string {
+  return `vis_${sessionId}`;
+}
+
+export type VisualAnalysisJobStatusValue = z.infer<typeof VisualAnalysisJobStatus>;
+export type VisualAnalysisJob = z.infer<typeof VisualAnalysisJobSchema>;
+
+/**
+ * Max times analyzeSessionVisual will run for one session before the job is
+ * marked permanently failed (ADR 0005 D1 retry cap; Temporal RetryPolicy
+ * equivalent). Counts each claim/run attempt, not transport retries.
+ */
+export const MAX_VISUAL_ANALYSIS_ATTEMPTS = 3;

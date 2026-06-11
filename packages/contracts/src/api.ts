@@ -9,6 +9,7 @@ import {
   TranscriptSegmentSchema,
   DashboardTileLayoutSchema,
   DashboardWidgetType,
+  VisualAnalysisJobStatus,
 } from "./entities.js";
 
 // issueLivekitToken (§6.2)
@@ -440,6 +441,43 @@ export const VisualAnalysisMomentSchema = z.object({
   segmentId: z.string().optional(),
 });
 
+// Interview-specific frustration signals (PostHog session_summary sentiment
+// signals borrowed and renamed for the voice-interview domain per scope.md —
+// no screen-click signals like rage_click/dead_click).
+export const VisualSentimentSignalSchema = z.object({
+  signalType: z.enum([
+    "long_pause",
+    "hesitation",
+    "backtracking",
+    "confusion",
+    "repeated_question",
+    "abandonment",
+    "frustration_expressed",
+    "other",
+  ]),
+  segmentIndex: z.number().int().nonnegative(),
+  description: z.string(),
+  intensity: z.number().min(0).max(1),
+});
+
+export const VISUAL_ANALYSIS_OUTCOMES = ["successful", "friction", "frustrated", "blocked"] as const;
+
+// Fixed tag taxonomy for interview sessions (PostHog AI_TAGS_FIXED_TAXONOMY
+// borrowed + renamed for the voice-interview domain per scope.md). No
+// team-custom taxonomy — teams are out of scope.
+export const VISUAL_TAG_TAXONOMY: Record<string, string> = {
+  engaged: "Interviewee is attentive, elaborates, answers readily",
+  hesitation: "Noticeable pauses, uncertainty, or trailing-off before answering",
+  confusion: "Misunderstands a question, asks for clarification, or backtracks",
+  frustration: "Visible irritation, terse answers, or complaints",
+  disengagement: "Distracted, minimal answers, looking away, wanting to end",
+  stimulus_reaction: "A clear reaction (positive or negative) to a shown stimulus",
+  strong_opinion: "Expresses a strong like/dislike or memorable, quotable view",
+  storytelling: "Shares a concrete personal anecdote or detailed scenario",
+  technical_issue: "Audio/video/connection problem visibly affected the session",
+  off_topic: "Sustained drift away from the interview questions",
+};
+
 export const VisualAnalysisOutputSchema = z.object({
   source: z.literal("recording"),
   recordingFileId: z.string(),
@@ -449,7 +487,16 @@ export const VisualAnalysisOutputSchema = z.object({
   keyMoments: z.array(VisualAnalysisMomentSchema),
   summary: z.string(),
   sentiment: z.enum(["positive", "neutral", "negative", "mixed"]).default("neutral"),
+  // Numeric frustration model (ADR 0005 Gap D, PostHog parity). 0=smooth, 1=severe.
+  frustrationScore: z.number().min(0).max(1).default(0),
+  outcome: z.enum(VISUAL_ANALYSIS_OUTCOMES).default("successful"),
+  sentimentSignals: z.array(VisualSentimentSignalSchema).default([]),
+  // Free tags (legacy) + fixed-taxonomy + freeform tags + highlight (Gap E).
   tags: z.array(z.string()).default([]),
+  tagsFixed: z.array(z.string()).default([]),
+  tagsFreeform: z.array(z.string()).default([]),
+  // True only when a human should watch this session (something notable/broken).
+  highlighted: z.boolean().default(false),
   modelId: z.string().optional(),
   generatedAt: z.string().datetime().optional(),
 });
@@ -867,3 +914,24 @@ export const SearchAcrossNotebooksResponseSchema = z.object({
 
 export type SearchAcrossNotebooksRequest = z.infer<typeof SearchAcrossNotebooksRequestSchema>;
 export type SearchAcrossNotebooksResponse = z.infer<typeof SearchAcrossNotebooksResponseSchema>;
+
+// analyzeSessionVisual: async post-session Gemini visual pipeline (ADR 0005 D1).
+// Enqueued by analyzeSession after the text report is persisted; runs the
+// upload -> per-segment -> consolidation pass off the request path and patches
+// `visualAnalysis` back into the AnalysisReport(scope=session) row.
+export const AnalyzeSessionVisualRequestSchema = z.object({
+  sessionId: z.string().min(1),
+});
+
+export const AnalyzeSessionVisualResponseSchema = z.object({
+  jobId: z.string(),
+  status: VisualAnalysisJobStatus,
+  // true when this invocation claimed the job; false when a concurrent run
+  // already claimed it (the 409-CAS dedup loser, ADR 0005 D3).
+  claimed: z.boolean(),
+});
+
+export type AnalyzeSessionVisualRequest = z.infer<typeof AnalyzeSessionVisualRequestSchema>;
+export type AnalyzeSessionVisualResponse = z.infer<typeof AnalyzeSessionVisualResponseSchema>;
+
+export type VisualSentimentSignal = z.infer<typeof VisualSentimentSignalSchema>;
