@@ -46,6 +46,7 @@ export function createRealDeps(): AggregateDeps {
     async getIncludedInterviews(workspaceId) {
       try {
         const sub = await db.getDocument(DB_ID, "subscriptions", `sub_${workspaceId}`);
+        if ((sub as unknown as { status?: string }).status === "canceled") return null; // no active entitlement
         const plan = await db.getDocument(DB_ID, "plans", (sub as unknown as { planKey: string }).planKey);
         const inc = (plan as unknown as { includedInterviews?: number }).includedInterviews;
         return typeof inc === "number" ? inc : null;

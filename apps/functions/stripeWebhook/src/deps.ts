@@ -20,9 +20,20 @@ function mapSubscription(event: Stripe.Event): SubscriptionProjection | null {
   // target; narrow-cast (not `any`) to read them without coupling to the SDK
   // type's exact version shape.
   const periods = obj as unknown as { current_period_start: number; current_period_end: number };
+  // Derive plan from the Stripe price id (robust to Customer-Portal changes that
+  // bypass changePlan and therefore never refresh metadata); metadata fallback.
+  const priceId = item?.price?.id;
+  const planKey: SubscriptionProjection["planKey"] =
+    priceId === process.env.STRIPE_PRICE_PRO
+      ? "pro"
+      : priceId === process.env.STRIPE_PRICE_PLUS
+        ? "plus"
+        : meta.planKey === "pro"
+          ? "pro"
+          : "plus";
   return {
     workspaceId: meta.workspaceId ?? "",
-    planKey: meta.planKey === "pro" ? "pro" : "plus",
+    planKey,
     status: mapStatus(obj.status),
     seats: item?.quantity ?? 1,
     stripeCustomerId: typeof obj.customer === "string" ? obj.customer : obj.customer.id,
