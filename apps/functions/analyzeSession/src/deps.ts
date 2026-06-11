@@ -1,9 +1,10 @@
 // Real deps: Appwrite Server SDK + DeepSeek via @ai-sdk/deepseek.
-import { Client, Databases, ID, Permission, Query, Role, Storage } from "node-appwrite";
+import { Client, Databases, Functions, ID, Permission, Query, Role } from "node-appwrite";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { generateText, Output } from "ai";
 import {
   AnalysisReportOutputSchema,
+  visualAnalysisJobId,
   type AnalysisReportInput,
   type AnalysisReportOutput,
   type GenerationMeta,
@@ -26,9 +27,6 @@ import {
   buildQualityFlagsUserPrompt,
 } from "./prompts/quality-flags.js";
 import { SESSION_QUALITY_FLAG_LLM_TEMPERATURE } from "./constants.js";
-import { createGeminiVisualAnalyzerFromEnv } from "./gemini-visual-analyzer.js";
-import { createDeepSeekConsolidator } from "./gemini/deepseek-consolidator.js";
-import { isVisualRecording, recordingMimeType, type RecordingRecord } from "./visual-analysis.js";
 
 const DB = "merism";
 
@@ -74,18 +72,14 @@ export function createRealDeps(): AnalyzeSessionDeps {
     .setProject(env.APPWRITE_PROJECT_ID)
     .setKey(env.APPWRITE_API_KEY);
   const db = new Databases(client);
-  const storage = new Storage(client);
+  const storageFunctions = new Functions(client);
+  const visualFunctionId = process.env.ANALYZE_SESSION_VISUAL_FUNCTION_ID;
   const deepseek = createDeepSeek({
     apiKey: env.DEEPSEEK_API_KEY,
     ...(env.DEEPSEEK_BASE_URL ? { baseURL: env.DEEPSEEK_BASE_URL } : {}),
   });
   const modelName = env.DEEPSEEK_MODEL ?? "deepseek-chat";
   const deepseekModel = deepseek(modelName);
-  // Visual analyzer (PostHog-style: Gemini Files API + per-segment offsets +
-  // DeepSeek consolidation). Set GEMINI_VISUAL_ANALYSIS_ENABLED=true and the
-  // matching GEMINI_API_BASE_URL / GEMINI_API_KEY to enable. Off => skipped.
-  const consolidator = createDeepSeekConsolidator({ model: deepseekModel });
-  const analyzeRecordingVisuals = createGeminiVisualAnalyzerFromEnv({ consolidator });
 
   return {
     now: () => Date.now(),
@@ -121,32 +115,44 @@ export function createRealDeps(): AnalyzeSessionDeps {
       };
     },
 
-    async findRecording(sessionId: string): Promise<RecordingRecord | null> {
-      const res = await db.listDocuments(DB, "recordings", [
-        Query.equal("sessionId", sessionId),
-        Query.limit(1),
-      ]);
-      const doc = res.documents[0] as any;
-      if (!doc) return null;
-      const recording: RecordingRecord = {
-        $id: doc.$id,
-        sessionId: doc.sessionId,
-        ownerUserId: doc.ownerUserId,
-        storageFileId: doc.storageFileId,
-        durationMs: doc.durationMs,
-        format: doc.format,
-      };
-      return isVisualRecording(recording) ? recording : null;
-    },
-
-    async getRecordingBytes(recording: RecordingRecord) {
-      const buffer = await storage.getFileDownload("recordings", recording.storageFileId);
-      return {
-        bytes: new Uint8Array(buffer),
-        mimeType: recordingMimeType(recording.format),
-      };
-    },
-    ...(analyzeRecordingVisuals ? { analyzeRecordingVisuals } : {}),
+    // ADR 0005 D1: durable trigger + async enqueue (analyzeSessionVisual).
+    // Both gated on the function id; best-effort by contract (handler swallows).
+    ...(visualFunctionId
+      ? {
+          async ensureVisualJobQueued({ sessionId, surveyId, ownerUserId }): Promise<void> {
+            const nowIso = new Date().toISOString();
+            try {
+              await db.createDocument(
+                DB,
+                "visual_analysis_jobs",
+                visualAnalysisJobId(sessionId),
+                {
+                  sessionId,
+                  surveyId,
+                  ownerUserId,
+                  status: "queued",
+                  geminiFileName: null,
+                  geminiUploadedAt: null,
+                  attemptCount: 0,
+                  createdAt: nowIso,
+                  updatedAt: nowIso,
+                },
+                [Permission.read(Role.user(ownerUserId))],
+              );
+            } catch (e: any) {
+              // 409 => a prior completion already created the row (dedup). Fine.
+              if (e?.code !== 409) throw e;
+            }
+          },
+          async enqueueVisualAnalysis(sessionId: string): Promise<void> {
+            await storageFunctions.createExecution(
+              visualFunctionId,
+              JSON.stringify({ sessionId }),
+              true, // async: don't block the text path on the video pass
+            );
+          },
+        }
+      : {}),
 
     async findSurveyContext(surveyId: string): Promise<SurveyContext | null> {
       try {

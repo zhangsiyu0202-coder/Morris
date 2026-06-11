@@ -6,7 +6,7 @@ import {
   type SurveyContext,
   type TranscriptRecord,
 } from "../src/handler";
-import type { AnalysisReportOutput, VisualAnalysisOutput } from "@merism/contracts";
+import type { AnalysisReportOutput } from "@merism/contracts";
 
 const baseSession: SessionRecord = {
   $id: "sess1",
@@ -70,54 +70,27 @@ const baseLlmOutput: AnalysisReportOutput = {
   rendered: null,
 };
 
-const baseVisualOutput: VisualAnalysisOutput = {
-  source: "recording",
-  recordingFileId: "file-sess1",
-  durationMs: 62000,
-  visualConfirmation: true,
-  summary: "受访者在展示刺激物时有明显停顿,随后继续回答。",
-  sentiment: "mixed",
-  tags: ["hesitation", "stimulus-review"],
-  segments: [
-    {
-      id: "vseg_1",
-      startMs: 0,
-      endMs: 30000,
-      title: "查看刺激物",
-      description: "受访者注视屏幕并短暂停顿,随后开始评价设计。",
-      evidence: [{ transcriptId: "sess1", segmentIndex: 0 }],
-      observations: ["受访者先停顿再继续回答。"],
-      issueLevel: "minor",
-    },
-  ],
-  keyMoments: [
-    {
-      id: "vmoment_1",
-      timestampMs: 12000,
-      label: "明显停顿",
-      description: "受访者在回答前停顿,像是在重新阅读刺激物。",
-      segmentId: "vseg_1",
-    },
-  ],
-};
-
 interface DepsOverrides {
   session?: SessionRecord | null;
   transcript?: TranscriptRecord | null;
   survey?: SurveyContext | null;
   llm?: () => Promise<AnalysisReportOutput>;
-  visual?: () => Promise<VisualAnalysisOutput>;
+  enqueue?: () => Promise<void>;
   upsert?: (args: any) => Promise<{ reportId: string }>;
 }
 
 function makeDeps(overrides: DepsOverrides = {}): AnalyzeSessionDeps & {
   upsertSpy: ReturnType<typeof vi.fn>;
   llmSpy: ReturnType<typeof vi.fn>;
+  enqueueSpy: ReturnType<typeof vi.fn>;
+  ensureSpy: ReturnType<typeof vi.fn>;
 } {
   const upsertSpy = vi.fn(
     overrides.upsert ?? (async () => ({ reportId: "ar-new" })),
   );
   const llmSpy = vi.fn(overrides.llm ?? (async () => baseLlmOutput));
+  const enqueueSpy = vi.fn(overrides.enqueue ?? (async () => undefined));
+  const ensureSpy = vi.fn(async () => undefined);
   return {
     now: () => Date.UTC(2026, 5, 6, 0, 0, 0),
     findSession: async () => ("session" in overrides ? overrides.session : baseSession) as SessionRecord | null,
@@ -126,25 +99,13 @@ function makeDeps(overrides: DepsOverrides = {}): AnalyzeSessionDeps & {
     findSurveyContext: async () =>
       ("survey" in overrides ? overrides.survey : baseSurvey) as SurveyContext | null,
     analyzeWithLLM: llmSpy,
-    findRecording: async () =>
-      overrides.visual
-        ? {
-            $id: "rec1",
-            sessionId: "sess1",
-            ownerUserId: "user-owner",
-            storageFileId: "file-sess1",
-            durationMs: 62000,
-            format: "webm",
-          }
-        : null,
-    getRecordingBytes: async () => ({
-      bytes: new Uint8Array([1, 2, 3]),
-      mimeType: "video/webm",
-    }),
-    analyzeRecordingVisuals: overrides.visual ? vi.fn(overrides.visual) : undefined,
+    ensureVisualJobQueued: ensureSpy,
+    enqueueVisualAnalysis: enqueueSpy,
     upsertSessionReport: upsertSpy,
     upsertSpy,
     llmSpy,
+    enqueueSpy,
+    ensureSpy,
   } as any;
 }
 
@@ -231,26 +192,32 @@ describe("analyzeSession handler", () => {
     expect(call.generatedAt).toMatch(/^2026-06-06T/);
   });
 
-  it("adds visual analysis to the saved session report when a visual provider is configured", async () => {
-    const deps = makeDeps({
-      visual: async () => baseVisualOutput,
-    });
+  it("enqueues the async visual pipeline after persisting the report (ADR 0005 D1)", async () => {
+    const deps = makeDeps();
     const result = await analyzeSession({ sessionId: "sess1" }, deps);
     expect(result.status).toBe(200);
+    expect(deps.ensureSpy).toHaveBeenCalledWith({
+      sessionId: "sess1",
+      surveyId: "sv1",
+      ownerUserId: "user-owner",
+    });
+    expect(deps.enqueueSpy).toHaveBeenCalledWith("sess1");
+    // The text report is persisted regardless; visualAnalysis is patched later
+    // by analyzeSessionVisual, not inline here.
     const call = deps.upsertSpy.mock.calls[0][0];
-    expect(call.body.visualAnalysis).toEqual(baseVisualOutput);
+    expect(call.body.visualAnalysis).toBeUndefined();
   });
 
-  it("returns a clear error when the configured visual provider fails", async () => {
+  it("does not fail the text analysis when enqueue throws (best-effort)", async () => {
     const deps = makeDeps({
-      visual: async () => {
-        throw new Error("video model unavailable");
+      enqueue: async () => {
+        throw new Error("functions.createExecution unavailable");
       },
     });
     const result = await analyzeSession({ sessionId: "sess1" }, deps);
-    expect(result.status).toBe(500);
-    expect(result.body).toMatchObject({ error: "visual_analysis_failed" });
-    expect(deps.upsertSpy).not.toHaveBeenCalled();
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ reportId: "ar-new", scope: "session" });
+    expect(deps.upsertSpy).toHaveBeenCalled();
   });
 
   it("is idempotent at the deps boundary: same sessionId resolves to same report row", async () => {
