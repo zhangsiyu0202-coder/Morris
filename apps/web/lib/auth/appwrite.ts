@@ -105,6 +105,20 @@ export function appUrl(path: string): string {
  * directly and read the secret from the response cookie. The returned value
  * authenticates `account.get()` via `setSession(secret)` (verified on 1.6.0).
  */
+async function sessionSecretFromResponse(
+  res: Response,
+  projectId: string,
+): Promise<{ secret: string; expire: string }> {
+  if (!res.ok) throw new Error(`session_create_failed_${res.status}`);
+  const cookies = typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
+  const target = cookies.find((c) => c.startsWith(`a_session_${projectId}=`));
+  const match = target ? /^[^=]+=([^;]+)/.exec(target) : null;
+  if (!match) throw new Error("session_cookie_missing");
+  const body = (await res.json().catch(() => ({}))) as { expire?: string };
+  const expire = body.expire ?? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+  return { secret: decodeURIComponent(match[1]), expire };
+}
+
 export async function createEmailPasswordSessionSecret(
   email: string,
   password: string,
@@ -115,12 +129,23 @@ export async function createEmailPasswordSessionSecret(
     headers: { "content-type": "application/json", "X-Appwrite-Project": projectId },
     body: JSON.stringify({ email, password }),
   });
-  if (!res.ok) throw new Error(`session_create_failed_${res.status}`);
-  const cookies = typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
-  const target = cookies.find((c) => c.startsWith(`a_session_${projectId}=`));
-  const match = target ? /^[^=]+=([^;]+)/.exec(target) : null;
-  if (!match) throw new Error("session_cookie_missing");
-  const body = (await res.json().catch(() => ({}))) as { expire?: string };
-  const expire = body.expire ?? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
-  return { secret: decodeURIComponent(match[1]), expire };
+  return sessionSecretFromResponse(res, projectId);
+}
+
+/**
+ * Exchange a token (OTP / magic-url userId+secret) for a session, returning the
+ * REAL secret from the Set-Cookie header (same Appwrite 1.6 caveat as the
+ * email/password path). Used by the OTP verify flow.
+ */
+export async function createTokenSessionSecret(
+  userId: string,
+  secret: string,
+): Promise<{ secret: string; expire: string }> {
+  const { endpoint, projectId } = envOrThrow();
+  const res = await fetch(`${endpoint}/account/sessions/token`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Appwrite-Project": projectId },
+    body: JSON.stringify({ userId, secret }),
+  });
+  return sessionSecretFromResponse(res, projectId);
 }

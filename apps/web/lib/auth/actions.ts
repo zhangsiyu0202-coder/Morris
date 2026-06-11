@@ -10,6 +10,7 @@ import {
   readSessionSecret,
   setSessionCookie,
   createEmailPasswordSessionSecret,
+  createTokenSessionSecret,
   clearSessionCookie,
   appUrl,
 } from "./appwrite";
@@ -127,9 +128,9 @@ export async function verifyEmailOtp(code: string): Promise<ActionResult> {
   const userId = store.get(OTP_UID_COOKIE)?.value;
   if (!userId) return { ok: false, error: "验证码已过期,请重新获取" };
   try {
-    const account = new Account(publicClient());
-    const session = await account.createSession(userId, trimmed);
-    await setSessionCookie(session.secret, new Date(session.expire));
+    // Appwrite 1.6: secret is in Set-Cookie, not the body. Read it from there.
+    const { secret, expire } = await createTokenSessionSecret(userId, trimmed);
+    await setSessionCookie(secret, new Date(expire));
     store.delete(OTP_UID_COOKIE);
     store.delete(OTP_EMAIL_COOKIE);
     return { ok: true };
@@ -153,11 +154,11 @@ export async function signUp(input: {
   try {
     const account = new Account(publicClient());
     await account.create(ID.unique(), email, input.password, name);
-    const session = await account.createEmailPasswordSession(email, input.password);
-    await setSessionCookie(session.secret, new Date(session.expire));
+    const { secret, expire } = await createEmailPasswordSessionSecret(email, input.password);
+    await setSessionCookie(secret, new Date(expire));
     // Best-effort verification email; signup must not fail if mail is down.
     try {
-      const verifyAccount = new Account(sessionClient(session.secret));
+      const verifyAccount = new Account(sessionClient(secret));
       await verifyAccount.createVerification(appUrl("/auth/verify"));
     } catch {
       // swallow: researcher can resend from account settings
