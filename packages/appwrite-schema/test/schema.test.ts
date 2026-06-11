@@ -6,13 +6,15 @@ import { COLLECTIONS, BUCKETS } from "../src/schema.js";
 const FORBIDDEN = /share|comment|collaborat|marketplace/i;
 
 describe("appwrite schema declaration", () => {
-  it("declares all 23 collections (researcher identity is Appwrite Account, no users collection)", () => {
+  it("declares all 25 collections (researcher identity is Appwrite Account, no users collection)", () => {
     const ids = COLLECTIONS.map((c) => c.id).sort();
     expect(ids).not.toContain("users");
     expect(ids).not.toContain("insights"); // Wave F: removed (renamed to notebooks)
     expect(ids).toEqual(
       [
         "analysis_reports",
+        "conversations",
+        "morris_memories",
         "plans",
         "subscriptions",
         "stripe_events",

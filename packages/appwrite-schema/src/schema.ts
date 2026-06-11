@@ -638,6 +638,84 @@ export const COLLECTIONS: CollectionDef[] = [
     attributes: [{ key: "processedAt", type: "datetime", required: true }],
     indexes: [],
   },
+  {
+    // Morris page assistant conversation persistence
+    // (per .kiro/specs/morris-conversation-persistence/).
+    //
+    // Owner-scoped: each researcher's conversations are private to them.
+    // documentSecurity=true → per-doc permissions pinned at creation pin
+    // read+update+delete to the creator (Role.user(ownerUserId)) so even
+    // another researcher co-residing on the same Appwrite instance cannot list
+    // or load the rows.
+    //
+    // messagesJson is a JSON.stringify(UIMessage[]) string. Schema-level
+    // upper bound is JSON_SIZE (1MB); contract-level early bound is 256KB
+    // (MAX_MESSAGES_JSON_BYTES) — front-end compaction.ts (token budget 12K)
+    // keeps real conversations well below either ceiling.
+    id: "conversations",
+    name: "Conversation",
+    permissions: OWNER_SCOPED,
+    documentSecurity: true,
+    attributes: [
+      { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "title", type: "string", size: 256, required: false, default: "" },
+      { key: "messagesJson", type: "string", size: JSON_SIZE, required: false, default: "[]" },
+      { key: "messageCount", type: "integer", required: false, default: 0 },
+      { key: "lastMessageAt", type: "datetime", required: true },
+      { key: "lastMessagePreview", type: "string", size: 256, required: false, default: "" },
+      { key: "createdAt", type: "datetime", required: true },
+      { key: "updatedAt", type: "datetime", required: true },
+    ],
+    indexes: [
+      // owner-scoped lookup (used by listConversations + ownership check
+      // in load/save/delete).
+      { key: "by_owner", type: "key", attributes: ["ownerUserId"] },
+      // History drawer / HistoryPreview ordering: most-recent activity first.
+      { key: "by_owner_lastmsg", type: "key", attributes: ["ownerUserId", "lastMessageAt"] },
+      // Created/updated orderings as secondary sort (admin / debug surfaces).
+      { key: "by_owner_created", type: "key", attributes: ["ownerUserId", "createdAt"] },
+      { key: "by_owner_updated", type: "key", attributes: ["ownerUserId", "updatedAt"] },
+    ],
+  },
+  {
+    // Morris page assistant long-term memory
+    // (per .kiro/specs/morris-memory/).
+    //
+    // Owner-scoped: each researcher's memories are private to them.
+    // documentSecurity=true → per-doc permissions pin read+update+delete to
+    // the creator (Role.user(ownerUserId)) so a co-residing researcher cannot
+    // list or load the rows.
+    //
+    // content is the embedded fact text (1-4000 chars). metadata is JSON
+    // tag-shape (e.g. {"type":"preference","domain":"fintech"}). metadataKeys
+    // is redundant Object.keys(metadata) so Appwrite can index/Query.contains
+    // (Appwrite has no jsonb-inner index). embedding is JSON-stringified
+    // number[1024] from Qwen text-embedding-v3, same shape as Notebook.
+    id: "morris_memories",
+    name: "MorrisMemory",
+    permissions: OWNER_SCOPED,
+    documentSecurity: true,
+    attributes: [
+      { key: "content", type: "string", size: 4000, required: true },
+      { key: "metadata", type: "string", size: JSON_SIZE, required: false, default: "{}" },
+      { key: "metadataKeys", type: "string", size: 64, required: false, default: "", array: true },
+      { key: "embedding", type: "string", size: 16_384, required: false, default: "" },
+      { key: "embeddingModel", type: "string", size: 64, required: false, default: "" },
+      { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "createdAt", type: "datetime", required: true },
+      { key: "updatedAt", type: "datetime", required: true },
+    ],
+    indexes: [
+      // owner-scoped lookup (listMemoriesForOwner + ownership check on load/update/delete).
+      { key: "by_owner", type: "key", attributes: ["ownerUserId"] },
+      // most-recent ordering for system-prompt prepend (newest 20 first).
+      { key: "by_owner_updated", type: "key", attributes: ["ownerUserId", "updatedAt"] },
+      // metadata-tag filter (manageMemories action=query/list with metadataFilter).
+      { key: "by_metadata_keys", type: "key", attributes: ["metadataKeys"] },
+      // fulltext fallback when Qwen embedder is unavailable (per design.md §5).
+      { key: "by_text_search", type: "fulltext", attributes: ["content"] },
+    ],
+  },
 ];
 
 export const BUCKETS: BucketDef[] = [
