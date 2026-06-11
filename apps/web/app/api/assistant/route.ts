@@ -1,6 +1,8 @@
 import { createAgentUIStreamResponse, type UIMessage } from "ai";
 
 import { buildMorrisAgent } from "@/lib/assistant/agent";
+import { buildAgentContext } from "@/lib/assistant/agent-context";
+import { listMemories } from "@/lib/memories/actions";
 import { classifyMorrisError } from "@/lib/assistant/errors";
 import { morrisErrorCounter } from "@/lib/assistant/metrics";
 import {
@@ -69,16 +71,33 @@ export async function POST(req: Request) {
   // "not signed in" rather than reading anything.
   const ownerUserId = await getCurrentUserId();
 
+  // P1-1: build the runtime AgentContext (current researcher / project / time / URL
+  // patterns) once per request; injected into the system prompt so the LLM never
+  // has to recover these facts from the conversation history. Failure paths inside
+  // buildAgentContext degrade gracefully (no auth → fallback name, no email).
+  const memoriesP = listMemories({ limit: 20 }).catch(() => ({ items: [] as Array<{ content: string; metadata: string }> }));
+    const [agentContext, memoriesResult] = await Promise.all([buildAgentContext(), memoriesP]);
+    const memoryItems = memoriesResult.items.map((m) => ({
+      content: m.content,
+      metadata: (() => {
+        try { return JSON.parse(m.metadata) as Record<string, unknown>; } catch { return {}; }
+      })(),
+    }));
+
   try {
     // R6: 在送进 ToolLoopAgent 之前先做对话压缩。失败 → fallback "(早期对话已省略)"。
     const compactionPlan = planCompaction(messages, COMPACTION_OPTS);
     const compacted = await applyCompaction(messages, compactionPlan, summarizeMessages);
     const uiMessages = compacted as UIMessage[];
 
-    const agent = buildMorrisAgent({ ownerUserId, pageContext });
+    const agent = buildMorrisAgent({ ownerUserId, pageContext, agentContext, memories: memoryItems });
     return await createAgentUIStreamResponse({
       agent,
       uiMessages,
+      // Forward the request abort signal so useChat.stop() on the client
+      // actually cancels the in-flight DeepSeek call rather than running it
+      // to completion (and burning tokens) after the SSE reader is closed.
+      abortSignal: req.signal,
       onError: (error) => {
         const m = classifyMorrisError(error);
         morrisErrorCounter.inc(m.kind);

@@ -3,14 +3,36 @@
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { Sparkles, X, Maximize2 } from "lucide-react";
+import { Sparkles, X, Maximize2, Plus, History } from "lucide-react";
 import { Conversation } from "./conversation";
+import { ConversationHistory } from "./conversation-history";
+import { createConversation } from "@/lib/conversations/actions";
+import { useCurrentConversationId } from "./use-current-conversation-id";
+import { invalidateConversations } from "./use-conversation-invalidate";
 
 const SUGGESTIONS = ["分析当前调研结果", "受访者最常抱怨什么?", "帮我起草一份新调研"];
 
 export function AssistantDock() {
   const [open, setOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [conversationId, setConversationId] = useCurrentConversationId();
+  const [creating, setCreating] = useState(false);
   const pathname = usePathname();
+
+  async function startNewConversation() {
+    if (creating) return;
+    setCreating(true);
+    try {
+      const { conversationId: id } = await createConversation();
+      setConversationId(id);
+      setHistoryOpen(false);
+      invalidateConversations();
+    } catch {
+      // welcome screen still works without persistence — silent fall-through
+    } finally {
+      setCreating(false);
+    }
+  }
 
   // Hide the floating dock on the standalone assistant page to avoid duplication.
   const hidden = pathname?.startsWith("/assistant");
@@ -58,6 +80,24 @@ export function AssistantDock() {
                 <span className="font-display text-body-lg text-ink-900">研究助手</span>
               </div>
               <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setHistoryOpen((v) => !v)}
+                  aria-label={historyOpen ? "关闭历史" : "历史对话"}
+                  aria-pressed={historyOpen}
+                  className="flex size-8 items-center justify-center rounded-sm text-ink-400 transition-colors hover:bg-mauve-100 hover:text-ink-800"
+                >
+                  <History size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={startNewConversation}
+                  disabled={creating}
+                  aria-label="新对话"
+                  className="flex size-8 items-center justify-center rounded-sm text-ink-400 transition-colors hover:bg-mauve-100 hover:text-ink-800 disabled:opacity-50"
+                >
+                  <Plus size={16} />
+                </button>
                 <Link
                   href="/assistant"
                   className="flex size-8 items-center justify-center rounded-sm text-ink-400 transition-colors hover:bg-mauve-100 hover:text-ink-800"
@@ -75,7 +115,23 @@ export function AssistantDock() {
               </div>
             </header>
             <div className="min-h-0 flex-1">
-              <Conversation suggestions={SUGGESTIONS} compact />
+              {historyOpen ? (
+                <ConversationHistory
+                  currentId={conversationId}
+                  onSelect={(id) => {
+                    setConversationId(id);
+                    setHistoryOpen(false);
+                  }}
+                  onClose={() => setHistoryOpen(false)}
+                />
+              ) : (
+                <Conversation
+                  key={conversationId ?? "welcome"}
+                  conversationId={conversationId ?? undefined}
+                  suggestions={SUGGESTIONS}
+                  compact
+                />
+              )}
             </div>
           </aside>
         </div>
