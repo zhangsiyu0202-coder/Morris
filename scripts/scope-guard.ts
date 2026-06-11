@@ -12,11 +12,21 @@ const SCAN_DIRS = ["apps", "packages", "infra", "scripts", ".github"];
 const SCAN_EXT = new Set([".ts", ".tsx", ".py", ".json", ".yml", ".yaml", ".sh"]);
 const SKIP_DIRS = new Set(["node_modules", "dist", ".next", "build", ".venv", "coverage"]);
 
+// Collaboration concepts: forbidden EVERYWHERE (ADR 0006 keeps these out).
 const PATTERNS: RegExp[] = [
-  /\bteams?\b/i,
   /\bsharedWith\b/i,
   /\bsharing\b/i,
   /\bcomments?\b/i,
+  // notebooks sub-spec Wave F: forbid raw `Insight` to prevent regressions
+  // after the Insight → Notebook rename. Whitelisted via ALLOW.
+  /\bInsight\b/,
+];
+
+// ADR-0006 (workspaces-billing) concepts: now in-scope, but ONLY inside the
+// workspaces-billing product surface (EXEMPT_PREFIXES). Forbidden elsewhere so
+// no other module grows a parallel tenancy/billing concept.
+const ADR0006_PATTERNS: RegExp[] = [
+  /\bteams?\b/i,
   /\bbilling\b/i,
   /\bsubscriptions?\b/i,
   /\bsubscribe\b/i,
@@ -25,12 +35,22 @@ const PATTERNS: RegExp[] = [
   /\bseats?\b/i,
   /usage[-_]?meter/i,
   /\bmetering\b/i,
-  // notebooks sub-spec Wave F: forbid raw `Insight` to prevent regressions
-  // after the Insight → Notebook rename. Whitelisted via ALLOW: AnalysisReport's
-  // embedded `insights[]` field, the `top_insights` widget type, and `insight`
-  // as a generic English word inside prose / comments.
-  /\bInsight\b/,
 ];
+const EXEMPT_PREFIXES = [
+  "products/workspaces-billing/",
+  "packages/contracts/src/billing.ts",
+  "packages/appwrite-schema/src/schema.ts", // billing collections live here; field-name guard below still runs for non-billing collections
+  "apps/functions/createWorkspace/",
+  "apps/functions/inviteMember/",
+  "apps/functions/changePlan/",
+  "apps/functions/stripeWebhook/",
+  "apps/functions/aggregateWorkspaceUsage/",
+  "apps/functions/issueLivekitToken/",
+];
+const BILLING_COLLECTIONS = new Set([
+  "plans", "subscriptions", "usage_events", "usage_counters",
+  "workspace_quota", "workspace_memberships", "stripe_events",
+]);
 // LiveKit grants legitimately use these; neutralize the line if present.
 // Morris conversation-compaction module reuses the word "plan" in the hogai
 // "plan + apply" sense (CompactionPlan / planCompaction / plan.dropped / plan.keep
@@ -84,6 +104,15 @@ const ALLOW = [
   "import type { Insight as ReportInsightItem }",
   // shared.tsx narrow alias justification comment line
   "AnalysisReport-internal alias",
+  // ADR-0005 visual analysis taxonomy comment intentionally negates teams.
+  // The literal "team-custom — teams are out of scope" is a scope-affirming
+  // comment, not a feature; allow it past the guard.
+  "team-custom",
+  "teams are out of scope",
+  // ADR 0006: workspaces-billing references in non-exempt files (comments / re-export).
+  "./billing.js",
+  "workspaces-billing",
+  "Appwrite Team id",
 ];
 const SKIP_FILE = /(\.(test|spec)\.[tj]sx?|_test\.py|scope-guard\.ts)$/;
 
@@ -91,12 +120,15 @@ const hits: string[] = [];
 
 function scanFile(path: string): void {
   if (SKIP_FILE.test(path) || !SCAN_EXT.has(extname(path))) return;
+  const rel = path.replace(ROOT + "/", "");
+  const exempt = EXEMPT_PREFIXES.some((prefix) => rel.startsWith(prefix));
+  const active = exempt ? PATTERNS : [...PATTERNS, ...ADR0006_PATTERNS];
   const lines = readFileSync(path, "utf8").split("\n");
   lines.forEach((line, i) => {
     if (ALLOW.some((a) => line.includes(a))) return;
-    for (const p of PATTERNS) {
+    for (const p of active) {
       if (p.test(line)) {
-        hits.push(`${path.replace(ROOT + "/", "")}:${i + 1}: ${line.trim()}`);
+        hits.push(`${rel}:${i + 1}: ${line.trim()}`);
         break;
       }
     }
@@ -123,6 +155,7 @@ for (const d of SCAN_DIRS) {
 // Schema field-name check (Req 9.2).
 const fieldRe = /team|share|comment|billing|subscrib|quota|plan|seat|usage|meter/i;
 for (const c of COLLECTIONS) {
+  if (BILLING_COLLECTIONS.has(c.id)) continue; // ADR 0006: billing collections may use these field names
   for (const a of c.attributes) {
     if (fieldRe.test(a.key)) hits.push(`schema: forbidden field ${c.id}.${a.key}`);
   }
