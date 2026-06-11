@@ -1,16 +1,24 @@
 import { describe, it, expect } from "vitest";
 import { COLLECTIONS, BUCKETS } from "../src/schema.js";
 
-const FORBIDDEN = /team|share|comment|billing|subscribe|quota|plan|seat|usage[-_]?meter/i;
+// ADR 0006 narrowed this: workspaces/billing/plans/seats/quota/usage metering are
+// now in-scope (governed by ADR 0006). Collaboration concepts stay forbidden.
+const FORBIDDEN = /share|comment|collaborat|marketplace/i;
 
 describe("appwrite schema declaration", () => {
-  it("declares all 16 collections (researcher identity is Appwrite Account, no users collection)", () => {
+  it("declares all 22 collections (researcher identity is Appwrite Account, no users collection)", () => {
     const ids = COLLECTIONS.map((c) => c.id).sort();
     expect(ids).not.toContain("users");
     expect(ids).not.toContain("insights"); // Wave F: removed (renamed to notebooks)
     expect(ids).toEqual(
       [
         "analysis_reports",
+        "plans",
+        "subscriptions",
+        "usage_counters",
+        "usage_events",
+        "workspace_memberships",
+        "workspace_quota",
         "bookmarks",
         "dashboard_tiles",
         "dashboard_widgets",
@@ -218,5 +226,39 @@ describe("visual_analysis_jobs collection (ADR 0005)", () => {
     const f = job.attributes.find((a) => a.key === "geminiFileName")!;
     expect(f.type).toBe("string");
     expect(f.required).toBe(false);
+  });
+});
+
+describe("workspaces-billing collections (ADR 0006)", () => {
+  const byId = (id: string) => COLLECTIONS.find((c) => c.id === id)!;
+
+  it("declares the six workspace/billing collections, all server-only with doc security", () => {
+    for (const id of ["plans", "subscriptions", "usage_events", "usage_counters", "workspace_quota", "workspace_memberships"]) {
+      const c = byId(id);
+      expect(c, id).toBeDefined();
+      expect(c.permissions, id).toEqual([]);
+      expect(c.documentSecurity, id).toBe(true);
+    }
+  });
+
+  it("usage_events is idempotent on sessionId (unique index)", () => {
+    const ue = byId("usage_events");
+    expect(
+      ue.indexes.some((i) => i.key === "session_unique" && i.type === "unique" && i.attributes.join() === "sessionId"),
+    ).toBe(true);
+  });
+
+  it("subscriptions + workspace_quota are one-per-workspace (unique workspaceId)", () => {
+    for (const id of ["subscriptions", "workspace_quota"]) {
+      const c = byId(id);
+      expect(c.indexes.some((i) => i.type === "unique" && i.attributes.join() === "workspaceId"), id).toBe(true);
+    }
+  });
+
+  it("membership role enum is owner/admin/member; plan key enum is plus/pro", () => {
+    expect(byId("workspace_memberships").attributes.find((a) => a.key === "role")!.elements).toEqual([
+      "owner", "admin", "member",
+    ]);
+    expect(byId("plans").attributes.find((a) => a.key === "key")!.elements).toEqual(["plus", "pro"]);
   });
 });

@@ -504,6 +504,104 @@ export const COLLECTIONS: CollectionDef[] = [
       { key: "by_owner", type: "key", attributes: ["ownerUserId"] },
     ],
   },
+  {
+    // ADR 0006 (workspaces-billing). NOTE: a Workspace itself is an Appwrite
+    // Team (created at runtime by createWorkspace), NOT a collection. The
+    // collections below are the billing/usage storage the Functions manage
+    // (SERVER_ONLY; per-document read pinned to the team/owner at creation).
+    id: "plans",
+    name: "Plan",
+    permissions: SERVER_ONLY,
+    documentSecurity: true,
+    attributes: [
+      { key: "key", type: "enum", elements: ["plus", "pro"], required: true },
+      { key: "includedInterviews", type: "integer", required: true },
+      { key: "features", type: "enum", elements: ["core", "visual_analysis", "survey_rollup"], required: false, array: true },
+      { key: "priceRef", type: "string", size: 128, required: false },
+    ],
+    indexes: [{ key: "key_unique", type: "unique", attributes: ["key"] }],
+  },
+  {
+    id: "subscriptions",
+    name: "Subscription",
+    permissions: SERVER_ONLY,
+    documentSecurity: true,
+    attributes: [
+      { key: "workspaceId", type: "string", size: 64, required: true },
+      { key: "planKey", type: "enum", elements: ["plus", "pro"], required: true },
+      { key: "status", type: "enum", elements: ["trialing", "active", "past_due", "canceled"], required: true },
+      { key: "seats", type: "integer", required: true },
+      { key: "stripeCustomerId", type: "string", size: 64, required: false },
+      { key: "stripeSubscriptionId", type: "string", size: 64, required: false },
+      { key: "currentPeriodStart", type: "datetime", required: true },
+      { key: "currentPeriodEnd", type: "datetime", required: true },
+    ],
+    indexes: [{ key: "by_workspace", type: "unique", attributes: ["workspaceId"] }],
+  },
+  {
+    id: "usage_events",
+    name: "UsageEvent",
+    permissions: SERVER_ONLY,
+    documentSecurity: true,
+    attributes: [
+      { key: "workspaceId", type: "string", size: 64, required: true },
+      { key: "studyId", type: "string", size: 64, required: true },
+      { key: "sessionId", type: "string", size: 64, required: true },
+      { key: "unit", type: "enum", elements: ["completed_interview"], required: false, default: "completed_interview" },
+      { key: "occurredAt", type: "datetime", required: true },
+    ],
+    indexes: [
+      { key: "session_unique", type: "unique", attributes: ["sessionId"] },
+      { key: "by_workspace", type: "key", attributes: ["workspaceId"] },
+    ],
+  },
+  {
+    id: "usage_counters",
+    name: "UsageCounter",
+    permissions: SERVER_ONLY,
+    documentSecurity: true,
+    attributes: [
+      { key: "workspaceId", type: "string", size: 64, required: true },
+      { key: "periodStart", type: "datetime", required: true },
+      { key: "periodEnd", type: "datetime", required: true },
+      { key: "completedInterviews", type: "integer", required: false, default: 0 },
+    ],
+    indexes: [{ key: "by_workspace_period", type: "unique", attributes: ["workspaceId", "periodStart"] }],
+  },
+  {
+    id: "workspace_quota",
+    name: "WorkspaceQuota",
+    permissions: SERVER_ONLY,
+    documentSecurity: true,
+    attributes: [
+      { key: "workspaceId", type: "string", size: 64, required: true },
+      { key: "periodEnd", type: "datetime", required: true },
+      { key: "usedInterviews", type: "integer", required: false, default: 0 },
+      { key: "includedInterviews", type: "integer", required: true },
+      { key: "hardCeiling", type: "integer", required: true },
+      { key: "state", type: "enum", elements: ["ok", "over"], required: false, default: "ok" },
+    ],
+    indexes: [{ key: "by_workspace", type: "unique", attributes: ["workspaceId"] }],
+  },
+  {
+    // Denormalized read view of Appwrite Team membership (the Team is canonical).
+    id: "workspace_memberships",
+    name: "WorkspaceMembership",
+    permissions: SERVER_ONLY,
+    documentSecurity: true,
+    attributes: [
+      { key: "workspaceId", type: "string", size: 64, required: true },
+      { key: "userId", type: "string", size: 64, required: true },
+      { key: "role", type: "enum", elements: ["owner", "admin", "member"], required: true },
+      { key: "status", type: "enum", elements: ["active", "invited"], required: false, default: "invited" },
+      { key: "invitedBy", type: "string", size: 64, required: false },
+      { key: "createdAt", type: "datetime", required: true },
+    ],
+    indexes: [
+      { key: "by_workspace", type: "key", attributes: ["workspaceId"] },
+      { key: "member_unique", type: "unique", attributes: ["workspaceId", "userId"] },
+    ],
+  },
 ];
 
 export const BUCKETS: BucketDef[] = [
