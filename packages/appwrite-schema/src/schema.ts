@@ -83,6 +83,8 @@ export const COLLECTIONS: CollectionDef[] = [
     documentSecurity: true,
     attributes: [
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       { key: "name", type: "string", size: 256, required: true },
       { key: "description", type: "string", size: 2000, required: false, default: "" },
       { key: "createdAt", type: "datetime", required: true },
@@ -96,6 +98,8 @@ export const COLLECTIONS: CollectionDef[] = [
     documentSecurity: true,
     attributes: [
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       { key: "projectId", type: "string", size: 64, required: true },
       { key: "title", type: "string", size: 512, required: true },
       {
@@ -169,6 +173,7 @@ export const COLLECTIONS: CollectionDef[] = [
     documentSecurity: true,
     attributes: [
       { key: "surveyId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
       { key: "token", type: "string", size: 128, required: true },
       { key: "mode", type: "enum", elements: ["single_use", "reusable"], required: true },
       {
@@ -187,6 +192,7 @@ export const COLLECTIONS: CollectionDef[] = [
     indexes: [
       { key: "token_unique", type: "unique", attributes: ["token"] },
       { key: "by_survey", type: "key", attributes: ["surveyId"] },
+      { key: "by_workspace", type: "key", attributes: ["workspaceId"] },
     ],
   },
   {
@@ -197,6 +203,7 @@ export const COLLECTIONS: CollectionDef[] = [
     attributes: [
       { key: "surveyId", type: "string", size: 64, required: true },
       { key: "linkId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
       { key: "intervieweeAlias", type: "string", size: 256, required: false },
       {
         key: "state",
@@ -216,6 +223,7 @@ export const COLLECTIONS: CollectionDef[] = [
     indexes: [
       { key: "by_survey", type: "key", attributes: ["surveyId"] },
       { key: "by_link", type: "key", attributes: ["linkId"] },
+      { key: "by_workspace", type: "key", attributes: ["workspaceId"] },
       { key: "by_quality", type: "key", attributes: ["qualityFlags"] },
     ],
   },
@@ -240,6 +248,8 @@ export const COLLECTIONS: CollectionDef[] = [
     attributes: [
       { key: "sessionId", type: "string", size: 64, required: true },
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       { key: "storageFileId", type: "string", size: 64, required: true },
       { key: "durationMs", type: "integer", required: true },
       { key: "format", type: "enum", elements: ["mp3", "opus", "wav", "mp4", "webm"], required: true },
@@ -270,6 +280,8 @@ export const COLLECTIONS: CollectionDef[] = [
       // that document-level read permissions can be pinned to that user and
       // the read layer in apps/web/lib/queries can filter by it.
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       { key: "themes", type: "string", size: JSON_SIZE, required: false, default: "[]" },
       { key: "insights", type: "string", size: JSON_SIZE, required: false, default: "[]" },
       { key: "citations", type: "string", size: JSON_SIZE, required: false, default: "[]" },
@@ -334,6 +346,8 @@ export const COLLECTIONS: CollectionDef[] = [
       // Wave F (T48): legacy `report` attribute removed. Notebook content
       // lives entirely in `content` (ProseMirror JSON) since Wave D.
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       { key: "createdAt", type: "datetime", required: true },
     ],
     indexes: [
@@ -356,6 +370,8 @@ export const COLLECTIONS: CollectionDef[] = [
     documentSecurity: true,
     attributes: [
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       // Notebook.shortId — links the token to the notebook it grants access to.
       { key: "notebookShortId", type: "string", size: 12, required: true },
       // 32-byte random hex (64 chars). Looked up by `by_token` unique index.
@@ -377,6 +393,8 @@ export const COLLECTIONS: CollectionDef[] = [
     documentSecurity: true,
     attributes: [
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       { key: "surveyId", type: "string", size: 64, required: true },
       { key: "scope", type: "enum", elements: ["study"], required: true },
       { key: "name", type: "string", size: 512, required: true },
@@ -397,6 +415,8 @@ export const COLLECTIONS: CollectionDef[] = [
     documentSecurity: true,
     attributes: [
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       { key: "dashboardId", type: "string", size: 64, required: true },
       { key: "surveyId", type: "string", size: 64, required: true },
       {
@@ -433,6 +453,8 @@ export const COLLECTIONS: CollectionDef[] = [
     documentSecurity: true,
     attributes: [
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       { key: "dashboardId", type: "string", size: 64, required: true },
       { key: "surveyId", type: "string", size: 64, required: true },
       { key: "widgetId", type: "string", size: 64, required: true },
@@ -455,6 +477,8 @@ export const COLLECTIONS: CollectionDef[] = [
     documentSecurity: true,
     attributes: [
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       { key: "surveyId", type: "string", size: 64, required: true },
       { key: "sessionId", type: "string", size: 64, required: true },
       { key: "quote", type: "string", size: TEXT_SIZE, required: true },
@@ -482,6 +506,8 @@ export const COLLECTIONS: CollectionDef[] = [
       { key: "sessionId", type: "string", size: 64, required: true },
       { key: "surveyId", type: "string", size: 64, required: true },
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       {
         key: "status",
         type: "enum",

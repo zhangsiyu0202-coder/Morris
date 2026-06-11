@@ -121,6 +121,8 @@ describe("appwrite schema: analysis-report sub-spec (T2)", () => {
         "createdAt",
         "embedding",
         "embeddingModel",
+        "authorId",
+        "workspaceId",
         "headline",
         "ownerUserId",
         "question",
@@ -162,6 +164,8 @@ describe("appwrite schema: analysis-report sub-spec (T2)", () => {
         "ownerUserId",
         "quote",
         "respondent",
+        "authorId",
+        "workspaceId",
         "segmentIndex",
         "sessionId",
         "source",
@@ -260,5 +264,26 @@ describe("workspaces-billing collections (ADR 0006)", () => {
       "owner", "admin", "member",
     ]);
     expect(byId("plans").attributes.find((a) => a.key === "key")!.elements).toEqual(["plus", "pro"]);
+  });
+});
+
+describe("tenancy attributes on existing collections (ADR 0006 M2-b)", () => {
+  it("owner-scoped collections gain optional workspaceId + authorId", () => {
+    for (const id of ["projects", "surveys", "recordings", "analysis_reports", "bookmarks", "dashboards", "notebooks"]) {
+      const c = COLLECTIONS.find((x) => x.id === id)!;
+      const ws = c.attributes.find((a) => a.key === "workspaceId");
+      const au = c.attributes.find((a) => a.key === "authorId");
+      expect(ws, `${id}.workspaceId`).toBeDefined();
+      expect(ws!.required).toBe(false);
+      expect(au, `${id}.authorId`).toBeDefined();
+      expect(au!.required).toBe(false);
+    }
+  });
+
+  it("interview_sessions carries workspaceId + a by_workspace index (no authorId — interviewee-facing)", () => {
+    const s = COLLECTIONS.find((c) => c.id === "interview_sessions")!;
+    expect(s.attributes.find((a) => a.key === "workspaceId")).toBeDefined();
+    expect(s.attributes.find((a) => a.key === "authorId")).toBeUndefined();
+    expect(s.indexes.some((i) => i.key === "by_workspace")).toBe(true);
   });
 });
