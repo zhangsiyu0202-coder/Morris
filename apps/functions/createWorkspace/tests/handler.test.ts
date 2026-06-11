@@ -8,6 +8,8 @@ function makeDeps(over: Partial<CreateWorkspaceDeps> = {}): CreateWorkspaceDeps 
     generateWorkspaceId: () => "ws_fixed",
     createTeam: vi.fn(async () => {}),
     createOwnerMembershipView: vi.fn(async () => {}),
+    claimOwnerSeat: vi.fn(async () => {}),
+    seedQuota: vi.fn(async () => {}),
     createTrialSubscription: vi.fn(async () => {}),
     deleteTeam: vi.fn(async () => {}),
     ...over,
@@ -23,6 +25,8 @@ describe("createWorkspace (ADR 0006 M3)", () => {
     expect(deps.createTeam).toHaveBeenCalledWith("ws_fixed", "Acme", "u1");
     expect(deps.createOwnerMembershipView).toHaveBeenCalledWith("ws_fixed", "u1", new Date(1_000_000).toISOString());
     expect(deps.createTrialSubscription).toHaveBeenCalledWith("ws_fixed", DEFAULT_PLAN, 1_000_000);
+    expect(deps.claimOwnerSeat).toHaveBeenCalledWith("ws_fixed", "u1");
+    expect(deps.seedQuota).toHaveBeenCalledWith("ws_fixed", DEFAULT_PLAN);
     expect(deps.deleteTeam).not.toHaveBeenCalled();
   });
 

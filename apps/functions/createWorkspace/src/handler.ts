@@ -21,8 +21,13 @@ export interface CreateWorkspaceDeps {
   createTeam(workspaceId: string, name: string, ownerUserId: string): Promise<void>;
   /** Write the denormalized membership view row (owner, active). */
   createOwnerMembershipView(workspaceId: string, ownerUserId: string, createdAtIso: string): Promise<void>;
+  /** Owner occupies seat slot 0 (decision: the owner consumes a seat). */
+  claimOwnerSeat(workspaceId: string, ownerUserId: string): Promise<void>;
   /** Seed the trial subscription stub. */
   createTrialSubscription(workspaceId: string, planKey: PlanKeyValue, createdAtMs: number): Promise<void>;
+  /** Seed an initial quota row so the gate isn't unbounded for new workspaces
+   *  before the first aggregation tick (decision: fail-open accepted + seeded). */
+  seedQuota(workspaceId: string, planKey: PlanKeyValue): Promise<void>;
   /** Rollback: remove the team if a later step failed. */
   deleteTeam(workspaceId: string): Promise<void>;
 }
@@ -50,7 +55,9 @@ export async function createWorkspace(
     // on ANY failure — including a partial team where owner-membership failed).
     await deps.createTeam(workspaceId, parsed.data.name, ownerUserId);
     await deps.createOwnerMembershipView(workspaceId, ownerUserId, createdAtIso);
+    await deps.claimOwnerSeat(workspaceId, ownerUserId);
     await deps.createTrialSubscription(workspaceId, DEFAULT_PLAN, createdAtMs);
+    await deps.seedQuota(workspaceId, DEFAULT_PLAN);
   } catch {
     await deps.deleteTeam(workspaceId).catch(() => {});
     return { status: 500, body: { error: "internal_error" } };
