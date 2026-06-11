@@ -628,6 +628,16 @@ export const COLLECTIONS: CollectionDef[] = [
       { key: "member_unique", type: "unique", attributes: ["workspaceId", "userId"] },
     ],
   },
+  {
+    // ADR 0006 M5: Stripe webhook idempotency store. $id == Stripe event id;
+    // presence = already processed (replays acked without re-applying).
+    id: "stripe_events",
+    name: "StripeEvent",
+    permissions: SERVER_ONLY,
+    documentSecurity: true,
+    attributes: [{ key: "processedAt", type: "datetime", required: true }],
+    indexes: [],
+  },
 ];
 
 export const BUCKETS: BucketDef[] = [

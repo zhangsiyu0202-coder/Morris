@@ -224,3 +224,15 @@ export const InviteMemberResponseSchema = z.object({
   status: MembershipStatus,
 });
 export type InviteMemberResponse = z.infer<typeof InviteMemberResponseSchema>;
+
+export const ChangePlanRequestSchema = z.object({
+  workspaceId: z.string().min(1),
+  targetPlan: PlanKey,
+});
+export type ChangePlanRequest = z.infer<typeof ChangePlanRequestSchema>;
+
+/** Stripe-hosted Checkout/Portal URL the client redirects to. */
+export const ChangePlanResponseSchema = z.object({
+  url: z.string().url(),
+});
+export type ChangePlanResponse = z.infer<typeof ChangePlanResponseSchema>;

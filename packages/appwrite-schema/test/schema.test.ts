@@ -6,7 +6,7 @@ import { COLLECTIONS, BUCKETS } from "../src/schema.js";
 const FORBIDDEN = /share|comment|collaborat|marketplace/i;
 
 describe("appwrite schema declaration", () => {
-  it("declares all 22 collections (researcher identity is Appwrite Account, no users collection)", () => {
+  it("declares all 23 collections (researcher identity is Appwrite Account, no users collection)", () => {
     const ids = COLLECTIONS.map((c) => c.id).sort();
     expect(ids).not.toContain("users");
     expect(ids).not.toContain("insights"); // Wave F: removed (renamed to notebooks)
@@ -15,6 +15,7 @@ describe("appwrite schema declaration", () => {
         "analysis_reports",
         "plans",
         "subscriptions",
+        "stripe_events",
         "usage_counters",
         "usage_events",
         "workspace_memberships",
