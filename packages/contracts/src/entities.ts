@@ -3,6 +3,14 @@ import { z } from "zod";
 // Reusable json field (Appwrite stores as stringified json / object attr)
 const json = z.record(z.string(), z.unknown());
 
+// --- ADR 0006 (workspaces-billing) tenancy fields ---------------------------
+// `workspaceId` is the tenant key (an Appwrite Team id); `authorId` is the
+// creating researcher (the recast of `ownerUserId`, which is kept + read during
+// the M2 migration rollout per the contracts.md deprecation pattern). Both are
+// OPTIONAL until the migration backfills every row; a later slice tightens them
+// to required. Anonymous-interviewee rows carry workspaceId (denormalized for
+// tenant-scoped permissions) but no authorId. See docs/adr/0006.
+
 export const SurveyStatus = z.enum(["draft", "published", "paused", "closed", "archived"]);
 export const QuestionType = z.enum([
   "text",
@@ -86,6 +94,8 @@ export const CurrentResearcherSchema = z.object({
 export const ProjectSchema = z.object({
   $id: z.string(),
   ownerUserId: z.string(),
+  workspaceId: z.string().optional(),
+  authorId: z.string().optional(),
   name: z.string(),
   description: z.string().default(""),
   createdAt: z.string().datetime(),
@@ -94,6 +104,8 @@ export const ProjectSchema = z.object({
 export const SurveySchema = z.object({
   $id: z.string(),
   projectId: z.string(),
+  workspaceId: z.string().optional(),
+  authorId: z.string().optional(),
   title: z.string(),
   status: SurveyStatus.default("draft"),
   flowConfig: json.default({}),
@@ -151,6 +163,7 @@ export const QuestionBlockSchema = z.object({
 export const InterviewLinkSchema = z.object({
   $id: z.string(),
   surveyId: z.string(),
+  workspaceId: z.string().optional(),
   token: z.string(),
   mode: LinkMode,
   kind: LinkKind.default("production"),
@@ -210,6 +223,7 @@ export const InterviewSessionSchema = z
     $id: z.string(),
     surveyId: z.string(),
     linkId: z.string(),
+    workspaceId: z.string().optional(),
     intervieweeAlias: z.string().optional(),
     state: SessionState.default("created"),
     livekitRoom: z.string(),
@@ -244,6 +258,8 @@ export const RecordingSchema = z.object({
   $id: z.string(),
   sessionId: z.string(),
   ownerUserId: z.string(),
+  workspaceId: z.string().optional(),
+  authorId: z.string().optional(),
   storageFileId: z.string(),
   durationMs: z.number().int().nonnegative(),
   format: RecordingFormat,
@@ -252,6 +268,8 @@ export const RecordingSchema = z.object({
 export const DashboardSchema = z.object({
   $id: z.string(),
   ownerUserId: z.string(),
+  workspaceId: z.string().optional(),
+  authorId: z.string().optional(),
   surveyId: z.string(),
   scope: DashboardScope.default("study"),
   name: z.string(),
@@ -263,6 +281,8 @@ export const DashboardSchema = z.object({
 export const DashboardWidgetSchema = z.object({
   $id: z.string(),
   ownerUserId: z.string(),
+  workspaceId: z.string().optional(),
+  authorId: z.string().optional(),
   dashboardId: z.string(),
   surveyId: z.string(),
   widgetType: DashboardWidgetType,
@@ -285,6 +305,8 @@ export const DashboardTileLayoutSchema = z.object({
 export const DashboardTileSchema = z.object({
   $id: z.string(),
   ownerUserId: z.string(),
+  workspaceId: z.string().optional(),
+  authorId: z.string().optional(),
   dashboardId: z.string(),
   surveyId: z.string(),
   widgetId: z.string(),
@@ -298,6 +320,8 @@ export const DashboardTileSchema = z.object({
 export const BookmarkSchema = z.object({
   $id: z.string(),
   ownerUserId: z.string(),
+  workspaceId: z.string().optional(),
+  authorId: z.string().optional(),
   surveyId: z.string(),
   sessionId: z.string(),
   quote: z.string(),
@@ -324,6 +348,8 @@ export const AnalysisReportSchema = z
     surveyId: z.string().optional(),
     scope: ReportScope,
     ownerUserId: z.string(),
+    workspaceId: z.string().optional(),
+    authorId: z.string().optional(),
     themes: z.array(z.unknown()).default([]),
     insights: z.array(z.unknown()).default([]),
     citations: z.array(z.unknown()).default([]),
@@ -437,6 +463,8 @@ export const VisualAnalysisJobSchema = z.object({
   sessionId: z.string(),
   surveyId: z.string(),
   ownerUserId: z.string(),
+  workspaceId: z.string().optional(),
+  authorId: z.string().optional(),
   status: VisualAnalysisJobStatus.default("queued"),
   // Gemini Files API resource name (e.g. "files/abc123"). Null until the upload
   // returns a name; cleared once the file is deleted. The sweep's delete target.
