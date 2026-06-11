@@ -95,3 +95,32 @@ export function appUrl(path: string): string {
     "http://localhost:3000";
   return `${base.replace(/\/$/, "")}${path}`;
 }
+
+/**
+ * Create an email/password session and return the REAL session secret.
+ *
+ * Appwrite 1.6 returns an empty `secret` in the session-create response body and
+ * delivers the actual secret only via the `Set-Cookie: a_session_<projectId>`
+ * header. The typed SDK surfaces only the (empty) body, so we issue the request
+ * directly and read the secret from the response cookie. The returned value
+ * authenticates `account.get()` via `setSession(secret)` (verified on 1.6.0).
+ */
+export async function createEmailPasswordSessionSecret(
+  email: string,
+  password: string,
+): Promise<{ secret: string; expire: string }> {
+  const { endpoint, projectId } = envOrThrow();
+  const res = await fetch(`${endpoint}/account/sessions/email`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Appwrite-Project": projectId },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) throw new Error(`session_create_failed_${res.status}`);
+  const cookies = typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
+  const target = cookies.find((c) => c.startsWith(`a_session_${projectId}=`));
+  const match = target ? /^[^=]+=([^;]+)/.exec(target) : null;
+  if (!match) throw new Error("session_cookie_missing");
+  const body = (await res.json().catch(() => ({}))) as { expire?: string };
+  const expire = body.expire ?? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+  return { secret: decodeURIComponent(match[1]), expire };
+}

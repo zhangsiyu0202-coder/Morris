@@ -9,6 +9,7 @@ import {
   sessionClient,
   readSessionSecret,
   setSessionCookie,
+  createEmailPasswordSessionSecret,
   clearSessionCookie,
   appUrl,
 } from "./appwrite";
@@ -78,9 +79,10 @@ export async function signInWithPassword(
   const email = normalizeEmail(emailRaw);
   if (!email || !password) return { ok: false, error: "请输入邮箱和密码" };
   try {
-    const account = new Account(publicClient());
-    const session = await account.createEmailPasswordSession(email, password);
-    await setSessionCookie(session.secret, new Date(session.expire));
+    // Appwrite 1.6 returns an empty body `secret`; the real secret is in the
+    // Set-Cookie header. createEmailPasswordSessionSecret reads it from there.
+    const { secret, expire } = await createEmailPasswordSessionSecret(email, password);
+    await setSessionCookie(secret, new Date(expire));
     return { ok: true };
   } catch {
     return { ok: false, error: "邮箱或密码错误" };
