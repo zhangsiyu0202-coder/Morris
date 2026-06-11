@@ -10,6 +10,7 @@ import {
   type ToolResultEnvelope,
 } from "../envelope";
 import type { AssistantToolContext } from "../tool-types";
+import type { ToolMetadata } from "../tool-metadata";
 import { embedText, EMBEDDING_DIM } from "@/lib/server/embedder-qwen";
 
 /**
@@ -180,8 +181,21 @@ async function fulltextFallback(
 
 export function buildSearchAcrossStudiesTool(ctx: AssistantToolContext) {
   const { ownerUserId } = ctx;
+  const metadata: ToolMetadata = {
+    title: "跨 study 检索 Notebook",
+    description:
+      "在当前研究员所有 Notebook (跨 study) 中按语义检索相似的过往洞察。" +
+      "用于跨 study 引用 — 研究员问 '我之前研究过类似 X 吗' / '上次的 pricing 结论' 等。" +
+      "返回 top-N 匹配, 每条含 notebookShortId / headline / snippet / score。" +
+      "owner 级隔离 (永不跨 owner)。Notebook 数量过多或 embedding API 不可用时自动退化为 fulltext 检索 (response.fallback 字段标记)。",
+    annotations: { readOnly: true, destructive: false, idempotent: true },
+    requiredScopes: ["notebook:read"],
+    type: "read",
+    enabled: true,
+  };
   return {
     contextPromptTemplate: undefined as string | undefined,
+    metadata,
     spec: tool({
       description:
         "在当前研究员所有 Notebook (跨 study) 中按语义检索相似的过往洞察。" +

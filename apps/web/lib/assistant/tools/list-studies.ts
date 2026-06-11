@@ -11,6 +11,7 @@ import {
   type ToolErrorArtifact,
 } from "../envelope";
 import type { AssistantToolContext } from "../tool-types";
+import type { ToolMetadata } from "../tool-metadata";
 
 interface ListStudiesArtifact {
   studies: Array<{
@@ -28,11 +29,25 @@ interface ListStudiesArtifact {
  */
 export function buildListStudiesTool(ctx: AssistantToolContext) {
   const { ownerUserId } = ctx;
+  const metadata: ToolMetadata = {
+    title: "列出调研",
+    description:
+      "列出当前账户下的所有调研及其状态与样本量。" +
+      "当用户问'我有哪些调研'、或需要先了解上下文再决定调用哪个工具 (analyzeData / searchInterviewData) 时调用。" +
+      "无入参 (空 zod object)。返回的 artifact.studies 数组每项含 id / title / status / version / updatedAt, 可直接用于后续工具的 studyId 入参串联。",
+    annotations: { readOnly: true, destructive: false, idempotent: true },
+    requiredScopes: ["study:read"],
+    type: "read",
+    enabled: true,
+  };
   return {
     contextPromptTemplate: undefined as string | undefined,
+    metadata,
     spec: tool({
       description:
-        "列出当前账户下的所有调研及其状态与样本量。当用户问有哪些调研、或需要先了解上下文再决定调用哪个工具时调用。",
+        "列出当前账户下的所有调研及其状态与样本量。" +
+        "当用户问'我有哪些调研'、或需要先了解上下文再决定调用哪个工具 (analyzeData / searchInterviewData) 时调用。" +
+        "无入参 (空 zod object)。返回的 artifact.studies 数组每项含 id / title / status / version / updatedAt, 可直接用于后续工具的 studyId 入参串联。",
       inputSchema: z.object({}),
       execute: async (): Promise<
         ToolResultEnvelope<ListStudiesArtifact | ToolErrorArtifact>

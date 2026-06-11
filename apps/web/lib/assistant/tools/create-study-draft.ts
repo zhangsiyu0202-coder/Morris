@@ -8,6 +8,7 @@ import {
   type ToolResultEnvelope,
 } from "../envelope";
 import type { AssistantToolContext } from "../tool-types";
+import type { ToolMetadata } from "../tool-metadata";
 
 interface DraftArtifact {
   title: string;
@@ -38,11 +39,27 @@ const STUDY_QUESTION_BANK = [
  * 不声明 contextPromptTemplate (与具体页面无关)。
  */
 export function buildCreateStudyDraftTool(_ctx: AssistantToolContext) {
+  const metadata: ToolMetadata = {
+    title: "创建调研草稿",
+    description:
+      "[临时] 根据研究目标创建一份调研草稿提案 (标题 / 研究目标 / 建议问题列表)。" +
+      "当用户说'帮我设计一个调研'、'我想了解 X 怎么做'时调用。" +
+      "audience 可为 null 表示未指定; questionCount 在闭区间 [3..10] 之间; 返回 questions 按 order 升序。" +
+      "当前为 mock 输出 (只在对话中展示, 不写入 Appwrite); 真实创建流程待 survey-editor sub-spec 落地后, type 升级为 write 并接通持久化。",
+    annotations: { readOnly: true, destructive: false, idempotent: false },
+    requiredScopes: [],
+    type: "draft",
+    enabled: true,
+  };
   return {
     contextPromptTemplate: undefined as string | undefined,
+    metadata,
     spec: tool({
       description:
-        "[临时] 根据研究目标创建一份调研草稿,产出标题、研究目标和建议问题列表。当前为 mock 输出;真实创建流程待 survey-editor 子 spec 落地后再接通。",
+        "[临时] 根据研究目标创建一份调研草稿提案 (标题 / 研究目标 / 建议问题列表)。" +
+        "当用户说'帮我设计一个调研'、'我想了解 X 怎么做'时调用。" +
+        "audience 可为 null 表示未指定; questionCount 在闭区间 [3..10] 之间; 返回 questions 按 order 升序。" +
+        "当前为 mock 输出 (只在对话中展示, 不写入 Appwrite); 真实创建流程待 survey-editor sub-spec 落地后, type 升级为 write 并接通持久化。",
       inputSchema: z.object({
         goal: z.string().min(1).describe("研究目标的自然语言描述"),
         audience: z.string().nullable().describe("目标受访人群,可为空"),

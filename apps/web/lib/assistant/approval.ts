@@ -80,3 +80,66 @@ export const hasPendingApproval: StopCondition<AssistantTools> = ({ steps }) =>
       return false;
     }),
   );
+
+// ============================================================
+// withApprovalGuard (Wave C T12 / morris-tool-metadata R4)
+// ============================================================
+
+import type { ToolMetadata } from "./tool-metadata";
+import type { ToolErrorArtifact, ToolResultEnvelope } from "./envelope";
+
+/**
+ * 工具 execute 函数的统一签名 (与 envelope.ts 的 ToolResultEnvelope 对齐)。
+ *
+ * destructive 工具有可能在 input 上携带 `approvalToken`(由 confirm 端点回流),
+ * 因此入参类型需要 extend `{ approvalToken?: string }`。非 destructive 工具不读这个字段。
+ */
+type ToolExecute<TInput, TArtifact> = (
+  input: TInput,
+) => Promise<ToolResultEnvelope<TArtifact | ToolErrorArtifact>>;
+
+/**
+ * 把一个工具的 execute 套上 approval 守卫 (R4 / morris-tool-metadata).
+ *
+ * 行为:
+ * - metadata.annotations.destructive === false → 直接 return execute (零开销 identity wrapper, 类型不变)。
+ * - metadata.annotations.destructive === true 且 input 不带 approvalToken → 不调 execute, 直接
+ *   返回 proposeApproval(...) 形态的 envelope (artifact 为 ApprovalEnvelope), ToolLoopAgent 通过
+ *   hasPendingApproval stop 条件停止当前回合。
+ * - destructive === true 且 input.approvalToken 已存在 → 调原 execute (本 Spec 仅准备骨架,
+ *   验证 token 的逻辑落到 confirm 端点; 当前 7 工具都不会走到这里因为全是 destructive=false).
+ *
+ * 设计取舍 (见 design.md §6):
+ * - 包装是默认行为, 工具 builder 不允许内部自调 proposeApproval (避免散落判断)。
+ * - destructive=false 时类型层用 narrowing 保 union 不被污染。
+ * - approvalToken 走 input 字段而非 ToolLoopAgent context 旁路, 与 confirm 端点的 POST body 一致。
+ */
+export function withApprovalGuard<
+  TInput extends { approvalToken?: string },
+  TArtifact,
+>(
+  toolName: string,
+  metadata: ToolMetadata,
+  execute: ToolExecute<TInput, TArtifact>,
+): ToolExecute<TInput, TArtifact | ApprovalEnvelope> {
+  if (!metadata.annotations.destructive) {
+    return execute as ToolExecute<TInput, TArtifact | ApprovalEnvelope>;
+  }
+
+  return async (input) => {
+    if (input.approvalToken) {
+      // confirm 端点回流: 真正执行。本 Spec 仅占位; survey-editor 等消费 spec
+      // 实现 token 校验逻辑后, 这里直接转发即可。
+      return execute(input) as Promise<ToolResultEnvelope<TArtifact | ApprovalEnvelope | ToolErrorArtifact>>;
+    }
+    const proposal = proposeApproval({
+      toolName,
+      preview: `执行 ${metadata.title}`,
+      payload: input as Record<string, unknown>,
+    });
+    return {
+      content: `已提议 ${metadata.title}, 等待研究员确认。`,
+      artifact: proposal,
+    };
+  };
+}

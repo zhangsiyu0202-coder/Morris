@@ -23,6 +23,8 @@ import {
   EMPTY_PAGE_CONTEXT,
   type PageContext,
 } from "./page-context";
+import type { ToolMetadata } from "./tool-metadata";
+import { renderAgentContext, type AgentContext } from "./agent-context";
 
 // ---------------- 静态段 (字节级稳定) ----------------
 
@@ -43,7 +45,29 @@ export const WORKSTYLE = `工作方式:
 3. 工具返回采用 { content, artifact } 结构: content 给你解读, artifact 给 UI / 后续工具用。回答用户时引用关键字段即可, 不必逐字复述。
 4. 对≥3 步的复合任务: 先用 todoWrite 列出步骤; 每完成一步, 再用 todoWrite 把该步标 done 并把下一步标 in_progress。
 5. createNotebook 触发条件: 当用户明确请求"把这个保存为 notebook" / "针对这个 study 给我分析 X 个问题" / "把上面的对话总结成研究文档"等场景时调用。Markdown content 应遵循 5 段标题模板: # {Question} → ## 核心结论 → ## 主题分析 → ## 立场分歧 → ## 行动建议; 在 themes / quotes / 视频片段处嵌入对应 merism-* tag (sessionId/segmentIndex/startMs 等参数从前置 searchInterviewData / analyzeData 工具的 artifact 拿)。研究员对结果不满意时不要尝试 update, 而是按反馈重新调用 createNotebook 生成新一份 (旧 notebook 保留可在 /notebooks 列表删除)。
-6. searchAcrossStudies 触发条件: 当用户问 "我之前研究过类似 X 吗" / "上次的 pricing 结论是什么" / "找一下涉及 churn 的过往洞察" / "我有没有写过关于 onboarding 的 notebook" 等"过去研究" / "跨 study 引用"类问题时调用。studyId=null 表示跨所有 study; 限定到具体 study 时传 studyId。结果 fallback="scale-fulltext-only" 时告知用户结果是 fulltext (不是语义) 排序; fallback="embedding-error" 时建议用户晚些再试。`;
+6. 重要事实主动 create memory: 用户透露调研偏好 / 业务背景 / 技术约束时, 先用 manageMemories(action="query") 看是否已存; 没存则 manageMemories(action="create"). 不要每次对话末显式问 "要保存吗", 静默 create + 让用户在 /memories 页 (Wave 2) 按需删除. 当用户问 "我之前提过什么 X" / "上次的偏好" 时也用 manageMemories(action="query") 查.
+7. searchAcrossStudies 触发条件: 当用户问 "我之前研究过类似 X 吗" / "上次的 pricing 结论是什么" / "找一下涉及 churn 的过往洞察" / "我有没有写过关于 onboarding 的 notebook" 等"过去研究" / "跨 study 引用"类问题时调用。studyId=null 表示跨所有 study; 限定到具体 study 时传 studyId。结果 fallback="scale-fulltext-only" 时告知用户结果是 fulltext (不是语义) 排序; fallback="embedding-error" 时建议用户晚些再试。`;
+
+/**
+ * 从 manifest 自动生成 <tools_overview> 段内容 (R2 §5 / morris-tool-metadata).
+ *
+ * 取每个 enabled 工具的 title + description 首句, 截到 120 字符 (prompt cache 友好)。
+ * manifest 改了 prompt 自动跟 — 不再可能 description 改了但 overview 段忘改。
+ *
+ * 仍是字节级稳定的 (同一组 metadata 输入产出同一份字符串), 与 morris-agent-hardening
+ * R3 §5 的 prompt cache 命中要求一致。
+ */
+export function buildToolsOverview(manifest: Record<string, ToolMetadata>): string {
+  const enabled = Object.entries(manifest).filter(([, m]) => m.enabled);
+  const lines = enabled.map(([name, m]) => `- ${name}: ${m.title} — ${oneLine(m.description)}`);
+  return `Morris 当前可用工具:\n${lines.join("\n")}`;
+}
+
+/** 取 description 第一句 (中英句号 / 换行) 截到 120 字符。空串保护避免 oneLine("") -> undefined。 */
+function oneLine(s: string): string {
+  const firstSentence = s.split(/[。\n]/)[0]?.trim() ?? "";
+  return firstSentence.length > 120 ? firstSentence.slice(0, 117) + "..." : firstSentence;
+}
 
 export const STYLE = `风格:
 - 全程使用简体中文, 语气专业、克制、有洞察。
@@ -71,10 +95,40 @@ export interface ToolContextEntry {
   rendered: string;
 }
 
+export interface MemoryItem {
+  content: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface BuildSystemPromptArgs {
   todos?: TodoItem[];
   pageContext?: PageContext;
   toolContexts?: ToolContextEntry[];
+  /** Long-term memories to prepend (rendered as <long_term_memory>). */
+  memories?: ReadonlyArray<MemoryItem>;
+  /**
+   * 工具 manifest. 当提供时 <tools_overview> 段从 manifest 自动生成 (R2 §5);
+   * 缺省时回退到静态 TOOLS_OVERVIEW 常量, 保持向后兼容 (R9).
+   */
+  manifest?: Record<string, ToolMetadata>;
+  /**
+   * 当前研究员 / 项目 / 时间 / URL 模式的运行时上下文 (P1-1, morris-conversation-persistence).
+   * 提供时渲染成 <agent_context>...</agent_context> 段, 紧跟 <agent_info> 之后。
+   * 缺省时整段省略, 保留向后兼容; 现有测试调用 buildSystemPrompt() 不会破。
+   *
+   * 设计取舍 — 段位放在 <agent_info> 之后而非末尾:
+   *   方案 A "agent_info 后": 把 "你是谁 / 现在几点" 与角色定义放在一起,
+   *           语义连贯。代价: 后续静态段 (tools_overview / workstyle / style /
+   *           error_protocol) 因为前面有动态分钟级字段, 只在分钟稳定窗口内
+   *           命中 prompt cache。
+   *   方案 B "末尾追加": 静态前缀全部可缓存, 但 LLM 阅读顺序里身份信息出现
+   *           在工作流说明之后, 实测 DeepSeek 在工具选择阶段会更倾向先看到的
+   *           上下文做出 anchor 决策。
+   * 选 A: 借鉴 PostHog `PROJECT_ORG_USER_CONTEXT_PROMPT` 的位置 (system 头部),
+   * 优先语义清晰; cache 命中损失在分钟级时间字段下可接受 (一分钟内多轮工具调用
+   * 共享同一份 prompt, 与 ToolLoopAgent 单回合内多步的常见用法兼容)。
+   */
+  agentContext?: AgentContext;
 }
 
 function tag(name: string, body: string): string {
@@ -83,6 +137,19 @@ function tag(name: string, body: string): string {
 
 function renderTodos(todos: TodoItem[]): string {
   return todos.map((t) => `- [${t.status}] ${t.title}`).join("\n");
+}
+
+function renderMemories(memories: ReadonlyArray<MemoryItem>): string {
+  // Each memory rendered as: "- {content}\n  metadata: {json}"
+  // Empty metadata is omitted to keep the prompt tight.
+  const lines = memories.map((m) => {
+    const metaStr =
+      m.metadata && Object.keys(m.metadata).length > 0
+        ? `\n  metadata: ${JSON.stringify(m.metadata)}`
+        : "";
+    return `- ${m.content}${metaStr}`;
+  });
+  return `${lines.join("\n")}\n(共 ${memories.length} 条; 完整管理用 manageMemories 工具)`;
 }
 
 /**
@@ -94,16 +161,29 @@ export function buildSystemPrompt(args: BuildSystemPromptArgs = {}): string {
   const pageContext = args.pageContext ?? EMPTY_PAGE_CONTEXT;
   const toolContexts = args.toolContexts ?? [];
 
-  const sections: string[] = [
-    tag("agent_info", AGENT_INFO),
-    tag("tools_overview", TOOLS_OVERVIEW),
+  const overviewBody = args.manifest ? buildToolsOverview(args.manifest) : TOOLS_OVERVIEW;
+  const sections: string[] = [tag("agent_info", AGENT_INFO)];
+
+  // <agent_context> 紧跟 <agent_info>, 仅在调用方提供时插入 (向后兼容: 旧测试
+  // / 旧 SYSTEM_INSTRUCTIONS 调用 buildSystemPrompt() 不会出现这段)。
+  if (args.agentContext) {
+    sections.push(tag("agent_context", renderAgentContext(args.agentContext)));
+  }
+
+  sections.push(
+    tag("tools_overview", overviewBody),
     tag("workstyle", WORKSTYLE),
     tag("style", STYLE),
     tag("error_protocol", ERROR_PROTOCOL),
-  ];
+  );
 
   if (todos.length > 0) {
     sections.push(tag("current_todo", renderTodos(todos)));
+  }
+
+  const memories = args.memories ?? [];
+  if (memories.length > 0) {
+    sections.push(tag("long_term_memory", renderMemories(memories)));
   }
 
   const pageBody = buildPageContextSection(pageContext);

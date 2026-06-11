@@ -1,44 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock the queries layer at the module boundary so the tool factory's static
-// import resolves to spies. Each spy is reset before every test.
-vi.mock("@/lib/queries", () => ({
-  listStudies: vi.fn(),
-  searchTranscriptSegments: vi.fn(),
-  getLatestAnalysisReport: vi.fn(),
-  parseSurveyReportBody: vi.fn(),
-  getStudy: vi.fn(),
-}));
-vi.mock("@/lib/server/notebooks", () => ({
-  saveNotebookFromMarkdown: vi.fn(),
-}));
-vi.mock("@/lib/server/embedder-qwen", () => ({
-  embedText: vi.fn(),
-  EMBEDDING_DIM: 1024,
-  EMBEDDING_MODEL_TAG: "qwen.text-embedding-v3",
-}));
-// node-appwrite is required by tools/search-across-studies.ts at module load
-// time. The tool itself only constructs the client inside execute(), so any
-// runtime call would fail without env vars set; for tools.test.ts we don't
-// invoke that path. Provide a minimal mock to satisfy ESM module resolution.
-vi.mock("node-appwrite", () => ({
-  Client: class {
-    setEndpoint() {
-      return this;
-    }
-    setProject() {
-      return this;
-    }
-    setKey() {
-      return this;
-    }
-  },
-  Databases: class {},
-  Query: { equal: () => ({}), search: () => ({}), select: () => ({}), limit: () => ({}) },
-  ID: { unique: () => "mock-id" },
-  Permission: { read: () => "", update: () => "", delete: () => "" },
-  Role: { user: () => "" },
-}));
+// Mock server-only deps at module boundary so tool factories' static imports
+// resolve to spies. factory 实现集中在 fixtures/install-mocks.ts. async + dynamic
+// import 绕过 vitest hoisting (testing.md::Test double pattern).
+vi.mock("@/lib/queries", async () => (await import("./fixtures/install-mocks")).fakeQueriesModule());
+vi.mock("@/lib/server/notebooks", async () => (await import("./fixtures/install-mocks")).fakeNotebooksServerModule());
+vi.mock("@/lib/server/embedder-qwen", async () => (await import("./fixtures/install-mocks")).fakeEmbedderQwenModule());
+vi.mock("node-appwrite", async () => (await import("./fixtures/install-mocks")).fakeNodeAppwriteModule());
 
 import * as queries from "@/lib/queries";
 import { buildAssistantTools } from "../tools";

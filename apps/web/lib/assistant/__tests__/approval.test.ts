@@ -111,3 +111,117 @@ describe("hasPendingApproval stop condition", () => {
     expect(await cond({ steps: [] })).toBe(false);
   });
 });
+
+// ============================================================
+// withApprovalGuard (Wave C T14 / morris-tool-metadata R4)
+// ============================================================
+
+import { withApprovalGuard } from "../approval";
+import type { ToolMetadata } from "../tool-metadata";
+import { vi } from "vitest";
+
+const READ_METADATA: ToolMetadata = {
+  title: "Read tool",
+  description:
+    "Test fixture for a read tool: long enough to satisfy MIN_DESCRIPTION_CHARS = 120 if validated, " +
+    "but withApprovalGuard does not enforce description length, only annotations.destructive.",
+  annotations: { readOnly: true, destructive: false, idempotent: true },
+  requiredScopes: [],
+  type: "read",
+  enabled: true,
+};
+
+const WRITE_DESTRUCTIVE_METADATA: ToolMetadata = {
+  title: "Destructive write tool",
+  description:
+    "Test fixture for a destructive write tool: long enough to satisfy MIN_DESCRIPTION_CHARS = 120, " +
+    "destructive=true triggers withApprovalGuard's proposal path when input lacks approvalToken.",
+  annotations: { readOnly: false, destructive: true, idempotent: true },
+  requiredScopes: ["test:write"],
+  type: "write",
+  enabled: true,
+};
+
+describe("withApprovalGuard — destructive=false (identity wrapper)", () => {
+  it("returns the original execute reference (zero-overhead)", () => {
+    const exec = vi.fn(async (input: { foo: string; approvalToken?: string }) => ({
+      content: "ok",
+      artifact: { foo: input.foo },
+    }));
+    const wrapped = withApprovalGuard<{ foo: string; approvalToken?: string }, { foo: string }>(
+      "noopTool",
+      READ_METADATA,
+      exec as never,
+    );
+    // identity: 同一个 reference (R4 §2 零开销保证)
+    expect(wrapped).toBe(exec);
+  });
+
+  it("forwards calls to the underlying execute", async () => {
+    const exec = vi.fn(async () => ({
+      content: "ok",
+      artifact: { value: 42 },
+    }));
+    const wrapped = withApprovalGuard<{ approvalToken?: string }, { value: number }>(
+      "noopTool",
+      READ_METADATA,
+      exec as never,
+    );
+    const result = await wrapped({});
+    expect(exec).toHaveBeenCalledTimes(1);
+    expect((result.artifact as { value?: number }).value).toBe(42);
+  });
+});
+
+describe("withApprovalGuard — destructive=true without approvalToken", () => {
+  it("returns pending_approval envelope without calling execute", async () => {
+    const exec = vi.fn(async () => ({
+      content: "should not be called",
+      artifact: { value: 0 },
+    }));
+    const wrapped = withApprovalGuard<{ surveyId: string; approvalToken?: string }, { value: number }>(
+      "destructiveTool",
+      WRITE_DESTRUCTIVE_METADATA,
+      exec as never,
+    );
+    const result = await wrapped({ surveyId: "abc" });
+    expect(exec).not.toHaveBeenCalled();
+    expect(isPendingApprovalArtifact(result.artifact)).toBe(true);
+    const proposal = result.artifact as ApprovalEnvelope;
+    expect(proposal.toolName).toBe("destructiveTool");
+    expect(proposal.preview).toContain("Destructive write tool");
+    expect(proposal.payload).toMatchObject({ surveyId: "abc" });
+    expect(typeof proposal.proposalId).toBe("string");
+    expect(proposal.proposalId.length).toBeGreaterThan(0);
+  });
+
+  it("payload is a copy, not a live reference to input", async () => {
+    const exec = vi.fn(async () => ({ content: "x", artifact: {} }));
+    const wrapped = withApprovalGuard<{ foo: string; approvalToken?: string }, Record<string, unknown>>(
+      "destructiveTool",
+      WRITE_DESTRUCTIVE_METADATA,
+      exec as never,
+    );
+    const input: { foo: string; approvalToken?: string } = { foo: "bar" };
+    const result = await wrapped(input);
+    const proposal = result.artifact as ApprovalEnvelope;
+    // 改 input 不应影响 envelope 里的 payload
+    input.foo = "mutated";
+    expect((proposal.payload as { foo?: string }).foo).toBe("bar");
+  });
+});
+
+describe("withApprovalGuard — destructive=true with approvalToken (confirm path)", () => {
+  it("calls the original execute when approvalToken is present", async () => {
+    const exec = vi.fn(async (input: { surveyId: string; approvalToken?: string }) => ({
+      content: "executed after approval",
+      artifact: { surveyId: input.surveyId, approvedWith: input.approvalToken },
+    }));
+    const wrapped = withApprovalGuard("destructiveTool", WRITE_DESTRUCTIVE_METADATA, exec);
+    const result = await wrapped({ surveyId: "abc", approvalToken: "valid-token-stub" });
+    expect(exec).toHaveBeenCalledTimes(1);
+    expect((result.artifact as { surveyId: string }).surveyId).toBe("abc");
+    expect((result.artifact as { approvedWith?: string }).approvedWith).toBe("valid-token-stub");
+    expect(isPendingApprovalArtifact(result.artifact)).toBe(false);
+  });
+});
