@@ -109,6 +109,10 @@ export const SurveySchema = z.object({
   title: z.string(),
   status: SurveyStatus.default("draft"),
   flowConfig: json.default({}),
+  // survey-editor moderator-instruction increment: a dedicated (not flowConfig)
+  // field carrying the researcher's directives for the AI voice moderator
+  // (tone/pacing-as-behavior/style). Default "" so existing surveys stay valid.
+  moderatorInstruction: z.string().default(""),
   version: z.number().int().nonnegative().default(1),
   updatedAt: z.string().datetime(),
 });

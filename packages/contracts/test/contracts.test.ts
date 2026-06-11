@@ -344,6 +344,51 @@ describe("contracts: survey draft shape", () => {
     expect(metadata.runtimeStudy?.sections[0]?.questions[0]?.questionId).toBe("question-1-1");
     expect(metadata.workflowConfig?.sections[0]?.questions[0]?.questionId).toBe("question-1-1");
   });
+
+  it("composes moderatorInstruction into supervisorInstruction (persona prepended), default empty", () => {
+    const baseDraft = {
+      title: "Retention study",
+      researchGoal: "Understand what keeps users active.",
+      targetAudience: "Recently activated users.",
+      introScript: "Thanks for talking with me today.",
+      sections: [
+        {
+          title: "Opening",
+          objective: "Get grounded in a recent experience.",
+          questions: [
+            {
+              questionText: "Tell me about a recent time you used the product.",
+              questionType: "open_ended",
+              probeLevel: "standard",
+              probeInstruction: "Ask what they were trying to accomplish.",
+            },
+          ],
+        },
+      ],
+    };
+
+    // default "" => operational base only, no persona prefix.
+    const draftNoMod = SurveyDraftSchema.parse(baseDraft);
+    expect(draftNoMod.moderatorInstruction).toBe("");
+    const wfNoMod = buildInterviewWorkflowConfigFromDraft({
+      surveyId: "survey-1",
+      sessionId: "session-1",
+      draft: draftNoMod,
+    });
+    expect(wfNoMod.supervisorInstruction.startsWith("Guide a qualitative interview")).toBe(true);
+
+    // present => persona prepended, operational base still present.
+    const wfMod = buildInterviewWorkflowConfigFromDraft({
+      surveyId: "survey-1",
+      sessionId: "session-1",
+      draft: SurveyDraftSchema.parse({
+        ...baseDraft,
+        moderatorInstruction: "Warm, unhurried; let pauses breathe; never read questions verbatim.",
+      }),
+    });
+    expect(wfMod.supervisorInstruction.startsWith("Warm, unhurried")).toBe(true);
+    expect(wfMod.supervisorInstruction).toContain("Guide a qualitative interview");
+  });
 });
 
 describe("contracts: AnalysisReport scope invariants (ADR-0003 D1/D4)", () => {

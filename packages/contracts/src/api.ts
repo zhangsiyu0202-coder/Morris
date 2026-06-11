@@ -224,6 +224,12 @@ export const SurveyDraftSchema = z.object({
   researchGoal: z.string().min(1),
   targetAudience: z.string().min(1),
   introScript: z.string().min(1),
+  // survey-editor moderator-instruction increment: researcher-authored directives
+  // for the AI voice moderator (tone, pacing-as-behavior, interview style). The
+  // interview GOAL is NOT duplicated here — it stays in `researchGoal`. Composed
+  // into InterviewWorkflowConfig.supervisorInstruction at build time. Default ""
+  // keeps existing drafts valid and means "use the operational default only".
+  moderatorInstruction: z.string().default(""),
   sections: z.array(SurveyDraftSectionSchema).min(1),
 });
 
@@ -746,12 +752,21 @@ export function buildInterviewWorkflowConfigFromDraft(
     BuildInterviewWorkflowConfigInputSchema.parse(input);
   const runtimeStudy = buildInterviewRuntimeStudy({ surveyId, draft });
 
+  // Operational base: how to run the interview (section order, probes). Stable.
+  const operationalInstruction = `Guide a qualitative interview for "${runtimeStudy.studyTitle}". Use the intro script, follow the section order, and use probe instructions when configured.`;
+  // Moderator persona/delivery (tone, pacing-as-behavior, style) authored by the
+  // researcher on the survey. Prepended so it frames the whole interview; the
+  // operational base still follows. An explicit `supervisorInstruction` arg wins
+  // outright (used by callers that already composed their own).
+  const moderator = draft.moderatorInstruction?.trim();
+  const composedInstruction = moderator
+    ? `${moderator}\n\n${operationalInstruction}`
+    : operationalInstruction;
+
   return InterviewWorkflowConfigSchema.parse({
     surveyId,
     sessionId,
-    supervisorInstruction:
-      supervisorInstruction ??
-      `Guide a qualitative interview for "${runtimeStudy.studyTitle}". Use the intro script, follow the section order, and use probe instructions when configured.`,
+    supervisorInstruction: supervisorInstruction ?? composedInstruction,
     sections: runtimeStudy.sections.map((section) => ({
       sectionId: section.sectionId,
       title: section.title,

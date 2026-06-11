@@ -8,7 +8,7 @@ import {
   type SurveyStatus,
 } from "@merism/contracts";
 import { getServerClient, DATABASE_ID, Query } from "@/lib/queries/client";
-import { requireOwnerUserId } from "@/lib/owner";
+import { requireOwnerUserId } from "@/lib/auth/owner";
 
 /**
  * 编辑器写路径(Appwrite)。把编辑态 `SurveyDraft` 规范化落到
@@ -72,6 +72,7 @@ export async function createSurvey(title: string): Promise<string> {
     title: title.trim() || "未命名调研",
     status: "draft",
     flowConfig: JSON.stringify({}),
+    moderatorInstruction: "",
     version: 1,
     updatedAt: new Date().toISOString(),
   });
@@ -106,6 +107,7 @@ export async function saveSurveyDraft(surveyId: string, draftInput: SurveyDraft)
       targetAudience: draft.targetAudience,
       introScript: draft.introScript,
     }),
+    moderatorInstruction: draft.moderatorInstruction,
     version: version + 1,
     updatedAt: new Date().toISOString(),
   });

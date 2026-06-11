@@ -110,6 +110,9 @@ export const COLLECTIONS: CollectionDef[] = [
         default: "draft",
       },
       { key: "flowConfig", type: "string", size: JSON_SIZE, required: false, default: "{}" },
+      // survey-editor moderator-instruction increment: dedicated long-text column
+      // (not flowConfig) for the AI moderator delivery directives.
+      { key: "moderatorInstruction", type: "string", size: TEXT_SIZE, required: false, default: "" },
       { key: "version", type: "integer", required: false, default: 1 },
       { key: "updatedAt", type: "datetime", required: true },
     ],
