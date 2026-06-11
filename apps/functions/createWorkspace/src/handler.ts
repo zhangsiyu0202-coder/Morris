@@ -19,9 +19,9 @@ export interface CreateWorkspaceDeps {
   generateWorkspaceId(): string;
   /** Create the Appwrite Team (= the workspace) and add the owner membership. */
   createTeam(workspaceId: string, name: string, ownerUserId: string): Promise<void>;
-  /** Write the denormalized membership view row (owner, active). */
-  createOwnerMembershipView(workspaceId: string, ownerUserId: string, createdAtIso: string): Promise<void>;
-  /** Owner occupies seat slot 0 (decision: the owner consumes a seat). */
+  /** Owner occupies seat slot 0 AND is the owner membership row (decision: the
+   *  owner consumes a seat). Doc id seat_<ws>_0 stays within Appwrite's 36-char
+   *  id limit, unlike a composite m_<ws>_<userId>. */
   claimOwnerSeat(workspaceId: string, ownerUserId: string): Promise<void>;
   /** Seed the trial subscription stub. */
   createTrialSubscription(workspaceId: string, planKey: PlanKeyValue, createdAtMs: number): Promise<void>;
@@ -47,14 +47,12 @@ export async function createWorkspace(
   const ownerUserId = deps.callerUserId;
   const workspaceId = deps.generateWorkspaceId();
   const createdAtMs = deps.now();
-  const createdAtIso = new Date(createdAtMs).toISOString();
 
   try {
     // The whole bootstrap is one unit (PostHog wraps org+owner-membership in a
     // transaction; Appwrite has no cross-resource txn, so we roll back the team
     // on ANY failure — including a partial team where owner-membership failed).
     await deps.createTeam(workspaceId, parsed.data.name, ownerUserId);
-    await deps.createOwnerMembershipView(workspaceId, ownerUserId, createdAtIso);
     await deps.claimOwnerSeat(workspaceId, ownerUserId);
     await deps.createTrialSubscription(workspaceId, DEFAULT_PLAN, createdAtMs);
     await deps.seedQuota(workspaceId, DEFAULT_PLAN);

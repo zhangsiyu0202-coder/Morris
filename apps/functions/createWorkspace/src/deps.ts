@@ -26,15 +26,6 @@ export function createRealDeps(callerUserId: string | null): CreateWorkspaceDeps
       await teams.createMembership(workspaceId, ["owner"], undefined, ownerUserId);
     },
 
-    async createOwnerMembershipView(workspaceId, ownerUserId, createdAtIso) {
-      await db.createDocument(
-        DB_ID,
-        "workspace_memberships",
-        `m_${workspaceId}_${ownerUserId}`,
-        { workspaceId, userId: ownerUserId, role: "owner", status: "active", createdAt: createdAtIso },
-        [Permission.read(Role.team(workspaceId))],
-      );
-    },
 
     async claimOwnerSeat(workspaceId, ownerUserId) {
       // Owner occupies seat slot 0; inviteMember's CAS then claims [1, seats).

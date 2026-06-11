@@ -1,7 +1,7 @@
 // Real deps: Stripe (Checkout) + Appwrite (role lookup). Integration-only.
 // Stripe is the source of truth for plan state; this only starts the session.
 import Stripe from "stripe";
-import { Client, Databases } from "node-appwrite";
+import { Client, Databases, Query } from "node-appwrite";
 import type { ChangePlanDeps } from "./handler.js";
 
 const DB_ID = "merism";
@@ -24,7 +24,8 @@ export function createRealDeps(callerUserId: string | null): ChangePlanDeps {
     callerUserId,
     async getCallerRole(workspaceId, userId) {
       try {
-        return resolveRole(await db.getDocument(DB_ID, "workspace_memberships", `m_${workspaceId}_${userId}`));
+        const res = await db.listDocuments(DB_ID, "workspace_memberships", [Query.equal("workspaceId", workspaceId), Query.equal("userId", userId), Query.limit(1)]);
+        return resolveRole(res.documents[0]);
       } catch {
         return null;
       }

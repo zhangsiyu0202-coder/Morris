@@ -66,7 +66,7 @@ export function createRealDeps(): AggregateDeps {
     },
 
     async upsertCounter(counter: UsageRollup["counter"]) {
-      const id = `uc_${counter.workspaceId}_${counter.periodStart}`;
+      const id = `uc_${counter.workspaceId}_${counter.periodStart.slice(0, 7).replace("-", "")}`;
       await upsertDoc(db, "usage_counters", id, counter, [Permission.read(Role.team(counter.workspaceId))]);
     },
 

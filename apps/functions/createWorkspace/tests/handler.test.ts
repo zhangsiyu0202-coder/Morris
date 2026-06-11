@@ -7,7 +7,6 @@ function makeDeps(over: Partial<CreateWorkspaceDeps> = {}): CreateWorkspaceDeps 
     now: () => 1_000_000,
     generateWorkspaceId: () => "ws_fixed",
     createTeam: vi.fn(async () => {}),
-    createOwnerMembershipView: vi.fn(async () => {}),
     claimOwnerSeat: vi.fn(async () => {}),
     seedQuota: vi.fn(async () => {}),
     createTrialSubscription: vi.fn(async () => {}),
@@ -23,7 +22,6 @@ describe("createWorkspace (ADR 0006 M3)", () => {
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ workspaceId: "ws_fixed", ownerUserId: "u1", planKey: DEFAULT_PLAN });
     expect(deps.createTeam).toHaveBeenCalledWith("ws_fixed", "Acme", "u1");
-    expect(deps.createOwnerMembershipView).toHaveBeenCalledWith("ws_fixed", "u1", new Date(1_000_000).toISOString());
     expect(deps.createTrialSubscription).toHaveBeenCalledWith("ws_fixed", DEFAULT_PLAN, 1_000_000);
     expect(deps.claimOwnerSeat).toHaveBeenCalledWith("ws_fixed", "u1");
     expect(deps.seedQuota).toHaveBeenCalledWith("ws_fixed", DEFAULT_PLAN);
@@ -53,7 +51,6 @@ describe("createWorkspace (ADR 0006 M3)", () => {
     const r = await createWorkspace({ name: "Acme" }, deps);
     expect(r.status).toBe(500);
     expect(deps.deleteTeam).toHaveBeenCalledWith("ws_fixed");
-    expect(deps.createOwnerMembershipView).not.toHaveBeenCalled();
   });
 
   it("rolls back the team when a later step fails", async () => {

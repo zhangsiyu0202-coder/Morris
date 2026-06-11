@@ -1,7 +1,7 @@
 // Real deps: Appwrite Server SDK (Teams + Databases). Integration-tested only.
 // Seat slots are claimed as deterministic-id rows in workspace_memberships
 // (`seat_<ws>_<k>`); the create-with-id 409 is the CAS gate.
-import { Client, Teams, Databases, Permission, Role } from "node-appwrite";
+import { Client, Teams, Databases, Permission, Role, Query } from "node-appwrite";
 import type { InviteMemberDeps, WorkspaceRoleResolved } from "./handler.js";
 
 const DB_ID = "merism";
@@ -20,8 +20,8 @@ export function createRealDeps(callerUserId: string | null): InviteMemberDeps {
 
     async getCallerRole(workspaceId, userId): Promise<WorkspaceRoleResolved> {
       try {
-        const doc = await db.getDocument(DB_ID, "workspace_memberships", `m_${workspaceId}_${userId}`);
-        const role = (doc as { role?: string }).role;
+        const res = await db.listDocuments(DB_ID, "workspace_memberships", [Query.equal("workspaceId", workspaceId), Query.equal("userId", userId), Query.limit(1)]);
+        const role = (res.documents[0] as unknown as { role?: string } | undefined)?.role;
         if (role === "owner" || role === "admin" || role === "member") return role;
         return null;
       } catch {
