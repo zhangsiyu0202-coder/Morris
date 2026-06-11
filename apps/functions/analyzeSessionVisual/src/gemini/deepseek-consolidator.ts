@@ -10,6 +10,7 @@
 import { z } from "zod";
 import { generateText, Output } from "ai";
 import type { LanguageModel } from "ai";
+import { VISUAL_ANALYSIS_OUTCOMES, VisualSentimentSignalSchema } from "@merism/contracts";
 import { type Consolidator, type ConsolidatedSummary } from "./consolidate.js";
 import {
   VISUAL_CONSOLIDATION_SYSTEM,
@@ -17,7 +18,8 @@ import {
 } from "../prompts/visual-consolidation.js";
 
 // Schema mirrors ConsolidatedSummary; we let the SDK enforce shape on the
-// model output so we get predictable JSON.
+// model output so we get predictable JSON. Sentiment numbers + tags are
+// re-clamped/sanitized afterwards by validateAndClampConsolidatedSummary.
 const ConsolidatedSummarySchema = z.object({
   summary: z.string().min(1),
   sentiment: z.enum(["positive", "neutral", "negative", "mixed"]),
@@ -33,6 +35,14 @@ const ConsolidatedSummarySchema = z.object({
       }),
     )
     .default([]),
+  // Gap D: numeric frustration model.
+  frustrationScore: z.number().min(0).max(1).default(0),
+  outcome: z.enum(VISUAL_ANALYSIS_OUTCOMES).default("successful"),
+  sentimentSignals: z.array(VisualSentimentSignalSchema).default([]),
+  // Gap E: fixed-taxonomy + freeform tags + highlight (sanitized in the clamp).
+  tagsFixed: z.array(z.string()).default([]),
+  tagsFreeform: z.array(z.string()).default([]),
+  highlighted: z.boolean().default(false),
 });
 
 export interface DeepSeekConsolidatorDeps {

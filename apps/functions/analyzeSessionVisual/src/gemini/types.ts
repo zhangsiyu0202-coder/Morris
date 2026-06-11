@@ -9,6 +9,7 @@
 // All types are pure data — no SDK or runtime imports.
 
 import type { VideoSegmentSpec } from "../video-segments.js";
+import type { VisualSentimentSignal } from "@merism/contracts";
 
 export interface UploadedVideo {
   /** Full Gemini Files API URI: https://generativelanguage.googleapis.com/v1beta/files/<id> */
@@ -62,6 +63,14 @@ export interface ConsolidatedSummary {
     description: string;
     segmentId?: string;
   }>;
+  // --- Gap D: numeric frustration model (optional; clamp fills defaults) ---
+  frustrationScore?: number;
+  outcome?: "successful" | "friction" | "frustrated" | "blocked";
+  sentimentSignals?: VisualSentimentSignal[];
+  // --- Gap E: tagging taxonomy + highlight (optional; clamp sanitizes) ---
+  tagsFixed?: string[];
+  tagsFreeform?: string[];
+  highlighted?: boolean;
 }
 
 export type { VideoSegmentSpec };

@@ -70,8 +70,17 @@ export async function uploadVideoToGemini(inputs: UploadVideoInputs): Promise<Up
   }
 
   // Track-before-wait (ADR 0005 D2): record the file now so a crash during the
-  // ACTIVE-wait still leaves it reclaimable by sweepGeminiFiles.
-  if (onUploadStarted) await onUploadStarted(uploaded.name);
+  // ACTIVE-wait still leaves it reclaimable by sweepGeminiFiles. Mirroring
+  // PostHog a2: if the tracking write itself fails, delete the just-uploaded
+  // file inline (best-effort) so it cannot orphan, then propagate.
+  if (onUploadStarted) {
+    try {
+      await onUploadStarted(uploaded.name);
+    } catch (err) {
+      await client.files.delete({ name: uploaded.name }).catch(() => undefined);
+      throw err;
+    }
+  }
 
   let file: GeminiFileResource = uploaded;
   const startedAt = now();

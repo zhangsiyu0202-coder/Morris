@@ -94,6 +94,29 @@ describe("uploadVideoToGemini", () => {
     expect(client.deleteSpy).toHaveBeenCalledWith({ name: "files/abc" });
   });
 
+  it("deletes the just-uploaded file and re-raises when onUploadStarted fails (Gap A rollback)", async () => {
+    const client = makeClient();
+    client.uploadSpy.mockResolvedValueOnce({ name: "files/abc", uri: "u", state: "ACTIVE" });
+    client.getSpy.mockResolvedValue({ name: "files/abc", uri: "u", state: "ACTIVE" });
+
+    await expect(
+      uploadVideoToGemini({
+        client,
+        videoBytes: new Uint8Array([1]),
+        mimeType: "video/mp4",
+        displayName: "s1",
+        pollIntervalMs: 1,
+        now: () => 0,
+        sleep: async () => undefined,
+        onUploadStarted: async () => {
+          throw new Error("job-row write failed");
+        },
+      }),
+    ).rejects.toThrow("job-row write failed");
+
+    expect(client.deleteSpy).toHaveBeenCalledWith({ name: "files/abc" });
+  });
+
   it("rejects empty video bytes", async () => {
     const client = makeClient();
     await expect(
