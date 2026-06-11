@@ -38,6 +38,9 @@ export function createRealDeps(callerUserId: string | null): ChangePlanDeps {
         cancel_url: process.env.STRIPE_CANCEL_URL ?? "",
         client_reference_id: workspaceId,
         metadata: { workspaceId, ownerUserId, planKey: targetPlan },
+        // Propagate workspace identity onto the SUBSCRIPTION (not just the
+        // Checkout session) so customer.subscription.* webhooks can resolve it.
+        subscription_data: { metadata: { workspaceId, planKey: targetPlan } },
       });
       return session.url ?? "";
     },

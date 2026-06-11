@@ -44,13 +44,14 @@ export async function createWorkspace(
   const createdAtMs = deps.now();
   const createdAtIso = new Date(createdAtMs).toISOString();
 
-  await deps.createTeam(workspaceId, parsed.data.name, ownerUserId);
   try {
+    // The whole bootstrap is one unit (PostHog wraps org+owner-membership in a
+    // transaction; Appwrite has no cross-resource txn, so we roll back the team
+    // on ANY failure — including a partial team where owner-membership failed).
+    await deps.createTeam(workspaceId, parsed.data.name, ownerUserId);
     await deps.createOwnerMembershipView(workspaceId, ownerUserId, createdAtIso);
     await deps.createTrialSubscription(workspaceId, DEFAULT_PLAN, createdAtMs);
   } catch {
-    // Team created but a later step failed: roll back the team so a retry is
-    // clean. Best-effort; never throw past the boundary.
     await deps.deleteTeam(workspaceId).catch(() => {});
     return { status: 500, body: { error: "internal_error" } };
   }

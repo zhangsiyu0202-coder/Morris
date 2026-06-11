@@ -40,6 +40,18 @@ describe("createWorkspace (ADR 0006 M3)", () => {
     expect(deps.createTeam).not.toHaveBeenCalled();
   });
 
+  it("rolls back when team creation itself fails (partial team)", async () => {
+    const deps = makeDeps({
+      createTeam: vi.fn(async () => {
+        throw new Error("membership add failed mid-bootstrap");
+      }),
+    });
+    const r = await createWorkspace({ name: "Acme" }, deps);
+    expect(r.status).toBe(500);
+    expect(deps.deleteTeam).toHaveBeenCalledWith("ws_fixed");
+    expect(deps.createOwnerMembershipView).not.toHaveBeenCalled();
+  });
+
   it("rolls back the team when a later step fails", async () => {
     const deps = makeDeps({
       createTrialSubscription: vi.fn(async () => {
