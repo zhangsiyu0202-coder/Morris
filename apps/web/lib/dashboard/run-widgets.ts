@@ -12,12 +12,14 @@ import {
   parseSurveyReportBody,
 } from "@/lib/queries";
 import { scopeForOwner } from "@/lib/auth/workspace";
+import type { TenantScope } from "@/lib/queries/client";
 import { getOrCreateStudyDashboard, type DashboardTileWithWidget } from "./queries";
 
 type WidgetRunner = (ctx: WidgetRunContext, widget: DashboardWidget) => Promise<unknown>;
 
 type WidgetRunContext = {
   ownerUserId: string;
+  scope: TenantScope;
   surveyId: string;
   surveyReport: SurveyAnalysisReportOutput | null;
 };
@@ -41,8 +43,8 @@ async function getSurveyReport(
 }
 
 const WIDGET_REGISTRY = {
-  study_progress: async ({ ownerUserId, surveyId }: WidgetRunContext) => {
-    const sessions = await listSessions(await scopeForOwner(ownerUserId), surveyId);
+  study_progress: async ({ scope, surveyId }: WidgetRunContext) => {
+    const sessions = await listSessions(scope, surveyId);
     const completedSessions = sessions.filter((session) => session.state === "completed").length;
     const totalSessions = sessions.length;
     return {
@@ -51,9 +53,9 @@ const WIDGET_REGISTRY = {
       completionRate: totalSessions === 0 ? 0 : Math.round((completedSessions / totalSessions) * 100),
     };
   },
-  recent_sessions: async ({ ownerUserId, surveyId }, widget) => {
+  recent_sessions: async ({ scope, surveyId }, widget) => {
     const limit = configLimit(widget, 6, 20);
-    const sessions = await listSessions(await scopeForOwner(ownerUserId), surveyId);
+    const sessions = await listSessions(scope, surveyId);
     return {
       sessions: sessions.slice(0, limit).map((session) => ({
         sessionId: session.$id,
@@ -75,9 +77,9 @@ const WIDGET_REGISTRY = {
   sentiment_breakdown: async ({ surveyReport }) => {
     return { sentimentBreakdown: surveyReport?.sentimentBreakdown ?? [] };
   },
-  bookmarked_quotes: async ({ ownerUserId, surveyId }, widget) => {
+  bookmarked_quotes: async ({ scope, surveyId }, widget) => {
     const limit = configLimit(widget, 5, 20);
-    const bookmarks = await listBookmarksForTenant(await scopeForOwner(ownerUserId), 100);
+    const bookmarks = await listBookmarksForTenant(scope, 100);
     return {
       bookmarks: bookmarks
         .filter((bookmark) => bookmark.surveyId === surveyId)
@@ -92,9 +94,9 @@ const WIDGET_REGISTRY = {
         })),
     };
   },
-  visual_moments: async ({ ownerUserId, surveyId }, widget) => {
+  visual_moments: async ({ scope, ownerUserId, surveyId }, widget) => {
     const limit = configLimit(widget, 5, 20);
-    const sessions = await listSessions(await scopeForOwner(ownerUserId), surveyId);
+    const sessions = await listSessions(scope, surveyId);
     const moments: Array<{
       sessionId: string;
       timestampMs: number;
@@ -164,6 +166,7 @@ export async function runDashboardWidgets(input: {
   const tiles = dashboard.tiles.filter((tile) => !requested || requested.has(tile.$id));
   const ctx: WidgetRunContext = {
     ownerUserId: input.ownerUserId,
+    scope: await scopeForOwner(input.ownerUserId),
     surveyId: input.surveyId,
     surveyReport: await getSurveyReport(input.ownerUserId, input.surveyId),
   };
