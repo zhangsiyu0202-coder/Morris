@@ -1,0 +1,48 @@
+# Implementation Plan — workspaces-billing
+
+## Introduction
+
+> **状态（2026-06-12）**：契约 / schema / Functions 形态 + 席位上限 + 三角色 + 租户隔离 + web 读层 已落地。本批收口完成 **A.1（schema:apply 阻断）、B.3（成员真相源统一原生 Teams）、B.2（web 读层接真 Appwrite）**。剩余为 Stripe 端到端、用量聚合/配额门全链路、数据迁移、fake-provider 前置——形状就位，端到端接线为后续波次。
+
+本任务清单对应 Spec **workspaces-billing**（ADR-0006 落地）。每个任务标注 `Validates: FR-N`。实现遵守 `architecture.md` 跨模块次序（contracts → schema → functions → agent → web，单 PR 一个内聚切片）与 `pre-implementation.md` no-MVP（每切片同 PR 带错误路径 + property + 回滚）。
+
+## 依赖图
+
+```mermaid
+flowchart LR
+    A1[A.1 schema:apply 修复] --> S[schema 可用]
+    C[contracts: Workspace/Plan/Subscription/Usage] --> SC[appwrite-schema 集合]
+    C --> F1[createWorkspace]
+    C --> F2[inviteMember 席位 CAS]
+    SC --> F1
+    SC --> F2
+    F2 --> B3[B.3 getCallerRole → 原生 Teams]
+    F1 --> B2[B.2 web 读层接真 Appwrite]
+    B3 --> B2
+    SC --> US[usage_events/counters + aggregateWorkspaceUsage]
+    US --> QG[issueLivekitToken 配额门]
+    C --> ST[stripeWebhook 验签+幂等]
+    SC --> MIG[一次性数据迁移]
+```
+
+## 已完成
+
+- [x] **C. 契约**：Workspace / WorkspaceMembership(role) / Plan / Subscription / UsageEvent / QuotaState；既有实体加 `workspaceId` + `authorId`；`hardCeilingFor` 等纯谓词。`Validates: FR-1,FR-5`
+- [x] **SC. Appwrite schema**：`plans` / `subscriptions` / `workspace_quota` / `workspace_memberships`(席位台账) / usage 集合，团队读权限。`Validates: FR-5,FR-7`
+- [x] **F1. createWorkspace**：建 Team + owner membership + seed subscription(trial) + quota；纯核 + deps。`Validates: FR-1,FR-2`
+- [x] **F2. inviteMember 席位上限**：确定性 id CAS；handler + P-WB-01 deps-agnostic。`Validates: FR-4`
+- [x] **租户隔离（ADR-0006 B 迁移）**：team-read/author-write 文档权限 + session-client 读层；live stack e2e 证明跨工作区读为空。`Validates: FR-3`
+- [x] **A.1 schema:apply 阻断修复**：去掉 `morris_memories.metadataKeys` 数组属性的 default；`schema:apply OK` 已 live 验证。(commit `adfba26`)
+- [x] **B.3 成员真相源统一原生 Teams**：`inviteMember.getCallerRole` 改读 `teams.listMemberships`；`createInvite` 返回真 Team membership id；`workspace_memberships` 降级为纯席位 CAS 台账。(commit `cfb3747`) `Validates: FR-1,FR-2`
+- [x] **B.2 web 读层接真 Appwrite**：`loadWorkspaceMembers`(Teams) + `loadBilling`(subscriptions+quota+plans) 去 mock；无 workspace 给真单人视图；仅 404 降级；live stack 验证。(commit `a6530d5`) `Validates: FR-8`
+
+## 待办（后续波次，形状就位 / 端到端接线）
+
+- [ ] **SEED. plans 目录播种**：seed Plus/Pro 行（seats/features/includedInterviews/priceRef）。当前未 seed → web included fallback=0。`Validates: FR-5`
+- [ ] **ST. stripeWebhook 端到端**：真实验签 + 重放幂等 + 订阅状态同步；Checkout/Portal 接线；密钥按 errors-and-observability 处理。`Validates: FR-6` `Property: webhook 验签幂等`
+- [ ] **US. 用量计量全链路**：会话 `state=completed`(>=60s + >=1 实质回答) emit 幂等 `UsageEvent`；`aggregateWorkspaceUsage` CRON 滚总 + 上报 Stripe。`Validates: FR-6,FR-7` `Property: P-WB-02`
+- [ ] **QG. issueLivekitToken 配额门**：边界查 `quotaState`，超硬顶拒 `quota_exceeded`，不毁既有数据。`Validates: FR-7` `Property: P-WB-03`
+- [ ] **MIG. 一次性数据迁移**：现存账号 → 个人默认工作区；幂等 + 非破坏。`Validates: FR-1` `NFR-3`
+- [ ] **FAKE. MERISM_FAKE_PROVIDERS**：实现确定性 fake provider 工厂，解锁计费/配额的 Layer-4 live 集成测试（与 ai-interview-engine 共享前置）。
+- [ ] **SCOPE. scope-guard 收窄复核**：确认 `scope.md` 解禁项已"ADR-0006 治理下在范围"、保留项仍禁；`scope-guard` 豁免与 ADR 范围一致。`NFR-4`
+- [ ] **E2E. 端到端 smoke**：本地栈下手工跑通 建工作区 → 邀请 → 成员读共享 → 套餐/账单页 → 完成访谈累计用量 → 超配额挡新访谈，完成后勾选。
