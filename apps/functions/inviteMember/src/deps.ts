@@ -1,7 +1,9 @@
 // Real deps: Appwrite Server SDK (Teams + Databases). Integration-tested only.
-// Seat slots are claimed as deterministic-id rows in workspace_memberships
-// (`seat_<ws>_<k>`); the create-with-id 409 is the CAS gate.
-import { Client, Teams, Databases, Permission, Role, Query } from "node-appwrite";
+// Membership + roles are read from native Appwrite Teams (ADR-0006 D1: the
+// Workspace IS a Team; no hand-rolled membership truth source). The
+// workspace_memberships collection is kept ONLY as the seat-reservation CAS
+// ledger (`seat_<ws>_<k>`); the create-with-id 409 is the seat-cap gate.
+import { Client, Teams, Databases, Permission, Role } from "node-appwrite";
 import type { InviteMemberDeps, WorkspaceRoleResolved } from "./handler.js";
 
 const DB_ID = "merism";
@@ -20,9 +22,13 @@ export function createRealDeps(callerUserId: string | null): InviteMemberDeps {
 
     async getCallerRole(workspaceId, userId): Promise<WorkspaceRoleResolved> {
       try {
-        const res = await db.listDocuments(DB_ID, "workspace_memberships", [Query.equal("workspaceId", workspaceId), Query.equal("userId", userId), Query.limit(1)]);
-        const role = (res.documents[0] as unknown as { role?: string } | undefined)?.role;
-        if (role === "owner" || role === "admin" || role === "member") return role;
+        // Native Teams is the role truth source. Teams are seat-limited (small),
+        // so listing memberships and matching the caller is cheap.
+        const res = await teams.listMemberships(workspaceId);
+        const roles = res.memberships.find((m) => m.userId === userId)?.roles ?? [];
+        if (roles.includes("owner")) return "owner";
+        if (roles.includes("admin")) return "admin";
+        if (roles.includes("member")) return "member";
         return null;
       } catch {
         return null;
@@ -48,7 +54,8 @@ export function createRealDeps(callerUserId: string | null): InviteMemberDeps {
           {
             workspaceId,
             // userId placeholder keeps the member_unique index non-colliding for
-            // pending invites; replaced with the real id on accept.
+            // pending invites; the Team membership (created in createInvite) is
+            // the authoritative membership record.
             userId: seatId(workspaceId, slotIndex),
             role: "member",
             status: "invited",
@@ -66,12 +73,18 @@ export function createRealDeps(callerUserId: string | null): InviteMemberDeps {
       await db.deleteDocument(DB_ID, "workspace_memberships", seatId(workspaceId, slotIndex));
     },
 
-    async createInvite(workspaceId, slotIndex, email, role) {
-      const id = seatId(workspaceId, slotIndex);
-      // Appwrite Team invite by email with the requested role.
-      await teams.createMembership(workspaceId, [role], email, undefined, undefined, undefined);
-      await db.updateDocument(DB_ID, "workspace_memberships", id, { role, status: "invited" });
-      return id;
+    async createInvite(workspaceId, _slotIndex, email, role) {
+      // Appwrite Team invite by email with the requested role; the returned
+      // Team membership id is the authoritative membership identifier.
+      const membership = await teams.createMembership(
+        workspaceId,
+        [role],
+        email,
+        undefined,
+        undefined,
+        undefined,
+      );
+      return membership.$id;
     },
   };
 }
