@@ -707,7 +707,7 @@ export const COLLECTIONS: CollectionDef[] = [
     attributes: [
       { key: "content", type: "string", size: 4000, required: true },
       { key: "metadata", type: "string", size: JSON_SIZE, required: false, default: "{}" },
-      { key: "metadataKeys", type: "string", size: 64, required: false, default: "", array: true },
+      { key: "metadataKeys", type: "string", size: 64, required: false, array: true },
       { key: "embedding", type: "string", size: 16_384, required: false, default: "" },
       { key: "embeddingModel", type: "string", size: 64, required: false, default: "" },
       { key: "ownerUserId", type: "string", size: 64, required: true },
