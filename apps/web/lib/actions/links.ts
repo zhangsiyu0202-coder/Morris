@@ -3,7 +3,7 @@
 import { randomBytes } from "node:crypto";
 import { ID } from "node-appwrite";
 import { getServerClient, DATABASE_ID, Query } from "@/lib/queries/client";
-import { requireOwnerUserId } from "@/lib/owner";
+import { requireOwnerUserId } from "@/lib/auth/owner";
 import type { InterviewLink } from "@merism/contracts";
 
 const LINKS = "interview_links";

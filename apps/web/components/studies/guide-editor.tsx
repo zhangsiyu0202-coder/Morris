@@ -74,6 +74,7 @@ export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: Surv
   const [researchGoal, setResearchGoal] = useState(draft.researchGoal);
   const [targetAudience, setTargetAudience] = useState(draft.targetAudience);
   const [introScript, setIntroScript] = useState(draft.introScript);
+  const [moderatorInstruction, setModeratorInstruction] = useState(draft.moderatorInstruction);
   const [guide, setGuide] = useState<Guide>(() => guideFromDraftSections(draft.sections));
 
   const [selection, setSelection] = useState<Selection>({ kind: "intro" });
@@ -94,6 +95,7 @@ export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: Surv
         researchGoal,
         targetAudience,
         introScript,
+        moderatorInstruction,
         sections: draftSectionsFromGuide(guide),
       };
       await saveSurveyDraft(surveyId, nextDraft);
@@ -101,7 +103,7 @@ export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: Surv
       setSaveState("saved");
       setTimeout(() => setSaveState("idle"), 1800);
     });
-  }, [surveyId, title, researchGoal, targetAudience, introScript, guide]);
+  }, [surveyId, title, researchGoal, targetAudience, introScript, moderatorInstruction, guide]);
 
   // ---- guide 变更帮助函数 ----
   const setGuideDirty = (updater: (g: Guide) => Guide) => {
@@ -392,6 +394,7 @@ export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: Surv
                 researchGoal={researchGoal}
                 targetAudience={targetAudience}
                 introScript={introScript}
+                moderatorInstruction={moderatorInstruction}
                 onTitle={(v) => {
                   setTitle(v);
                   markDirty();
@@ -406,6 +409,10 @@ export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: Surv
                 }}
                 onIntro={(v) => {
                   setIntroScript(v);
+                  markDirty();
+                }}
+                onModerator={(v) => {
+                  setModeratorInstruction(v);
                   markDirty();
                 }}
               />
@@ -808,19 +815,23 @@ function IntroOptions({
   researchGoal,
   targetAudience,
   introScript,
+  moderatorInstruction,
   onTitle,
   onGoal,
   onAudience,
   onIntro,
+  onModerator,
 }: {
   title: string;
   researchGoal: string;
   targetAudience: string;
   introScript: string;
+  moderatorInstruction: string;
   onTitle: (v: string) => void;
   onGoal: (v: string) => void;
   onAudience: (v: string) => void;
   onIntro: (v: string) => void;
+  onModerator: (v: string) => void;
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -836,6 +847,14 @@ function IntroOptions({
       </Field>
       <Field label="开场白">
         <TextArea value={introScript} onChange={onIntro} placeholder="主持人开场时对受访者说的话" rows={4} />
+      </Field>
+      <Field label="主持风格指令">
+        <TextArea
+          value={moderatorInstruction}
+          onChange={onModerator}
+          placeholder="给 AI 访谈员的主持指令:语调、节奏、风格(例如:语气温暖、不急促、给停顿留白、不照读问题)。访谈目标无需重复,已在研究目标里。"
+          rows={4}
+        />
       </Field>
     </div>
   );

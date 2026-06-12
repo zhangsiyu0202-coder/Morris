@@ -1,5 +1,5 @@
 import type { RunDashboardWidgetsOutput } from "@merism/contracts";
-import { getOwnerUserIdOrNull } from "@/lib/owner";
+import { getOwnerUserIdOrNull } from "@/lib/auth/owner";
 import { getStudy } from "@/lib/queries";
 import { getOrCreateStudyDashboard, type StudyDashboard } from "./queries";
 import { runDashboardWidgets } from "./run-widgets";
@@ -26,7 +26,7 @@ export async function loadStudyDashboard(surveyId: string): Promise<StudyDashboa
     };
   }
 
-  const study = await getStudy(ownerUserId, surveyId).catch(() => null);
+  const study = await getStudy(surveyId).catch(() => null);
   const studyTitle = study?.survey.title ?? "研究概览";
   const dashboard = await getOrCreateStudyDashboard(ownerUserId, surveyId, studyTitle);
   const widgetResults = await runDashboardWidgets({

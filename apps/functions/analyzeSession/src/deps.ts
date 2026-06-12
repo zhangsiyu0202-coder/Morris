@@ -1,9 +1,11 @@
 // Real deps: Appwrite Server SDK + DeepSeek via @ai-sdk/deepseek.
-import { Client, Databases, ID, Permission, Query, Role, Storage } from "node-appwrite";
+import { Client, Databases, Functions, ID, Permission, Query, Role } from "node-appwrite";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { generateText, Output } from "ai";
+import { withLLMCall, createLogger } from "@merism/observability";
 import {
   AnalysisReportOutputSchema,
+  visualAnalysisJobId,
   type AnalysisReportInput,
   type AnalysisReportOutput,
   type GenerationMeta,
@@ -26,9 +28,6 @@ import {
   buildQualityFlagsUserPrompt,
 } from "./prompts/quality-flags.js";
 import { SESSION_QUALITY_FLAG_LLM_TEMPERATURE } from "./constants.js";
-import { createGeminiVisualAnalyzerFromEnv } from "./gemini-visual-analyzer.js";
-import { createDeepSeekConsolidator } from "./gemini/deepseek-consolidator.js";
-import { isVisualRecording, recordingMimeType, type RecordingRecord } from "./visual-analysis.js";
 
 const DB = "merism";
 
@@ -74,18 +73,14 @@ export function createRealDeps(): AnalyzeSessionDeps {
     .setProject(env.APPWRITE_PROJECT_ID)
     .setKey(env.APPWRITE_API_KEY);
   const db = new Databases(client);
-  const storage = new Storage(client);
+  const storageFunctions = new Functions(client);
+  const visualFunctionId = process.env.ANALYZE_SESSION_VISUAL_FUNCTION_ID;
   const deepseek = createDeepSeek({
     apiKey: env.DEEPSEEK_API_KEY,
     ...(env.DEEPSEEK_BASE_URL ? { baseURL: env.DEEPSEEK_BASE_URL } : {}),
   });
   const modelName = env.DEEPSEEK_MODEL ?? "deepseek-chat";
   const deepseekModel = deepseek(modelName);
-  // Visual analyzer (PostHog-style: Gemini Files API + per-segment offsets +
-  // DeepSeek consolidation). Set GEMINI_VISUAL_ANALYSIS_ENABLED=true and the
-  // matching GEMINI_API_BASE_URL / GEMINI_API_KEY to enable. Off => skipped.
-  const consolidator = createDeepSeekConsolidator({ model: deepseekModel });
-  const analyzeRecordingVisuals = createGeminiVisualAnalyzerFromEnv({ consolidator });
 
   return {
     now: () => Date.now(),
@@ -121,32 +116,44 @@ export function createRealDeps(): AnalyzeSessionDeps {
       };
     },
 
-    async findRecording(sessionId: string): Promise<RecordingRecord | null> {
-      const res = await db.listDocuments(DB, "recordings", [
-        Query.equal("sessionId", sessionId),
-        Query.limit(1),
-      ]);
-      const doc = res.documents[0] as any;
-      if (!doc) return null;
-      const recording: RecordingRecord = {
-        $id: doc.$id,
-        sessionId: doc.sessionId,
-        ownerUserId: doc.ownerUserId,
-        storageFileId: doc.storageFileId,
-        durationMs: doc.durationMs,
-        format: doc.format,
-      };
-      return isVisualRecording(recording) ? recording : null;
-    },
-
-    async getRecordingBytes(recording: RecordingRecord) {
-      const buffer = await storage.getFileDownload("recordings", recording.storageFileId);
-      return {
-        bytes: new Uint8Array(buffer),
-        mimeType: recordingMimeType(recording.format),
-      };
-    },
-    ...(analyzeRecordingVisuals ? { analyzeRecordingVisuals } : {}),
+    // ADR 0005 D1: durable trigger + async enqueue (analyzeSessionVisual).
+    // Both gated on the function id; best-effort by contract (handler swallows).
+    ...(visualFunctionId
+      ? {
+          async ensureVisualJobQueued({ sessionId, surveyId, ownerUserId }): Promise<void> {
+            const nowIso = new Date().toISOString();
+            try {
+              await db.createDocument(
+                DB,
+                "visual_analysis_jobs",
+                visualAnalysisJobId(sessionId),
+                {
+                  sessionId,
+                  surveyId,
+                  ownerUserId,
+                  status: "queued",
+                  geminiFileName: null,
+                  geminiUploadedAt: null,
+                  attemptCount: 0,
+                  createdAt: nowIso,
+                  updatedAt: nowIso,
+                },
+                [Permission.read(Role.user(ownerUserId))],
+              );
+            } catch (e: any) {
+              // 409 => a prior completion already created the row (dedup). Fine.
+              if (e?.code !== 409) throw e;
+            }
+          },
+          async enqueueVisualAnalysis(sessionId: string): Promise<void> {
+            await storageFunctions.createExecution(
+              visualFunctionId,
+              JSON.stringify({ sessionId }),
+              true, // async: don't block the text path on the video pass
+            );
+          },
+        }
+      : {}),
 
     async findSurveyContext(surveyId: string): Promise<SurveyContext | null> {
       try {
@@ -233,13 +240,22 @@ export function createRealDeps(): AnalyzeSessionDeps {
           ].join("\n")
         : baseUserPrompt;
 
-      const { experimental_output } = await generateText({
-        model: deepseekModel,
-        maxRetries: 2,
-        experimental_output: Output.object({ schema: AnalysisReportOutputSchema }),
-        system: SESSION_ANALYZE_SYSTEM,
-        prompt: userPrompt,
-      });
+      const log = createLogger("function.analyzeSession.text-pass");
+      const { experimental_output } = await withLLMCall(
+        {
+          scope: "function.analyzeSession.text-pass",
+          traceId: log.traceId,
+          defaultModel: "deepseek-chat",
+        },
+        () =>
+          generateText({
+            model: deepseekModel,
+            maxRetries: 2,
+            experimental_output: Output.object({ schema: AnalysisReportOutputSchema }),
+            system: SESSION_ANALYZE_SYSTEM,
+            prompt: userPrompt,
+          }),
+      );
 
       return AnalysisReportOutputSchema.parse(experimental_output);
     },
@@ -247,14 +263,23 @@ export function createRealDeps(): AnalyzeSessionDeps {
     async deriveQualityFlagsWithLLM({ transcript, surveyContext }) {
       const promptInput = buildQualityFlagsPromptInput({ transcript, surveyContext });
       const userPrompt = buildQualityFlagsUserPrompt(promptInput);
-      const { experimental_output } = await generateText({
-        model: deepseekModel,
-        temperature: SESSION_QUALITY_FLAG_LLM_TEMPERATURE,
-        maxRetries: 1,
-        experimental_output: Output.object({ schema: QualityFlagsLLMOutputSchema }),
-        system: QUALITY_FLAGS_SYSTEM,
-        prompt: userPrompt,
-      });
+      const log = createLogger("function.analyzeSession.quality-flags");
+      const { experimental_output } = await withLLMCall(
+        {
+          scope: "function.analyzeSession.quality-flags",
+          traceId: log.traceId,
+          defaultModel: "deepseek-chat",
+        },
+        () =>
+          generateText({
+            model: deepseekModel,
+            temperature: SESSION_QUALITY_FLAG_LLM_TEMPERATURE,
+            maxRetries: 1,
+            experimental_output: Output.object({ schema: QualityFlagsLLMOutputSchema }),
+            system: QUALITY_FLAGS_SYSTEM,
+            prompt: userPrompt,
+          }),
+      );
       const parsed = QualityFlagsLLMOutputSchema.parse(experimental_output);
       // Semantic flags are a subset of SessionQualityFlag (compile-time asserted in
       // prompts/quality-flags.ts), so widening cast is safe.
@@ -301,13 +326,25 @@ export function createRealDeps(): AnalyzeSessionDeps {
       if (generationMeta) {
         payload.generationMeta = JSON.stringify(generationMeta);
       }
+      // ADR-0006 (B): a report is readable by its survey's workspace team
+      // (resolve workspaceId from the survey) plus the owner. Additive — the
+      // study-level API-key read still works; this enables native session-client
+      // reads by workspace members. Update path passes perms too so re-runs
+      // converge old owner-only reports to team-readable.
+      let wsId: string | undefined;
+      try {
+        wsId = ((await db.getDocument(DB, "surveys", surveyId)) as { workspaceId?: string }).workspaceId ?? undefined;
+      } catch {
+        // survey unreadable/deleted → owner-only perms
+      }
       const permissions = [
         Permission.read(Role.user(ownerUserId)),
+        ...(wsId ? [Permission.read(Role.team(wsId))] : []),
       ];
 
       if (existing.documents.length > 0) {
         const doc = existing.documents[0] as any;
-        await db.updateDocument(DB, "analysis_reports", doc.$id, payload);
+        await db.updateDocument(DB, "analysis_reports", doc.$id, payload, permissions);
         return { reportId: doc.$id };
       } else {
         const created = await db.createDocument(

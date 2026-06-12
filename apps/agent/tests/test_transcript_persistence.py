@@ -34,14 +34,14 @@ class _FakeDatabases:
         self.updated: list[tuple] = []
         self._fail_create = fail_create
 
-    def create_document(self, database_id, collection_id, document_id, data):
+    def create_document(self, database_id, collection_id, document_id, data, permissions=None):
         if self._fail_create:
             raise RuntimeError("create not allowed")
-        self.created.append((database_id, collection_id, document_id, dict(data)))
+        self.created.append((database_id, collection_id, document_id, dict(data), permissions))
         return {"$id": document_id}
 
-    def update_document(self, database_id, collection_id, document_id, data):
-        self.updated.append((database_id, collection_id, document_id, dict(data)))
+    def update_document(self, database_id, collection_id, document_id, data, permissions=None):
+        self.updated.append((database_id, collection_id, document_id, dict(data), permissions))
         return {"$id": document_id}
 
 

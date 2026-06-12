@@ -16,10 +16,7 @@ import {
   type AnalysisReportOutput,
   type GenerationMeta,
   type SessionQualityFlag,
-  type VisualAnalysisOutput,
 } from "@merism/contracts";
-import type { RecordingBytes, RecordingRecord, VisualAnalyzer } from "./visual-analysis.js";
-import { calculateVideoSegmentSpecs } from "./video-segments.js";
 import { buildValidRefs, checkHallucinationRatio } from "./hallucination.js";
 import { deriveQualityFlags } from "./quality-flags.js";
 import { HALLUCINATION_RATIO_THRESHOLD } from "./constants.js";
@@ -81,9 +78,24 @@ export interface AnalyzeSessionDeps {
       hallucinationHint?: { badRefs: Array<{ transcriptId: string; segmentIndex: number }> };
     },
   ): Promise<AnalysisReportOutput>;
-  findRecording?(sessionId: string): Promise<RecordingRecord | null>;
-  getRecordingBytes?(recording: RecordingRecord): Promise<RecordingBytes>;
-  analyzeRecordingVisuals?: VisualAnalyzer;
+  /**
+   * Durable trigger for the visual pipeline (ADR 0005 D1): create the
+   * `visual_analysis_jobs` row in `queued` state (idempotent; 409 = already
+   * exists). Called before enqueue so a dropped async execution still leaves a
+   * row the reaper can re-fire. Optional — omitted when the feature is off.
+   */
+  ensureVisualJobQueued?(input: {
+    sessionId: string;
+    surveyId: string;
+    ownerUserId: string;
+  }): Promise<void>;
+  /**
+   * Best-effort enqueue of the async post-session visual pipeline
+   * (analyzeSessionVisual Function, ADR 0005 D1). Called after the text report
+   * is persisted so the visual job has a row to patch. Failure MUST NOT fail
+   * the text analysis. Optional — deployments without the visual feature omit it.
+   */
+  enqueueVisualAnalysis?(sessionId: string): Promise<void>;
   /**
    * LLM-based qualityFlags derivation (semantic flags subset). Mechanical
    * flags are derived in `quality-flags.ts` outside this dep; the handler
@@ -241,20 +253,6 @@ export async function analyzeSession(
     };
   }
 
-  let visualAnalysis: VisualAnalysisOutput | null;
-  try {
-    visualAnalysis = await maybeAnalyzeRecordingVisuals({
-      deps,
-      sessionId,
-      transcript,
-    });
-  } catch {
-    return { status: 500, body: { error: "visual_analysis_failed" } };
-  }
-  if (visualAnalysis) {
-    body = { ...body, visualAnalysis };
-  }
-
   // analysis-report-v2 R1: derive qualityFlags (规则 + LLM 混合) + R2: write generationMeta.
   const totalDurationMs = transcript.segments.length
     ? transcript.segments[transcript.segments.length - 1].endMs
@@ -297,35 +295,31 @@ export async function analyzeSession(
     // intentional swallow — D6
   }
 
+  // ADR 0005 D1: durable trigger. Create the queued job row FIRST so a dropped
+  // async execution still leaves a row the reaper (sweepGeminiFiles) can re-fire,
+  // then fire the async execution. Both best-effort — visual never fails the text
+  // path (the text report has already been persisted).
+  if (deps.ensureVisualJobQueued) {
+    try {
+      await deps.ensureVisualJobQueued({
+        sessionId,
+        surveyId: session.surveyId,
+        ownerUserId: survey.ownerUserId,
+      });
+    } catch {
+      // intentional swallow — runner's claim path can still create the row.
+    }
+  }
+  if (deps.enqueueVisualAnalysis) {
+    try {
+      await deps.enqueueVisualAnalysis(sessionId);
+    } catch {
+      // intentional swallow — the durable queued row + reaper will re-drive it.
+    }
+  }
+
   return {
     status: 200,
     body: { reportId: saved.reportId, scope: "session" },
   };
-}
-
-async function maybeAnalyzeRecordingVisuals({
-  deps,
-  sessionId,
-  transcript,
-}: {
-  deps: AnalyzeSessionDeps;
-  sessionId: string;
-  transcript: TranscriptRecord;
-}): Promise<VisualAnalysisOutput | null> {
-  if (!deps.findRecording || !deps.getRecordingBytes || !deps.analyzeRecordingVisuals) {
-    return null;
-  }
-
-  const recording = await deps.findRecording(sessionId);
-  if (!recording) return null;
-
-  const media = await deps.getRecordingBytes(recording);
-  const segmentSpecs = calculateVideoSegmentSpecs(recording.durationMs, transcript);
-  return deps.analyzeRecordingVisuals({
-    sessionId,
-    recording,
-    transcript,
-    media,
-    segmentSpecs,
-  });
 }

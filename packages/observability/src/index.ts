@@ -1,5 +1,10 @@
 export * from "./logger.js";
 export * from "./retry.js";
+export * from "./llm-call.js";
+export * from "./with-llm-call.js";
+export * from "./llm-middleware.js";
+export * from "./concurrency.js";
+export * from "./debug-snippets.js";
 
 import { createLogger } from "./logger.js";
 
@@ -18,7 +23,6 @@ export async function withErrorBoundary<T>(
   try {
     return { ok: true, data: await handler(log) };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
     log.error("unhandled function error", { stack: err instanceof Error ? err.stack : undefined });
     return { ok: false, status: 500, error: "internal_error", traceId: log.traceId };
   }

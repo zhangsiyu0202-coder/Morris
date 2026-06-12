@@ -14,6 +14,7 @@ import {
   type ToolResultEnvelope,
 } from "../envelope";
 import type { AssistantToolContext } from "../tool-types";
+import type { ToolMetadata } from "../tool-metadata";
 
 interface AnalyzeArtifact {
   studyTitle: string;
@@ -39,12 +40,29 @@ interface AnalyzeArtifact {
  */
 export function buildAnalyzeDataTool(ctx: AssistantToolContext) {
   const { ownerUserId } = ctx;
+  const metadata: ToolMetadata = {
+    title: "调研聚合分析",
+    description:
+      "返回指定调研的最新 survey 级聚合分析报告 (由 analyzeSurvey Function 生成并落 Appwrite)。" +
+      "当用户想要整体洞察、趋势或主题分布时调用。studyId 必填。" +
+      "如该调研尚未生成 survey-scope report (例如刚创建还没有完成的访谈), 返回 envelope 含 error: true 与提示先跑 analyzeSurvey Function; " +
+      "不要假装有数据。结果可用于跳转 /reports/{surveyId} 查看完整报告。",
+    annotations: { readOnly: true, destructive: false, idempotent: true },
+    requiredScopes: ["study:read", "report:read"],
+    enrichUrl: "/reports/{surveyId}",
+    type: "read",
+    enabled: true,
+  };
   return {
     contextPromptTemplate:
       "当前页面: {path}. 主调研: {surveyId}. 最近会话: {recentSessionIds}.",
+    metadata,
     spec: tool({
       description:
-        "返回指定调研的最新 survey 级聚合分析报告(由 analyzeSurvey Function 生成并落 Appwrite)。当用户想要整体洞察、趋势或主题分布时调用。",
+        "返回指定调研的最新 survey 级聚合分析报告 (由 analyzeSurvey Function 生成并落 Appwrite)。" +
+        "当用户想要整体洞察、趋势或主题分布时调用。studyId 必填。" +
+        "如该调研尚未生成 survey-scope report (例如刚创建还没有完成的访谈), 返回 envelope 含 error: true 与提示先跑 analyzeSurvey Function; " +
+        "不要假装有数据。结果可用于跳转 /reports/{surveyId} 查看完整报告。",
       inputSchema: z.object({
         studyId: z.string().describe("要分析的调研 id (必填)"),
       }),

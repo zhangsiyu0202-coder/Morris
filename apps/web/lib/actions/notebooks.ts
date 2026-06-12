@@ -1,6 +1,7 @@
 "use server";
 
 import { generateText, Output } from "ai";
+import { withLLMCall, createLogger } from "@merism/observability";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { Client, Databases } from "node-appwrite";
 import { revalidatePath } from "next/cache";
@@ -149,20 +150,29 @@ export async function createNotebook(input: {
   const valid = await isValidStudyId(ownerUserId, studyId);
   if (!valid) return { error: "指定的调研不存在或不属于当前账户。" };
 
-  const study = await getStudy(ownerUserId, studyId);
+  const study = await getStudy(studyId);
   if (!study) return { error: "找不到该调研。" };
 
   try {
     const context = await buildStudyContext(ownerUserId, studyId);
+    const log = createLogger("action.notebooks.generateReport");
 
     // DeepSeek 仍生成结构化 NotebookReport 中间格式 (作为 experimental_output schema)
-    const { experimental_output } = await generateText({
-      model: deepseek("deepseek-chat"),
-      maxRetries: 2,
-      experimental_output: Output.object({ schema: notebookReportSchema }),
-      system: ANALYSIS_INSTRUCTIONS,
-      prompt: `调研上下文:\n${context}\n\n用户的问题:${question}\n\n请基于上述上下文生成深入论证型分析报告。`,
-    });
+    const { experimental_output } = await withLLMCall(
+      {
+        scope: "action.notebooks.generateReport",
+        traceId: log.traceId,
+        defaultModel: "deepseek-chat",
+      },
+      () =>
+        generateText({
+          model: deepseek("deepseek-chat"),
+          maxRetries: 2,
+          experimental_output: Output.object({ schema: notebookReportSchema }),
+          system: ANALYSIS_INSTRUCTIONS,
+          prompt: `调研上下文:\n${context}\n\n用户的问题:${question}\n\n请基于上述上下文生成深入论证型分析报告。`,
+        }),
+    );
 
     const report = experimental_output as NotebookReport;
     // 把结构化 NotebookReport 渲染为 5 段 HeadingTemplate Markdown,
@@ -190,7 +200,7 @@ export async function createNotebook(input: {
 export async function listNotebooks(): Promise<NotebookListItem[]> {
   const ownerUserId = await getCurrentUserId();
   if (!ownerUserId) return [];
-  const notebooks = await readNotebooks(ownerUserId);
+  const notebooks = await readNotebooks();
   return notebooks.map(toListItem);
 }
 
@@ -198,7 +208,7 @@ export async function listNotebooks(): Promise<NotebookListItem[]> {
 export async function getNotebookById(id: string): Promise<Notebook | null> {
   const ownerUserId = await getCurrentUserId();
   if (!ownerUserId) return null;
-  return readNotebookById(ownerUserId, id);
+  return readNotebookById(id);
 }
 
 /** 删除一条 notebook。仅 owner 可删。 */
@@ -207,7 +217,7 @@ export async function deleteNotebook(id: string): Promise<{ ok: boolean }> {
   if (!ownerUserId) return { ok: false };
   // Verify ownership via a read first; the server key bypasses Permissions
   // so we cannot rely on Appwrite to enforce it here.
-  const existing = await readNotebookById(ownerUserId, id);
+  const existing = await readNotebookById(id);
   if (!existing) return { ok: false };
   const { db } = getServerKeyClient();
   const DATABASE_ID = process.env.APPWRITE_DATABASE_ID ?? "merism";

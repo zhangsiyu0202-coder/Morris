@@ -1,44 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock the queries layer at the module boundary so the tool factory's static
-// import resolves to spies. Each spy is reset before every test.
-vi.mock("@/lib/queries", () => ({
-  listStudies: vi.fn(),
-  searchTranscriptSegments: vi.fn(),
-  getLatestAnalysisReport: vi.fn(),
-  parseSurveyReportBody: vi.fn(),
-  getStudy: vi.fn(),
-}));
-vi.mock("@/lib/server/notebooks", () => ({
-  saveNotebookFromMarkdown: vi.fn(),
-}));
-vi.mock("@/lib/server/embedder-qwen", () => ({
-  embedText: vi.fn(),
-  EMBEDDING_DIM: 1024,
-  EMBEDDING_MODEL_TAG: "qwen.text-embedding-v3",
-}));
-// node-appwrite is required by tools/search-across-studies.ts at module load
-// time. The tool itself only constructs the client inside execute(), so any
-// runtime call would fail without env vars set; for tools.test.ts we don't
-// invoke that path. Provide a minimal mock to satisfy ESM module resolution.
-vi.mock("node-appwrite", () => ({
-  Client: class {
-    setEndpoint() {
-      return this;
-    }
-    setProject() {
-      return this;
-    }
-    setKey() {
-      return this;
-    }
-  },
-  Databases: class {},
-  Query: { equal: () => ({}), search: () => ({}), select: () => ({}), limit: () => ({}) },
-  ID: { unique: () => "mock-id" },
-  Permission: { read: () => "", update: () => "", delete: () => "" },
-  Role: { user: () => "" },
-}));
+// Mock server-only deps at module boundary so tool factories' static imports
+// resolve to spies. factory 实现集中在 fixtures/install-mocks.ts. async + dynamic
+// import 绕过 vitest hoisting (testing.md::Test double pattern).
+vi.mock("@/lib/queries", async () => (await import("./fixtures/install-mocks")).fakeQueriesModule());
+vi.mock("@/lib/server/notebooks", async () => (await import("./fixtures/install-mocks")).fakeNotebooksServerModule());
+vi.mock("@/lib/server/embedder-qwen", async () => (await import("./fixtures/install-mocks")).fakeEmbedderQwenModule());
+vi.mock("node-appwrite", async () => (await import("./fixtures/install-mocks")).fakeNodeAppwriteModule());
 
 import * as queries from "@/lib/queries";
 import { buildAssistantTools } from "../tools";
@@ -96,7 +64,7 @@ describe("Morris tools factory: signed-in path", () => {
     ]);
     const tools = buildAssistantTools({ ownerUserId: "user-1" });
     const result: any = await (tools.listStudies as any).execute({});
-    expect(mockListStudies).toHaveBeenCalledWith("user-1");
+    expect(mockListStudies).toHaveBeenCalledWith();
     expect(result.content).toContain("已读取 1 个调研");
     expect(result.artifact.studies).toEqual([
       {
@@ -112,7 +80,6 @@ describe("Morris tools factory: signed-in path", () => {
   it("searchInterviewData forwards ownerUserId and reshapes hits", async () => {
     mockSearch.mockResolvedValue([
       {
-        ownerUserId: "user-1",
         sessionId: "sess1",
         transcriptId: "t1",
         segmentIndex: 0,
@@ -127,7 +94,7 @@ describe("Morris tools factory: signed-in path", () => {
       query: "hello",
       studyId: "sv1",
     });
-    expect(mockSearch).toHaveBeenCalledWith("user-1", {
+    expect(mockSearch).toHaveBeenCalledWith({
       query: "hello",
       surveyId: "sv1",
       limit: 20,
@@ -192,17 +159,24 @@ describe("Morris tools factory: signed-in path", () => {
   });
 });
 
-describe("Morris tools factory: createStudyDraft (mock)", () => {
-  it("returns a draft with the study disclaimer note", async () => {
-    const tools = buildAssistantTools({ ownerUserId: "user-1" });
+describe("Morris tools factory: createStudyDraft", () => {
+  it("anonymous → preview artifact (no Appwrite write)", async () => {
+    const tools = buildAssistantTools({ ownerUserId: null });
     const result: any = await (tools.createStudyDraft as any).execute({
-      goal: "差旅住宿预订习惯",
-      audience: "经常出差的上班族",
-      questionCount: 5,
+      title: "差旅住宿预订习惯",
+      researchGoal: "了解差旅住宿预订习惯",
+      targetAudience: "经常出差的上班族",
+      introScript: "你好,感谢参与这次访谈。",
+      sections: [
+        {
+          title: "预订渠道",
+          objective: "了解渠道选择",
+          questions: [{ questionText: "你通常怎么订住宿?", questionType: "open_ended" }],
+        },
+      ],
     });
-    expect(result.content).toContain("已生成");
-    expect(result.artifact.title).toContain("差旅");
-    expect(result.artifact.questions).toHaveLength(5);
-    expect(result.artifact.note).toContain("survey-editor");
+    expect(result.content).toContain("草稿预览");
+    expect(result.artifact).toMatchObject({ persisted: false });
+    expect(result.artifact.draft.title).toContain("差旅");
   });
 });

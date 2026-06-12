@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 import type { AnalysisReport } from "@merism/contracts";
-import { listStudies, getStudy } from "../studies";
+import { listStudies, getStudy, getStudyForViewer } from "../studies";
 import { listSessions, countCompletedSessions } from "../sessions";
 import { searchTranscriptSegments } from "../transcripts";
 import { getLatestAnalysisReport, parseSessionReportBody } from "../reports";
 import { listNotebooks, getNotebookById } from "../notebooks";
-import { listBookmarksForOwner, listBookmarksBySession } from "../bookmarks";
+import { listBookmarksForTenant, listBookmarksBySession } from "../bookmarks";
 import { makeFakeDatabases } from "./helpers";
 
 const owner = "user-owner";
@@ -23,27 +23,29 @@ const survey = {
 };
 
 describe("queries: studies", () => {
-  it("listStudies filters by ownerUserId", async () => {
-    const { databases, calls } = makeFakeDatabases({
-      surveys: { documents: [survey, { ...survey, $id: "sv2", ownerUserId: stranger }] },
+  it("listStudies returns the surveys the session client yields", async () => {
+    // The session client already enforces tenant isolation (Role.user/Role.team);
+    // the fake returns the caller's readable set, which the function parses through.
+    const { databases } = makeFakeDatabases({
+      surveys: { documents: [survey] },
     });
-    const result = await listStudies(owner, databases);
+    const result = await listStudies(databases);
     expect(result.map((s) => s.$id)).toEqual(["sv1"]);
-    expect(calls[0]?.queries.some((q) => q.includes(owner))).toBe(true);
   });
 
   it("listStudies returns [] when collection is empty", async () => {
     const { databases } = makeFakeDatabases({ surveys: { documents: [] } });
-    expect(await listStudies(owner, databases)).toEqual([]);
+    expect(await listStudies(databases)).toEqual([]);
   });
 
-  it("getStudy returns null when survey not owned by caller", async () => {
+  it("getStudy returns null when the session client cannot read the survey", async () => {
+    // An unreadable survey is simply absent from the session client's result.
     const { databases } = makeFakeDatabases({
-      surveys: { documents: [{ ...survey, ownerUserId: stranger }] },
+      surveys: { documents: [] },
       survey_sections: { documents: [] },
       question_blocks: { documents: [] },
     });
-    expect(await getStudy(owner, "sv1", databases)).toBeNull();
+    expect(await getStudy("sv1", databases)).toBeNull();
   });
 
   it("getStudy returns survey + sections + questions when owned", async () => {
@@ -71,7 +73,7 @@ describe("queries: studies", () => {
       survey_sections: { documents: [section] },
       question_blocks: { documents: [question] },
     });
-    const result = await getStudy(owner, "sv1", databases);
+    const result = await getStudy("sv1", databases);
     expect(result?.survey.$id).toBe("sv1");
     expect(result?.sections.map((s) => s.$id)).toEqual(["sec1"]);
     expect(result?.questions.map((q) => q.$id)).toEqual(["q1"]);
@@ -88,12 +90,12 @@ describe("queries: sessions", () => {
     collectedAnswers: {},
   };
 
-  it("listSessions returns [] when survey not owned by caller", async () => {
+  it("listSessions returns [] when the session client cannot read the survey", async () => {
     const { databases } = makeFakeDatabases({
-      surveys: { documents: [{ ...survey, ownerUserId: stranger }] },
+      surveys: { documents: [] },
       interview_sessions: { documents: [session] },
     });
-    expect(await listSessions(owner, "sv1", databases)).toEqual([]);
+    expect(await listSessions("sv1", databases)).toEqual([]);
   });
 
   it("listSessions returns sessions for owned survey", async () => {
@@ -101,7 +103,7 @@ describe("queries: sessions", () => {
       surveys: { documents: [survey] },
       interview_sessions: { documents: [session] },
     });
-    const result = await listSessions(owner, "sv1", databases);
+    const result = await listSessions("sv1", databases);
     expect(result.map((s) => s.$id)).toEqual(["sess1"]);
   });
 
@@ -116,14 +118,14 @@ describe("queries: sessions", () => {
         ],
       },
     });
-    expect(await countCompletedSessions(owner, "sv1", databases)).toBe(2);
+    expect(await countCompletedSessions("sv1", databases)).toBe(2);
   });
 });
 
 describe("queries: transcripts", () => {
   it("returns [] when surveyId is omitted (forbidden cross-survey scan)", async () => {
     const { databases } = makeFakeDatabases({});
-    expect(await searchTranscriptSegments(owner, { query: "foo" }, databases)).toEqual([]);
+    expect(await searchTranscriptSegments({ query: "foo" }, databases)).toEqual([]);
   });
 
   it("matches by case-insensitive substring across stored transcripts", async () => {
@@ -151,7 +153,6 @@ describe("queries: transcripts", () => {
       transcripts: { documents: [transcript] },
     });
     const hits = await searchTranscriptSegments(
-      owner,
       { query: "AIRBNB", surveyId: "sv1" },
       databases,
     );
@@ -315,28 +316,26 @@ describe("queries: notebooks", () => {
     }),
   };
 
-  it("listNotebooks returns owner's insights only", async () => {
+  it("listNotebooks returns the notebooks the session client yields", async () => {
     const { databases } = makeFakeDatabases({
-      notebooks: {
-        documents: [insightDoc, { ...insightDoc, $id: "i2", ownerUserId: stranger }],
-      },
+      notebooks: { documents: [insightDoc] },
     });
-    const result = await listNotebooks(owner, databases);
+    const result = await listNotebooks(databases);
     expect(result.map((r) => r.$id)).toEqual(["i1"]);
   });
 
-  it("getNotebookById returns null for unowned id", async () => {
+  it("getNotebookById returns null when the session client cannot read it", async () => {
     const { databases } = makeFakeDatabases({
-      notebooks: { documents: [{ ...insightDoc, ownerUserId: stranger }] },
+      notebooks: { documents: [] },
     });
-    expect(await getNotebookById(owner, "i1", databases)).toBeNull();
+    expect(await getNotebookById("i1", databases)).toBeNull();
   });
 
   it("getNotebookById returns the insight when owned", async () => {
     const { databases } = makeFakeDatabases({
       notebooks: { documents: [insightDoc] },
     });
-    const result = await getNotebookById(owner, "i1", databases);
+    const result = await getNotebookById("i1", databases);
     expect(result?.headline).toBe("Because of pricing");
     // Wave F (T48): legacy `report` field removed — assert headline only.
   });
@@ -355,28 +354,57 @@ describe("queries: bookmarks", () => {
     createdAt: "2026-06-06T00:00:00.000Z",
   };
 
-  it("listBookmarksForOwner filters by ownerUserId", async () => {
+  it("listBookmarksForTenant returns the bookmarks the session client yields", async () => {
     const { databases } = makeFakeDatabases({
-      bookmarks: {
-        documents: [bookmarkDoc, { ...bookmarkDoc, $id: "bm2", ownerUserId: stranger }],
-      },
+      bookmarks: { documents: [bookmarkDoc] },
     });
-    const result = await listBookmarksForOwner(owner, 10, databases);
+    const result = await listBookmarksForTenant(10, databases);
     expect(result.map((b) => b.$id)).toEqual(["bm1"]);
     expect(result[0]?.quote).toBe("A memorable quote.");
   });
 
-  it("listBookmarksBySession scopes to owner and session", async () => {
+  it("listBookmarksBySession filters the readable set by sessionId", async () => {
+    const { databases } = makeFakeDatabases({
+      bookmarks: {
+        documents: [bookmarkDoc, { ...bookmarkDoc, $id: "bm3", sessionId: "sess2" }],
+      },
+    });
+    const result = await listBookmarksBySession("sess1", databases);
+    expect(result.map((b) => b.$id)).toEqual(["bm1"]);
+  });
+
+  it("listBookmarksBySession returns the whole readable set for the session", async () => {
+    // The session client yields the team's annotations (Role.team) for a member;
+    // we only filter by sessionId here.
     const { databases } = makeFakeDatabases({
       bookmarks: {
         documents: [
-          bookmarkDoc,
-          { ...bookmarkDoc, $id: "bm3", sessionId: "sess2" },
-          { ...bookmarkDoc, $id: "bm4", ownerUserId: stranger },
+          { ...bookmarkDoc, workspaceId: "ws_1" },
+          { ...bookmarkDoc, $id: "bm5", ownerUserId: stranger, workspaceId: "ws_1" },
         ],
       },
     });
-    const result = await listBookmarksBySession(owner, "sess1", databases);
-    expect(result.map((b) => b.$id)).toEqual(["bm1"]);
+    const result = await listBookmarksBySession("sess1", databases);
+    expect(result.map((b) => b.$id).sort()).toEqual(["bm1", "bm5"]);
+  });
+});
+
+describe("queries: getStudyForViewer (session-client gate)", () => {
+  const wsSurvey = { ...survey, $id: "sv_ws", workspaceId: "ws_1" };
+  const empty = { survey_sections: { documents: [] }, question_blocks: { documents: [] } };
+
+  it("returns the study + effective owner when the session client can read it", async () => {
+    // Authorization is Appwrite's: if the session client returns the survey, the
+    // caller may read it (author or workspace team). Cross-tenant isolation is
+    // verified end-to-end against the live stack, not here.
+    const { databases } = makeFakeDatabases({ surveys: { documents: [wsSurvey] }, ...empty });
+    const r = await getStudyForViewer("sv_ws", databases);
+    expect(r).not.toBeNull();
+    expect(r?.ownerUserId).toBe(owner);
+  });
+
+  it("returns null when the session client cannot read the study", async () => {
+    const { databases } = makeFakeDatabases({ surveys: { documents: [] }, ...empty });
+    expect(await getStudyForViewer("sv_ws", databases)).toBeNull();
   });
 });

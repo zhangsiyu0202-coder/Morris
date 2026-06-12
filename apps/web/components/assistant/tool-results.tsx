@@ -1,6 +1,9 @@
 import Link from "next/link";
-import { FileText, Search, BarChart3, Layers, ArrowRight, AlertTriangle, NotebookText } from "lucide-react";
+import { FileText, Search, BarChart3, Layers, ArrowRight, AlertTriangle, NotebookText, Check } from "lucide-react";
 import { SentimentTag } from "@/components/report/shared";
+import { UNKNOWN_TOOL_METADATA, type ToolMetadata } from "@/lib/assistant/tool-metadata";
+import { isPendingApprovalArtifact } from "@/lib/assistant/approval";
+import { ApprovalCard } from "./approval-card";
 
 function ToolCard({
   icon,
@@ -22,34 +25,74 @@ function ToolCard({
   );
 }
 
-type StudyDraft = {
+type DraftQuestion = { questionText: string; questionType: string; probeLevel?: string };
+type DraftSection = { title: string; objective: string; questions: DraftQuestion[] };
+type SurveyDraftShape = {
   title: string;
-  goal: string;
-  audience: string;
-  questions: { order: number; prompt: string }[];
+  researchGoal: string;
+  targetAudience: string;
+  sections: DraftSection[];
 };
+type CreateStudyResult =
+  | { persisted: false; draft: SurveyDraftShape; note: string }
+  | {
+      persisted: true;
+      surveyId: string;
+      url: string;
+      title: string;
+      sectionCount: number;
+      questionCount: number;
+    };
 
-export function StudyDraftCard({ data }: { data: StudyDraft }) {
+/** 渲染提纲分节 + 问题(预览态与确认卡共用)。 */
+function DraftOutline({ draft }: { draft: SurveyDraftShape }) {
   return (
-    <ToolCard icon={<FileText size={14} />} title="调研草稿">
-      <h4 className="font-display text-body-lg text-ink-900">{data.title}</h4>
-      <p className="mt-1 font-ui text-body-sm text-ink-600">{data.goal}</p>
+    <ol className="mt-3 flex flex-col gap-3">
+      {draft.sections.map((s, i) => (
+        <li key={i}>
+          <p className="font-ui text-body-sm font-medium text-ink-800">
+            {i + 1}. {s.title}
+          </p>
+          {s.objective && <p className="font-ui text-caption text-ink-400">{s.objective}</p>}
+          <ul className="mt-1 flex flex-col gap-1 pl-3">
+            {s.questions.map((q, j) => (
+              <li key={j} className="font-reading text-body-sm leading-6 text-ink-700">
+                {j + 1}. {q.questionText}
+              </li>
+            ))}
+          </ul>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+export function CreateStudyResultCard({ data }: { data: CreateStudyResult }) {
+  if (data.persisted) {
+    return (
+      <ToolCard icon={<Check size={14} />} title="调研已创建">
+        <h4 className="font-display text-body-lg text-ink-900">{data.title}</h4>
+        <p className="mt-1 font-ui text-body-sm text-ink-500">
+          已保存 {data.sectionCount} 节 · {data.questionCount} 个问题
+        </p>
+        <Link
+          href={data.url}
+          className="mt-3 inline-flex items-center gap-1.5 rounded bg-mauve-200 px-3 py-1.5 font-ui text-body-sm font-medium text-ink-900 transition-colors hover:bg-mauve-100"
+        >
+          打开调研 <ArrowRight size={13} />
+        </Link>
+      </ToolCard>
+    );
+  }
+  return (
+    <ToolCard icon={<FileText size={14} />} title="调研草稿(预览)">
+      <h4 className="font-display text-body-lg text-ink-900">{data.draft.title}</h4>
+      <p className="mt-1 font-ui text-body-sm text-ink-600">{data.draft.researchGoal}</p>
       <div className="mt-2 inline-flex items-center rounded-full bg-mauve-100 px-2 py-0.5 font-ui text-caption text-ink-600">
-        受访人群:{data.audience}
+        受访人群:{data.draft.targetAudience}
       </div>
-      <ol className="mt-3 flex flex-col gap-2">
-        {data.questions.map((q) => (
-          <li key={q.order} className="flex gap-2 font-ui text-body-sm text-ink-800">
-            <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-ink-800 font-data text-[11px] text-ink-0">
-              {q.order}
-            </span>
-            <span className="leading-6">{q.prompt}</span>
-          </li>
-        ))}
-      </ol>
-      <button className="mt-3 inline-flex items-center gap-1.5 rounded-sm border border-mauve-200 bg-mauve-50 px-3 py-1.5 font-ui text-body-sm font-medium text-ink-800 transition-colors hover:bg-mauve-100">
-        采用此草稿 <ArrowRight size={14} />
-      </button>
+      <DraftOutline draft={data.draft} />
+      <p className="mt-3 font-ui text-caption text-ink-400">{data.note}</p>
     </ToolCard>
   );
 }
@@ -187,8 +230,75 @@ function unwrapToolOutput(output: unknown): unknown {
   return output;
 }
 
-export function ToolResult({ toolName, output }: { toolName: string; output: unknown }) {
+/**
+ * EnrichLinkRow (Wave E T19 / morris-tool-metadata R5).
+ *
+ * 把 ToolMetadata.enrichUrl 模板 ({key} 占位符) 与 artifact 字段渲染成统一的"打开"按钮。
+ * 占位符在 artifact 中缺失时整体不渲染按钮 (避免 /notebooks/undefined 类破链接), 并 console.warn
+ * 一行 (含 toolName + missingKey) 供调试。
+ */
+const PLACEHOLDER_RE = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
+
+export function EnrichLinkRow({
+  template,
+  artifact,
+  label = "查看",
+  toolName,
+}: {
+  template: string;
+  artifact: unknown;
+  label?: string;
+  toolName: string;
+}) {
+  if (!artifact || typeof artifact !== "object") return null;
+  const map = artifact as Record<string, unknown>;
+  let missing: string | null = null;
+  const href = template.replace(PLACEHOLDER_RE, (_, key) => {
+    const v = map[key];
+    if (v === undefined || v === null || v === "") {
+      missing = key;
+      return "";
+    }
+    return encodeURIComponent(String(v));
+  });
+  if (missing) {
+    // eslint-disable-next-line no-console
+    console.warn(`[tool-results] enrichUrl placeholder missing: tool=${toolName} key=${missing}`);
+    return null;
+  }
+  return (
+    <Link
+      href={href}
+      className="mt-3 inline-flex items-center gap-1.5 rounded bg-mauve-200 px-3 py-1.5 font-ui text-body-sm font-medium text-ink-900 transition-opacity hover:bg-mauve-100"
+    >
+      {label} <ArrowRight size={13} />
+    </Link>
+  );
+}
+
+export function ToolResult({
+  toolName,
+  output,
+  metadata = UNKNOWN_TOOL_METADATA,
+}: {
+  toolName: string;
+  output: unknown;
+  /** 工具 metadata (R5 / morris-tool-metadata). 缺省走 UNKNOWN_TOOL_METADATA fallback. */
+  metadata?: ToolMetadata;
+}) {
   const artifact = unwrapToolOutput(output);
+
+  // 危险写操作的 pending_approval 形态 → 渲染确认卡 (R8 / survey-editor T11)。
+  if (isPendingApprovalArtifact(artifact)) {
+    return (
+      <ApprovalCard
+        proposalId={artifact.proposalId}
+        toolName={artifact.toolName}
+        preview={artifact.preview}
+        payload={artifact.payload}
+      />
+    );
+  }
 
   // 统一拦截工具失败态:任意工具返回 { error: true, message } 时渲染错误卡。
   if (artifact && typeof artifact === "object" && (artifact as { error?: boolean }).error === true) {
@@ -196,19 +306,57 @@ export function ToolResult({ toolName, output }: { toolName: string; output: unk
     return <ToolErrorCard message={message} />;
   }
 
+  // 1. 主 Card (按 toolName 分流, 维持现状视觉)
+  let card: React.ReactNode = null;
   switch (toolName) {
     case "createStudyDraft":
-      return <StudyDraftCard data={artifact as StudyDraft} />;
+      card = <CreateStudyResultCard data={artifact as CreateStudyResult} />;
+      break;
     case "searchInterviewData":
-      return <SearchResultCard data={artifact as SearchResult} />;
+      card = <SearchResultCard data={artifact as SearchResult} />;
+      break;
     case "analyzeData":
-      return <AnalysisCard data={artifact as Analysis} />;
+      card = <AnalysisCard data={artifact as Analysis} />;
+      break;
     case "listStudies":
-      return <StudyListCard data={artifact as StudyList} />;
+      card = <StudyListCard data={artifact as StudyList} />;
+      break;
     case "createNotebook":
-      return <NotebookCreatedCard data={artifact as NotebookCreated} />;
+      card = <NotebookCreatedCard data={artifact as NotebookCreated} />;
+      break;
     default:
-      return null;
+      card = null;
+  }
+
+  // 2. 统一 enrichUrl 按钮 (R5): NotebookCreatedCard 内的硬写 Link 已迁到这里。
+  // EnrichLinkRow 在占位符缺失时返回 null, 等价于"不渲染按钮"。
+  const enrich = metadata.enrichUrl ? (
+    <EnrichLinkRow
+      template={metadata.enrichUrl}
+      artifact={artifact}
+      label={enrichLabelFor(toolName)}
+      toolName={toolName}
+    />
+  ) : null;
+
+  if (!card && !enrich) return null;
+  return (
+    <>
+      {card}
+      {enrich}
+    </>
+  );
+}
+
+/** 给特定工具的"打开"按钮提供品牌化文案; 缺省"查看". */
+function enrichLabelFor(toolName: string): string {
+  switch (toolName) {
+    case "createNotebook":
+      return "查看 Notebook";
+    case "analyzeData":
+      return "查看完整报告";
+    default:
+      return "查看";
   }
 }
 
@@ -231,18 +379,14 @@ function NotebookCreatedCard({ data }: { data: NotebookCreated }) {
       </ToolCard>
     );
   }
+  // "查看 Notebook" 按钮已迁到 ToolResult 的 EnrichLinkRow (Wave E T22 / morris-tool-metadata R5).
+  // 视觉等价: mauve-200 + ArrowRight + 文案"查看 Notebook" 由 enrichLabelFor("createNotebook") 提供.
   return (
     <ToolCard icon={<NotebookText size={14} />} title="Notebook 已创建">
       <h4 className="font-display text-body-lg text-ink-900">{data.question}</h4>
       <p className="mt-1 font-ui text-body-sm text-ink-500">
         含 {data.sectionCount} 个章节 · shortId {data.notebookShortId}
       </p>
-      <Link
-        href={`/notebooks/${data.notebookShortId}`}
-        className="mt-3 inline-flex items-center gap-1.5 rounded bg-mauve-200 px-3 py-1.5 font-ui text-body-sm font-medium text-ink-900 transition-opacity hover:bg-mauve-100"
-      >
-        查看 Notebook <ArrowRight size={13} />
-      </Link>
     </ToolCard>
   );
 }

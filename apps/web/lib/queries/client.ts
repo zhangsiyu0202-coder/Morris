@@ -46,3 +46,20 @@ export const DATABASE_ID = "merism";
 
 /** Re-export Query so callers don't need to import node-appwrite directly. */
 export { Query };
+
+/**
+ * Databases bound to the CURRENT researcher's session. Reads through this client
+ * are enforced by Appwrite's permission engine — a row is returned only when the
+ * caller has `read(user:self)` or `read(team:theirWorkspace)` on it (ADR-0006 B
+ * native tenant isolation), so the read layer needs no in-code tenant filter.
+ *
+ * `@/lib/auth/appwrite` (which imports `next/headers`) is loaded dynamically so
+ * this module stays importable in the query unit tests, which inject a
+ * Databases mock and never reach this path.
+ */
+export async function getSessionDb(): Promise<Databases> {
+  const { readSessionSecret, sessionClient } = await import("@/lib/auth/appwrite");
+  const secret = await readSessionSecret();
+  if (!secret) throw new Error("not_authenticated");
+  return new Databases(sessionClient(secret));
+}

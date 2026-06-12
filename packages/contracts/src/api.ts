@@ -9,6 +9,7 @@ import {
   TranscriptSegmentSchema,
   DashboardTileLayoutSchema,
   DashboardWidgetType,
+  VisualAnalysisJobStatus,
 } from "./entities.js";
 
 // issueLivekitToken (§6.2)
@@ -191,11 +192,13 @@ export const StudyProbeLevelSchema = z.enum(["standard", "deep"]);
 
 export const SurveyDraftQuestionSchema = z
   .object({
-    questionText: z.string().min(1),
+    // `.trim()` 归一化前后空白后再 `.min(1)`,纯空白串(" ")会被裁成 "" 并拒绝。
+    // 借鉴 PostHog CreateUserInterviewTopicTool 对 topic/questions 的 strip 处理。
+    questionText: z.string().trim().min(1),
     questionType: StudyQuestionTypeSchema,
     probeLevel: StudyProbeLevelSchema.default("standard"),
-    probeInstruction: z.string().default(""),
-    options: z.array(z.string().min(1)).default([]),
+    probeInstruction: z.string().trim().default(""),
+    options: z.array(z.string().trim().min(1)).default([]),
     allowSkip: z.boolean().default(false),
     stimulus: StimulusSchema.optional(),
   })
@@ -213,16 +216,22 @@ export const SurveyDraftQuestionSchema = z
   });
 
 export const SurveyDraftSectionSchema = z.object({
-  title: z.string().min(1),
-  objective: z.string().min(1),
+  title: z.string().trim().min(1),
+  objective: z.string().trim().min(1),
   questions: z.array(SurveyDraftQuestionSchema).min(1),
 });
 
 export const SurveyDraftSchema = z.object({
-  title: z.string().min(1),
-  researchGoal: z.string().min(1),
-  targetAudience: z.string().min(1),
-  introScript: z.string().min(1),
+  title: z.string().trim().min(1),
+  researchGoal: z.string().trim().min(1),
+  targetAudience: z.string().trim().min(1),
+  introScript: z.string().trim().min(1),
+  // survey-editor moderator-instruction increment: researcher-authored directives
+  // for the AI voice moderator (tone, pacing-as-behavior, interview style). The
+  // interview GOAL is NOT duplicated here — it stays in `researchGoal`. Composed
+  // into InterviewWorkflowConfig.supervisorInstruction at build time. Default ""
+  // keeps existing drafts valid and means "use the operational default only".
+  moderatorInstruction: z.string().trim().default(""),
   sections: z.array(SurveyDraftSectionSchema).min(1),
 });
 
@@ -440,6 +449,43 @@ export const VisualAnalysisMomentSchema = z.object({
   segmentId: z.string().optional(),
 });
 
+// Interview-specific frustration signals (PostHog session_summary sentiment
+// signals borrowed and renamed for the voice-interview domain per scope.md —
+// no screen-click signals like rage_click/dead_click).
+export const VisualSentimentSignalSchema = z.object({
+  signalType: z.enum([
+    "long_pause",
+    "hesitation",
+    "backtracking",
+    "confusion",
+    "repeated_question",
+    "abandonment",
+    "frustration_expressed",
+    "other",
+  ]),
+  segmentIndex: z.number().int().nonnegative(),
+  description: z.string(),
+  intensity: z.number().min(0).max(1),
+});
+
+export const VISUAL_ANALYSIS_OUTCOMES = ["successful", "friction", "frustrated", "blocked"] as const;
+
+// Fixed tag taxonomy for interview sessions (PostHog AI_TAGS_FIXED_TAXONOMY
+// borrowed + renamed for the voice-interview domain per scope.md). No
+// team-custom taxonomy — teams are out of scope.
+export const VISUAL_TAG_TAXONOMY: Record<string, string> = {
+  engaged: "Interviewee is attentive, elaborates, answers readily",
+  hesitation: "Noticeable pauses, uncertainty, or trailing-off before answering",
+  confusion: "Misunderstands a question, asks for clarification, or backtracks",
+  frustration: "Visible irritation, terse answers, or complaints",
+  disengagement: "Distracted, minimal answers, looking away, wanting to end",
+  stimulus_reaction: "A clear reaction (positive or negative) to a shown stimulus",
+  strong_opinion: "Expresses a strong like/dislike or memorable, quotable view",
+  storytelling: "Shares a concrete personal anecdote or detailed scenario",
+  technical_issue: "Audio/video/connection problem visibly affected the session",
+  off_topic: "Sustained drift away from the interview questions",
+};
+
 export const VisualAnalysisOutputSchema = z.object({
   source: z.literal("recording"),
   recordingFileId: z.string(),
@@ -449,7 +495,16 @@ export const VisualAnalysisOutputSchema = z.object({
   keyMoments: z.array(VisualAnalysisMomentSchema),
   summary: z.string(),
   sentiment: z.enum(["positive", "neutral", "negative", "mixed"]).default("neutral"),
+  // Numeric frustration model (ADR 0005 Gap D, PostHog parity). 0=smooth, 1=severe.
+  frustrationScore: z.number().min(0).max(1).default(0),
+  outcome: z.enum(VISUAL_ANALYSIS_OUTCOMES).default("successful"),
+  sentimentSignals: z.array(VisualSentimentSignalSchema).default([]),
+  // Free tags (legacy) + fixed-taxonomy + freeform tags + highlight (Gap E).
   tags: z.array(z.string()).default([]),
+  tagsFixed: z.array(z.string()).default([]),
+  tagsFreeform: z.array(z.string()).default([]),
+  // True only when a human should watch this session (something notable/broken).
+  highlighted: z.boolean().default(false),
   modelId: z.string().optional(),
   generatedAt: z.string().datetime().optional(),
 });
@@ -699,12 +754,21 @@ export function buildInterviewWorkflowConfigFromDraft(
     BuildInterviewWorkflowConfigInputSchema.parse(input);
   const runtimeStudy = buildInterviewRuntimeStudy({ surveyId, draft });
 
+  // Operational base: how to run the interview (section order, probes). Stable.
+  const operationalInstruction = `Guide a qualitative interview for "${runtimeStudy.studyTitle}". Use the intro script, follow the section order, and use probe instructions when configured.`;
+  // Moderator persona/delivery (tone, pacing-as-behavior, style) authored by the
+  // researcher on the survey. Prepended so it frames the whole interview; the
+  // operational base still follows. An explicit `supervisorInstruction` arg wins
+  // outright (used by callers that already composed their own).
+  const moderator = draft.moderatorInstruction?.trim();
+  const composedInstruction = moderator
+    ? `${moderator}\n\n${operationalInstruction}`
+    : operationalInstruction;
+
   return InterviewWorkflowConfigSchema.parse({
     surveyId,
     sessionId,
-    supervisorInstruction:
-      supervisorInstruction ??
-      `Guide a qualitative interview for "${runtimeStudy.studyTitle}". Use the intro script, follow the section order, and use probe instructions when configured.`,
+    supervisorInstruction: supervisorInstruction ?? composedInstruction,
     sections: runtimeStudy.sections.map((section) => ({
       sectionId: section.sectionId,
       title: section.title,
@@ -867,3 +931,24 @@ export const SearchAcrossNotebooksResponseSchema = z.object({
 
 export type SearchAcrossNotebooksRequest = z.infer<typeof SearchAcrossNotebooksRequestSchema>;
 export type SearchAcrossNotebooksResponse = z.infer<typeof SearchAcrossNotebooksResponseSchema>;
+
+// analyzeSessionVisual: async post-session Gemini visual pipeline (ADR 0005 D1).
+// Enqueued by analyzeSession after the text report is persisted; runs the
+// upload -> per-segment -> consolidation pass off the request path and patches
+// `visualAnalysis` back into the AnalysisReport(scope=session) row.
+export const AnalyzeSessionVisualRequestSchema = z.object({
+  sessionId: z.string().min(1),
+});
+
+export const AnalyzeSessionVisualResponseSchema = z.object({
+  jobId: z.string(),
+  status: VisualAnalysisJobStatus,
+  // true when this invocation claimed the job; false when a concurrent run
+  // already claimed it (the 409-CAS dedup loser, ADR 0005 D3).
+  claimed: z.boolean(),
+});
+
+export type AnalyzeSessionVisualRequest = z.infer<typeof AnalyzeSessionVisualRequestSchema>;
+export type AnalyzeSessionVisualResponse = z.infer<typeof AnalyzeSessionVisualResponseSchema>;
+
+export type VisualSentimentSignal = z.infer<typeof VisualSentimentSignalSchema>;

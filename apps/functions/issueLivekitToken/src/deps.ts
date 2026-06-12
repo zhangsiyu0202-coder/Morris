@@ -75,6 +75,7 @@ export function createRealDeps(): IssueDeps {
         $id: doc.$id,
         surveyId: doc.surveyId,
         ownerUserId: project.ownerUserId,
+        workspaceId: doc.workspaceId ?? project.workspaceId ?? undefined,
         mode: doc.mode,
         kind: doc.kind === "test" ? "test" : "production",
         maxUses: doc.maxUses,
@@ -85,8 +86,25 @@ export function createRealDeps(): IssueDeps {
       };
     },
 
+    async checkQuota(workspaceId: string): Promise<"ok" | "over"> {
+      try {
+        const q = (await db.getDocument(DB, "workspace_quota", `wq_${workspaceId}`)) as any;
+        return q.state === "over" ? "over" : "ok";
+      } catch {
+        return "ok"; // no quota row yet => not gated
+      }
+    },
+
     async createSession(sessionId: string, data: SessionInit): Promise<boolean> {
       try {
+        // Owner always reads; when the session belongs to a workspace, its team
+        // can read too (ADR-0006 read=team). Additive — the existing study-level
+        // (API-key) read path is unaffected; this forward-enables native
+        // session-client reads by workspace members.
+        const permissions = [
+          Permission.read(Role.user(data.ownerUserId)),
+          ...(data.workspaceId ? [Permission.read(Role.team(data.workspaceId))] : []),
+        ];
         await db.createDocument(
           DB,
           "interview_sessions",
@@ -94,11 +112,12 @@ export function createRealDeps(): IssueDeps {
           {
             surveyId: data.surveyId,
             linkId: data.linkId,
+            ...(data.workspaceId ? { workspaceId: data.workspaceId } : {}),
             state: "created",
             livekitRoom: data.livekitRoom,
             intervieweeAlias: data.intervieweeAlias,
           },
-          [Permission.read(Role.user(data.ownerUserId))],
+          permissions,
         );
         return true;
       } catch (e: any) {

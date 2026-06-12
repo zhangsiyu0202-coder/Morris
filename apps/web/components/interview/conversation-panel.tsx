@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import type { TranscriptLine } from "@/lib/use-live-interview"
+import type { TranscriptLine } from "@/lib/hooks/use-live-interview"
 
 interface ConversationPanelProps {
   transcript: TranscriptLine[]

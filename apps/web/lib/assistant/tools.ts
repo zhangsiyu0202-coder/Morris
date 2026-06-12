@@ -20,6 +20,7 @@ import { buildCreateStudyDraftTool } from "./tools/create-study-draft";
 import { buildCreateNotebookTool } from "./tools/create-notebook";
 import { buildSearchAcrossStudiesTool } from "./tools/search-across-studies";
 import { buildTodoWriteTool, type TodoState } from "./tools/todo-write";
+import { buildManageMemoriesTool } from "./tools/manage-memories";
 import type { TodoItem } from "./system-prompt";
 
 export type { AssistantToolContext } from "./tool-types";
@@ -33,6 +34,8 @@ export {
 } from "./envelope";
 
 import type { AssistantToolContext } from "./tool-types";
+import type { ToolMetadata } from "./tool-metadata";
+import { withApprovalGuard } from "./approval";
 
 /** 工具集的扩展 ctx: 把 TodoWrite 元工具需要的状态通道挂在这里, 不污染 AssistantToolContext。 */
 export interface AssistantToolsCtx extends AssistantToolContext {
@@ -56,16 +59,51 @@ function makeDefaultTodoState(): TodoState {
  * 当前包含 4 个工具:listStudies / searchInterviewData / analyzeData /
  * createStudyDraft。新增工具按 ./tools/*.ts 同模式落,然后在这里注册即可。
  */
+/**
+ * 把 builder 输出的 spec.execute 用 withApprovalGuard 包装 (R4 / morris-tool-metadata).
+ * destructive=false 时是 identity wrapper, 零开销; destructive=true 时无 approvalToken
+ * 走 proposeApproval 路径让 hasPendingApproval 终止。
+ *
+ * `execute` 强转 any 是因为 Vercel AI SDK 6 的 tool().execute 用 generic narrow
+ * 出每个工具自己的 input/output 形状, withApprovalGuard 用统一 generic 不能直接
+ * 命中。当前 7 工具全 destructive=false 走 identity 分支, 运行时等价于原 execute,
+ * 不会引入类型不匹配的实际风险。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnySpec = any;
+function wrapWithApproval<
+  T extends { spec: AnySpec; metadata: ToolMetadata; approvalPreview?: (input: never) => string },
+>(name: string, built: T): T["spec"] {
+  const guarded = withApprovalGuard(
+    name,
+    built.metadata,
+    built.spec.execute as never,
+    built.approvalPreview as never,
+  );
+  return { ...built.spec, execute: guarded } as T["spec"];
+}
+
 export function buildAssistantTools(ctx: AssistantToolsCtx) {
   const todoState = ctx.todoState ?? makeDefaultTodoState();
+  const builds = {
+    listStudies: buildListStudiesTool(ctx),
+    searchInterviewData: buildSearchInterviewDataTool(ctx),
+    analyzeData: buildAnalyzeDataTool(ctx),
+    createStudyDraft: buildCreateStudyDraftTool(ctx),
+    createNotebook: buildCreateNotebookTool(ctx),
+    searchAcrossStudies: buildSearchAcrossStudiesTool(ctx),
+    todoWrite: buildTodoWriteTool({ todoState }),
+    manageMemories: buildManageMemoriesTool(ctx),
+  };
   return {
-    listStudies: buildListStudiesTool(ctx).spec,
-    searchInterviewData: buildSearchInterviewDataTool(ctx).spec,
-    analyzeData: buildAnalyzeDataTool(ctx).spec,
-    createStudyDraft: buildCreateStudyDraftTool(ctx).spec,
-    createNotebook: buildCreateNotebookTool(ctx).spec,
-    searchAcrossStudies: buildSearchAcrossStudiesTool(ctx).spec,
-    todoWrite: buildTodoWriteTool({ todoState }).spec,
+    listStudies: wrapWithApproval("listStudies", builds.listStudies),
+    searchInterviewData: wrapWithApproval("searchInterviewData", builds.searchInterviewData),
+    analyzeData: wrapWithApproval("analyzeData", builds.analyzeData),
+    createStudyDraft: wrapWithApproval("createStudyDraft", builds.createStudyDraft),
+    createNotebook: wrapWithApproval("createNotebook", builds.createNotebook),
+    searchAcrossStudies: wrapWithApproval("searchAcrossStudies", builds.searchAcrossStudies),
+    todoWrite: wrapWithApproval("todoWrite", builds.todoWrite),
+    manageMemories: wrapWithApproval("manageMemories", builds.manageMemories),
   };
 }
 
@@ -89,5 +127,33 @@ export function buildToolContextTemplates(
     createNotebook: buildCreateNotebookTool(ctx).contextPromptTemplate,
     searchAcrossStudies: buildSearchAcrossStudiesTool(ctx).contextPromptTemplate,
     todoWrite: undefined,
+    manageMemories: buildManageMemoriesTool(ctx).contextPromptTemplate,
+  };
+}
+
+
+/**
+ * 构造 Morris 工具的元数据 manifest 视图 (R6 / morris-tool-metadata).
+ *
+ * 返回的 record keys 与 `buildAssistantTools(ctx)` 一致 — `metadata.test.ts::K-METADATA-01`
+ * 强制这点。给 approval guard / system-prompt TOOLS_OVERVIEW / tool-results UI 共用。
+ *
+ * `todoWrite` 的 builder 需要 `todoState` 参数, 但 metadata 与 todoState 无关, 这里给一个空 stub。
+ *
+ * 性能: O(N=7) 纯函数, 每请求调一次 < 1ms。禁止跨请求缓存 — builder 是请求作用域。
+ */
+export function buildAssistantToolMetadata(
+  ctx: AssistantToolContext,
+): Record<keyof AssistantTools, ToolMetadata> {
+  const todoStateStub = { get: () => [], set: () => {} };
+  return {
+    listStudies: buildListStudiesTool(ctx).metadata,
+    searchInterviewData: buildSearchInterviewDataTool(ctx).metadata,
+    analyzeData: buildAnalyzeDataTool(ctx).metadata,
+    createStudyDraft: buildCreateStudyDraftTool(ctx).metadata,
+    createNotebook: buildCreateNotebookTool(ctx).metadata,
+    searchAcrossStudies: buildSearchAcrossStudiesTool(ctx).metadata,
+    todoWrite: buildTodoWriteTool({ todoState: todoStateStub }).metadata,
+    manageMemories: buildManageMemoriesTool(ctx).metadata,
   };
 }

@@ -3,6 +3,7 @@ import fc from "fast-check";
 import {
   AnalysisReportSchema,
   AnalysisReportOutputSchema,
+  BookmarkSchema,
   DashboardSchema,
   DashboardTileSchema,
   DashboardWidgetRunInputSchema,
@@ -231,6 +232,43 @@ describe("contracts: survey draft shape", () => {
     expect(draft.sections[0]?.questions[0]?.probeLevel).toBe("standard");
   });
 
+  it("trims surrounding whitespace and rejects blank-only strings", () => {
+    const draft = SurveyDraftSchema.parse({
+      title: "  Coffee study  ",
+      researchGoal: "  Understand subscribers.  ",
+      targetAudience: " Recent subscribers ",
+      introScript: " Thanks for joining. ",
+      sections: [
+        {
+          title: " Warm-up ",
+          objective: " Context. ",
+          questions: [{ questionText: "  Tell me more.  ", questionType: "open_ended" }],
+        },
+      ],
+    });
+    // 正例: 前后空白被裁掉。
+    expect(draft.title).toBe("Coffee study");
+    expect(draft.sections[0]?.title).toBe("Warm-up");
+    expect(draft.sections[0]?.questions[0]?.questionText).toBe("Tell me more.");
+
+    // 反例: 纯空白 questionText 裁成 "" 后被 min(1) 拒绝。
+    expect(
+      SurveyDraftSchema.safeParse({
+        title: "Blank question draft",
+        researchGoal: "Goal.",
+        targetAudience: "Anyone.",
+        introScript: "Hello.",
+        sections: [
+          {
+            title: "Section 1",
+            objective: "Collect answers.",
+            questions: [{ questionText: "   ", questionType: "open_ended" }],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects choice questions without enough options", () => {
     expect(
       SurveyDraftSchema.safeParse({
@@ -343,6 +381,51 @@ describe("contracts: survey draft shape", () => {
 
     expect(metadata.runtimeStudy?.sections[0]?.questions[0]?.questionId).toBe("question-1-1");
     expect(metadata.workflowConfig?.sections[0]?.questions[0]?.questionId).toBe("question-1-1");
+  });
+
+  it("composes moderatorInstruction into supervisorInstruction (persona prepended), default empty", () => {
+    const baseDraft = {
+      title: "Retention study",
+      researchGoal: "Understand what keeps users active.",
+      targetAudience: "Recently activated users.",
+      introScript: "Thanks for talking with me today.",
+      sections: [
+        {
+          title: "Opening",
+          objective: "Get grounded in a recent experience.",
+          questions: [
+            {
+              questionText: "Tell me about a recent time you used the product.",
+              questionType: "open_ended",
+              probeLevel: "standard",
+              probeInstruction: "Ask what they were trying to accomplish.",
+            },
+          ],
+        },
+      ],
+    };
+
+    // default "" => operational base only, no persona prefix.
+    const draftNoMod = SurveyDraftSchema.parse(baseDraft);
+    expect(draftNoMod.moderatorInstruction).toBe("");
+    const wfNoMod = buildInterviewWorkflowConfigFromDraft({
+      surveyId: "survey-1",
+      sessionId: "session-1",
+      draft: draftNoMod,
+    });
+    expect(wfNoMod.supervisorInstruction.startsWith("Guide a qualitative interview")).toBe(true);
+
+    // present => persona prepended, operational base still present.
+    const wfMod = buildInterviewWorkflowConfigFromDraft({
+      surveyId: "survey-1",
+      sessionId: "session-1",
+      draft: SurveyDraftSchema.parse({
+        ...baseDraft,
+        moderatorInstruction: "Warm, unhurried; let pauses breathe; never read questions verbatim.",
+      }),
+    });
+    expect(wfMod.supervisorInstruction.startsWith("Warm, unhurried")).toBe(true);
+    expect(wfMod.supervisorInstruction).toContain("Guide a qualitative interview");
   });
 });
 
@@ -561,5 +644,60 @@ describe("contracts: Notebook entity (Wave F: legacy Insight rename + report 字
       actions: [],
     });
     expect(r.confidence).toBe("high");
+  });
+});
+
+describe("contracts: Bookmark note + tags", () => {
+  const base = {
+    $id: "bm_1",
+    ownerUserId: "u_1",
+    surveyId: "s_1",
+    sessionId: "sess_1",
+    quote: "我觉得这个流程太复杂了",
+    source: "用户研究 · Q2",
+    respondent: "受访者 · 01:23",
+    segmentIndex: 3,
+    createdAt: "2026-06-12T05:00:00.000Z",
+  };
+
+  it("defaults note to empty string and tags to empty array when absent", () => {
+    const parsed = BookmarkSchema.parse(base);
+    expect(parsed.note).toBe("");
+    expect(parsed.tags).toEqual([]);
+  });
+
+  it("preserves a researcher's note and tags through parse", () => {
+    const parsed = BookmarkSchema.parse({
+      ...base,
+      note: "对照 P0 痛点,值得在报告里引用",
+      tags: ["痛点", "导航"],
+    });
+    expect(parsed.note).toBe("对照 P0 痛点,值得在报告里引用");
+    expect(parsed.tags).toEqual(["痛点", "导航"]);
+  });
+
+  it("carries the absolute recording offset (startMs) seek anchor", () => {
+    const parsed = BookmarkSchema.parse({ ...base, startMs: 83000 });
+    expect(parsed.startMs).toBe(83000);
+    expect(BookmarkSchema.parse(base).startMs).toBeUndefined();
+  });
+
+  it("round-trips any valid note/tags idempotently", () => {
+    fc.assert(
+      fc.property(
+        fc.string(),
+        fc.array(fc.string({ minLength: 1 }), { maxLength: 8 }),
+        (note, tags) => {
+          const once = BookmarkSchema.parse({ ...base, note, tags });
+          const twice = BookmarkSchema.parse(once);
+          expect(twice).toEqual(once);
+        },
+      ),
+    );
+  });
+
+  it("rejects non-string tag entries", () => {
+    const result = BookmarkSchema.safeParse({ ...base, tags: [1, 2] });
+    expect(result.success).toBe(false);
   });
 });

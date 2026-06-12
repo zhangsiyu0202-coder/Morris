@@ -1,6 +1,6 @@
 "use server";
 
-import { ID } from "node-appwrite";
+import { ID, Permission, Role } from "node-appwrite";
 import {
   SurveyDraftSchema,
   canTransitionSurveyStatus,
@@ -8,7 +8,8 @@ import {
   type SurveyStatus,
 } from "@merism/contracts";
 import { getServerClient, DATABASE_ID, Query } from "@/lib/queries/client";
-import { requireOwnerUserId } from "@/lib/owner";
+import { requireOwnerUserId } from "@/lib/auth/owner";
+import { getCurrentWorkspaceId } from "@/lib/auth/workspace";
 
 /**
  * 编辑器写路径(Appwrite)。把编辑态 `SurveyDraft` 规范化落到
@@ -39,13 +40,17 @@ function db() {
   return getServerClient().databases;
 }
 
-/** 读取并校验 survey 归属当前 owner;不属于则抛错(P-SEC-04)。 */
+/** 读取并校验 survey 可被当前 caller 写(作者本人);不是作者则抛错(P-SEC-04 / ADR-0006 D3 写私有)。 */
 async function assertOwned(
   surveyId: string,
 ): Promise<{ ownerUserId: string; version: number; currentStatus: SurveyStatus }> {
   const owner = await requireOwnerUserId();
   const doc = await db().getDocument(DATABASE_ID, SURVEYS, surveyId);
-  if ((doc as { ownerUserId?: string }).ownerUserId !== owner) {
+  const d = doc as { ownerUserId?: string; authorId?: string };
+  // ADR-0006 D3: edit/delete is author-private. authorId is the creator; fall
+  // back to ownerUserId for rows written before the authorId recast.
+  const isAuthor = d.authorId === owner || d.ownerUserId === owner;
+  if (!isAuthor) {
     throw new Error("survey_not_owned");
   }
   const rawStatus = String((doc as { status?: string }).status ?? "draft");
@@ -66,15 +71,40 @@ async function assertOwned(
 /** 新建空白调研,返回其 $id。 */
 export async function createSurvey(title: string): Promise<string> {
   const owner = await requireOwnerUserId();
-  const doc = await db().createDocument(DATABASE_ID, SURVEYS, ID.unique(), {
-    ownerUserId: owner,
-    projectId: DEFAULT_PROJECT,
-    title: title.trim() || "未命名调研",
-    status: "draft",
-    flowConfig: JSON.stringify({}),
-    version: 1,
-    updatedAt: new Date().toISOString(),
-  });
+  const workspaceId = await getCurrentWorkspaceId();
+  // ADR-0006 D3: in a workspace the whole team can read, only the author edits/
+  // deletes; solo (no workspace) is owner-only. Server reads use the API key, so
+  // tenant isolation is also enforced in-code via tenantFilter; these doc
+  // permissions are the declarative mirror + defense for any client read.
+  const permissions = workspaceId
+    ? [
+        Permission.read(Role.team(workspaceId)),
+        Permission.update(Role.user(owner)),
+        Permission.delete(Role.user(owner)),
+      ]
+    : [
+        Permission.read(Role.user(owner)),
+        Permission.update(Role.user(owner)),
+        Permission.delete(Role.user(owner)),
+      ];
+  const doc = await db().createDocument(
+    DATABASE_ID,
+    SURVEYS,
+    ID.unique(),
+    {
+      ownerUserId: owner,
+      authorId: owner,
+      ...(workspaceId ? { workspaceId } : {}),
+      projectId: DEFAULT_PROJECT,
+      title: title.trim() || "未命名调研",
+      status: "draft",
+      flowConfig: JSON.stringify({}),
+      moderatorInstruction: "",
+      version: 1,
+      updatedAt: new Date().toISOString(),
+    },
+    permissions,
+  );
   return doc.$id;
 }
 
@@ -106,6 +136,7 @@ export async function saveSurveyDraft(surveyId: string, draftInput: SurveyDraft)
       targetAudience: draft.targetAudience,
       introScript: draft.introScript,
     }),
+    moderatorInstruction: draft.moderatorInstruction,
     version: version + 1,
     updatedAt: new Date().toISOString(),
   });
@@ -142,6 +173,25 @@ export async function saveSurveyDraft(surveyId: string, draftInput: SurveyDraft)
       });
     }
   }
+}
+
+/**
+ * 从一份完整 `SurveyDraft` 一步创建调研:建空 survey + 全量保存提纲。
+ *
+ * 给 Morris `createStudyDraft` 工具的「批准后落库」路径用(approval confirm 端点),
+ * 也可被编辑器复用。两步都经 `requireOwnerUserId()`(在 createSurvey / saveSurveyDraft
+ * 内部),未登录直接抛 `not_authenticated`,不会留下半截 survey。
+ *
+ * 边界用 `SurveyDraftSchema.parse` 校验(含 choice 题至少两选项等 superRefine 不变量),
+ * 校验失败在创建任何文档前抛出。
+ */
+export async function createSurveyFromDraft(
+  draftInput: SurveyDraft,
+): Promise<{ surveyId: string; url: string }> {
+  const draft = SurveyDraftSchema.parse(draftInput);
+  const surveyId = await createSurvey(draft.title);
+  await saveSurveyDraft(surveyId, draft);
+  return { surveyId, url: `/studies/${surveyId}` };
 }
 
 /** 切换调研状态;通过 canTransitionSurveyStatus 守卫非法迁移。 */

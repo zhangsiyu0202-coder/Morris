@@ -3,6 +3,14 @@ import { z } from "zod";
 // Reusable json field (Appwrite stores as stringified json / object attr)
 const json = z.record(z.string(), z.unknown());
 
+// --- ADR 0006 (workspaces-billing) tenancy fields ---------------------------
+// `workspaceId` is the tenant key (an Appwrite Team id); `authorId` is the
+// creating researcher (the recast of `ownerUserId`, which is kept + read during
+// the M2 migration rollout per the contracts.md deprecation pattern). Both are
+// OPTIONAL until the migration backfills every row; a later slice tightens them
+// to required. Anonymous-interviewee rows carry workspaceId (denormalized for
+// tenant-scoped permissions) but no authorId. See docs/adr/0006.
+
 export const SurveyStatus = z.enum(["draft", "published", "paused", "closed", "archived"]);
 export const QuestionType = z.enum([
   "text",
@@ -86,6 +94,8 @@ export const CurrentResearcherSchema = z.object({
 export const ProjectSchema = z.object({
   $id: z.string(),
   ownerUserId: z.string(),
+  workspaceId: z.string().optional(),
+  authorId: z.string().optional(),
   name: z.string(),
   description: z.string().default(""),
   createdAt: z.string().datetime(),
@@ -94,9 +104,15 @@ export const ProjectSchema = z.object({
 export const SurveySchema = z.object({
   $id: z.string(),
   projectId: z.string(),
+  workspaceId: z.string().optional(),
+  authorId: z.string().optional(),
   title: z.string(),
   status: SurveyStatus.default("draft"),
   flowConfig: json.default({}),
+  // survey-editor moderator-instruction increment: a dedicated (not flowConfig)
+  // field carrying the researcher's directives for the AI voice moderator
+  // (tone/pacing-as-behavior/style). Default "" so existing surveys stay valid.
+  moderatorInstruction: z.string().default(""),
   version: z.number().int().nonnegative().default(1),
   updatedAt: z.string().datetime(),
 });
@@ -151,6 +167,7 @@ export const QuestionBlockSchema = z.object({
 export const InterviewLinkSchema = z.object({
   $id: z.string(),
   surveyId: z.string(),
+  workspaceId: z.string().optional(),
   token: z.string(),
   mode: LinkMode,
   kind: LinkKind.default("production"),
@@ -210,6 +227,7 @@ export const InterviewSessionSchema = z
     $id: z.string(),
     surveyId: z.string(),
     linkId: z.string(),
+    workspaceId: z.string().optional(),
     intervieweeAlias: z.string().optional(),
     state: SessionState.default("created"),
     livekitRoom: z.string(),
@@ -244,6 +262,8 @@ export const RecordingSchema = z.object({
   $id: z.string(),
   sessionId: z.string(),
   ownerUserId: z.string(),
+  workspaceId: z.string().optional(),
+  authorId: z.string().optional(),
   storageFileId: z.string(),
   durationMs: z.number().int().nonnegative(),
   format: RecordingFormat,
@@ -252,6 +272,8 @@ export const RecordingSchema = z.object({
 export const DashboardSchema = z.object({
   $id: z.string(),
   ownerUserId: z.string(),
+  workspaceId: z.string().optional(),
+  authorId: z.string().optional(),
   surveyId: z.string(),
   scope: DashboardScope.default("study"),
   name: z.string(),
@@ -263,6 +285,8 @@ export const DashboardSchema = z.object({
 export const DashboardWidgetSchema = z.object({
   $id: z.string(),
   ownerUserId: z.string(),
+  workspaceId: z.string().optional(),
+  authorId: z.string().optional(),
   dashboardId: z.string(),
   surveyId: z.string(),
   widgetType: DashboardWidgetType,
@@ -285,6 +309,8 @@ export const DashboardTileLayoutSchema = z.object({
 export const DashboardTileSchema = z.object({
   $id: z.string(),
   ownerUserId: z.string(),
+  workspaceId: z.string().optional(),
+  authorId: z.string().optional(),
   dashboardId: z.string(),
   surveyId: z.string(),
   widgetId: z.string(),
@@ -298,12 +324,20 @@ export const DashboardTileSchema = z.object({
 export const BookmarkSchema = z.object({
   $id: z.string(),
   ownerUserId: z.string(),
+  workspaceId: z.string().optional(),
+  authorId: z.string().optional(),
   surveyId: z.string(),
   sessionId: z.string(),
   quote: z.string(),
   source: z.string(),
   respondent: z.string(),
   segmentIndex: z.number().int().nonnegative().optional(),
+  /** Absolute recording offset (ms) this quote anchors to — the seek target for in-app playback. */
+  startMs: z.number().int().nonnegative().optional(),
+  /** Researcher's own free-text annotation on this saved quote. Empty when unset. */
+  note: z.string().default(""),
+  /** Researcher-assigned tags for grouping/filtering bookmarks. Deduped, no empties. */
+  tags: z.array(z.string()).default([]),
   createdAt: z.string().datetime(),
 });
 
@@ -324,6 +358,8 @@ export const AnalysisReportSchema = z
     surveyId: z.string().optional(),
     scope: ReportScope,
     ownerUserId: z.string(),
+    workspaceId: z.string().optional(),
+    authorId: z.string().optional(),
     themes: z.array(z.unknown()).default([]),
     insights: z.array(z.unknown()).default([]),
     citations: z.array(z.unknown()).default([]),
@@ -412,3 +448,56 @@ export type Dashboard = z.infer<typeof DashboardSchema>;
 export type DashboardWidget = z.infer<typeof DashboardWidgetSchema>;
 export type DashboardTileLayout = z.infer<typeof DashboardTileLayoutSchema>;
 export type DashboardTile = z.infer<typeof DashboardTileSchema>;
+
+// --- visual analysis jobs (ADR 0005) ---------------------------------------
+// Tracks the async post-session Gemini visual-analysis pipeline, one row per
+// session. The `$id` is deterministic (`vis_<sessionId>`) so concurrent
+// analyzeSessionVisual invocations collide on create (Appwrite 409) and dedup
+// per the architecture concurrency contract. The row is also the orphan-file
+// record: `geminiFileName` is written BEFORE the ACTIVE-wait so a hard-killed
+// run still leaves the file visible to the sweepGeminiFiles Function.
+export const VisualAnalysisJobStatus = z.enum([
+  "queued",
+  "uploading",
+  "analyzing",
+  "consolidating",
+  "succeeded",
+  "failed",
+]);
+
+/** Statuses past which no further work happens; the sweep may reclaim the file. */
+export const VISUAL_ANALYSIS_JOB_TERMINAL_STATUSES = ["succeeded", "failed"] as const;
+
+export const VisualAnalysisJobSchema = z.object({
+  $id: z.string(),
+  sessionId: z.string(),
+  surveyId: z.string(),
+  ownerUserId: z.string(),
+  workspaceId: z.string().optional(),
+  authorId: z.string().optional(),
+  status: VisualAnalysisJobStatus.default("queued"),
+  // Gemini Files API resource name (e.g. "files/abc123"). Null until the upload
+  // returns a name; cleared once the file is deleted. The sweep's delete target.
+  geminiFileName: z.string().nullable().default(null),
+  // ISO 8601 of upload time; drives the sweep age threshold.
+  geminiUploadedAt: z.string().datetime().nullable().default(null),
+  attemptCount: z.number().int().nonnegative().default(0),
+  errorContext: json.nullable().default(null),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+/** Deterministic job id — the 409-CAS dedup gate (ADR 0005 D3). */
+export function visualAnalysisJobId(sessionId: string): string {
+  return `vis_${sessionId}`;
+}
+
+export type VisualAnalysisJobStatusValue = z.infer<typeof VisualAnalysisJobStatus>;
+export type VisualAnalysisJob = z.infer<typeof VisualAnalysisJobSchema>;
+
+/**
+ * Max times analyzeSessionVisual will run for one session before the job is
+ * marked permanently failed (ADR 0005 D1 retry cap; Temporal RetryPolicy
+ * equivalent). Counts each claim/run attempt, not transport retries.
+ */
+export const MAX_VISUAL_ANALYSIS_ATTEMPTS = 3;

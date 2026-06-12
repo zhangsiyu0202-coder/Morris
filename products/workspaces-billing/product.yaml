@@ -1,0 +1,32 @@
+# Product manifest — borrowed shape from PostHog products/<name>/product.yaml,
+# extended with Merism-specific fields (status, adr, code-location map). This is
+# the machine-readable index for the workspaces-billing vertical slice.
+name: Workspaces & Billing
+key: workspaces-billing
+status: spec            # spec -> in-progress -> shipped
+owners:
+  - "@jia"
+governing_adr: docs/adr/0006-workspaces-seats-plans-and-usage-billing.md
+reference: posthog/products/{user_interviews,surveys,billing}
+
+# Merism is a pnpm workspace, NOT a co-located Django monolith. A product's code
+# lands across the workspace; this map is the source of truth for where.
+code_locations:
+  contracts: packages/contracts/src/billing.ts        # new file (entities + api split allowed)
+  schema: packages/appwrite-schema/src/schema.ts      # Appwrite Teams + new collections
+  functions:
+    - apps/functions/createWorkspace
+    - apps/functions/inviteMember
+    - apps/functions/changePlan
+    - apps/functions/stripeWebhook
+    - apps/functions/aggregateWorkspaceUsage
+    - apps/functions/issueLivekitToken               # extended: workspace + quota gate
+  agent: apps/agent/agent                              # emit billable UsageEvent on completion
+  web: apps/web/app/(workspace settings, members, billing scenes)
+  tests: tests/properties                              # tenant isolation, seats, billing idempotency, quota, webhook
+
+# Plans are entitlement bundles; concrete prices live in Stripe + the PRD, NOT here.
+plans:
+  - key: plus
+  - key: pro
+billable_unit: completed_interview_session            # idempotent per sessionId

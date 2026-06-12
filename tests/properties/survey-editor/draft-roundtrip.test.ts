@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import fc from "fast-check";
 import type { Survey, SurveySection, QuestionBlock, SurveyDraft } from "@merism/contracts";
-import { assembleSurveyDraft } from "../../../apps/web/lib/survey-draft";
+import { assembleSurveyDraft } from "../../../apps/web/lib/survey/draft";
 
 /**
  * P-DATA-01 (survey-editor): 对任意合法 SurveyDraft,写→读往返语义等价。

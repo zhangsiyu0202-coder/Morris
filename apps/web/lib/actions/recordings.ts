@@ -2,7 +2,7 @@
 
 import { getRecordingBySession } from "@/lib/queries/recordings";
 import { assertSessionOwned } from "@/lib/server/recordings";
-import { getOwnerUserIdOrNull } from "@/lib/owner";
+import { getOwnerUserIdOrNull } from "@/lib/auth/owner";
 
 export type RecordingDownloadResult =
   | { url: string }

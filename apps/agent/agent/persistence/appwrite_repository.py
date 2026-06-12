@@ -35,6 +35,20 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
+def _tenant_read_permissions(
+    owner_user_id: str | None, workspace_id: str | None
+) -> list[str] | None:
+    """ADR-0006 (B): owner reads, and the workspace team reads when the artifact
+    belongs to a workspace. Returns None when no owner is known (keeps the prior
+    no-explicit-permissions behavior for un-tenanted writes)."""
+    if not owner_user_id:
+        return None
+    perms = [f'read("user:{owner_user_id}")']
+    if workspace_id:
+        perms.append(f'read("team:{workspace_id}")')
+    return perms
+
+
 @runtime_checkable
 class DatabasesClient(Protocol):
     """Subset of the Appwrite ``Databases`` service the repository needs."""
@@ -147,12 +161,19 @@ class InterviewRepository:
         self._safe_update(session_id, fields, "fail session")
 
     def save_transcript(
-        self, session_id: str, segments: Sequence[TranscriptSegment], language: str
+        self,
+        session_id: str,
+        segments: Sequence[TranscriptSegment],
+        language: str,
+        *,
+        owner_user_id: str | None = None,
+        workspace_id: str | None = None,
     ) -> None:
         """Write (or rewrite) the finalized transcript document for the session.
 
         Uses the sessionId as the deterministic document id so a re-finalization
-        upserts rather than duplicating.
+        upserts rather than duplicating. When the session's tenancy is known the
+        document is readable by its owner + workspace team (ADR-0006 B).
         """
         document = transcript_document(
             session_id=session_id,
@@ -160,11 +181,16 @@ class InterviewRepository:
             language=language,
             finalized_at=_now_iso(),
         )
+        permissions = _tenant_read_permissions(owner_user_id, workspace_id)
         try:
-            self._db.create_document(DATABASE_ID, TRANSCRIPTS_COLLECTION_ID, session_id, document)
+            self._db.create_document(
+                DATABASE_ID, TRANSCRIPTS_COLLECTION_ID, session_id, document, permissions
+            )
         except Exception as create_error:  # noqa: BLE001 - upsert fallback
             try:
-                self._db.update_document(DATABASE_ID, TRANSCRIPTS_COLLECTION_ID, session_id, document)
+                self._db.update_document(
+                    DATABASE_ID, TRANSCRIPTS_COLLECTION_ID, session_id, document, permissions
+                )
             except Exception as update_error:  # noqa: BLE001
                 self._log.error(
                     "failed to persist transcript",
@@ -173,27 +199,34 @@ class InterviewRepository:
                     updateError=str(update_error),
                 )
 
-    def resolve_owner_user_id(self, survey_id: str) -> str | None:
-        """Read ``ownerUserId`` from the survey document for recording permissions."""
+    def resolve_survey_tenancy(self, survey_id: str) -> tuple[str | None, str | None]:
+        """Read ``(ownerUserId, workspaceId)`` from the survey for document
+        permissions on agent-written artifacts (ADR-0006 B: owner + workspace
+        team read)."""
         try:
             survey = self._db.get_document(DATABASE_ID, SURVEYS_COLLECTION_ID, survey_id)
-            owner = getattr(survey, "ownerUserId", None) or (
-                survey.get("ownerUserId") if isinstance(survey, Mapping) else None
-            )
-            return owner if isinstance(owner, str) and owner else None
+
+            def _field(name: str) -> str | None:
+                val = getattr(survey, name, None)
+                if val is None and isinstance(survey, Mapping):
+                    val = survey.get(name)
+                return val if isinstance(val, str) and val else None
+
+            return _field("ownerUserId"), _field("workspaceId")
         except Exception as error:  # noqa: BLE001
             self._log.warn(
-                "failed to resolve survey owner for recording",
+                "failed to resolve survey tenancy for artifact permissions",
                 surveyId=survey_id,
                 error=str(error),
             )
-            return None
+            return None, None
 
     def save_recording(
         self,
         session_id: str,
         *,
         owner_user_id: str,
+        workspace_id: str | None = None,
         file_bytes: bytes,
         duration_ms: int,
         format: RecordingFormat,
@@ -220,6 +253,8 @@ class InterviewRepository:
             from appwrite.role import Role
 
             permissions = [Permission.read(Role.user(owner_user_id))]
+            if workspace_id:
+                permissions.append(Permission.read(Role.team(workspace_id)))
             upload = InputFile.from_bytes(file_bytes, filename=filename, mime_type=mime_type)
             try:
                 self._storage.create_file(
@@ -259,7 +294,7 @@ class InterviewRepository:
             duration_ms=duration_ms,
             format=format,
         )
-        permissions = [f'read("user:{owner_user_id}")']
+        permissions = _tenant_read_permissions(owner_user_id, workspace_id)
         try:
             self._db.create_document(
                 DATABASE_ID,

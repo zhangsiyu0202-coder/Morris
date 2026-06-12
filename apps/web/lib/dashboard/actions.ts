@@ -3,7 +3,7 @@
 import { ID, Permission, Role } from "node-appwrite";
 import { revalidatePath } from "next/cache";
 import { DashboardTileLayoutSchema } from "@merism/contracts";
-import { requireOwnerUserId } from "@/lib/owner";
+import { requireOwnerUserId } from "@/lib/auth/owner";
 import { DATABASE_ID, getServerClient, Query } from "@/lib/queries/client";
 import { getOrCreateStudyDashboard } from "./queries";
 import { getDashboardWidgetCatalogEntry, STUDY_OVERVIEW_WIDGET_TYPES } from "./widget-catalog";

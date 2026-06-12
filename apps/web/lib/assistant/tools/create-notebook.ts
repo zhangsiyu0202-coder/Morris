@@ -9,6 +9,7 @@ import {
   type ToolResultEnvelope,
 } from "../envelope";
 import type { AssistantToolContext } from "../tool-types";
+import type { ToolMetadata } from "../tool-metadata";
 import {
   saveNotebookFromMarkdown,
   type SaveNotebookResult,
@@ -45,11 +46,25 @@ interface CreateNotebookArtifact {
  */
 export function buildCreateNotebookTool(ctx: AssistantToolContext) {
   const { ownerUserId } = ctx;
+  const metadata: ToolMetadata = {
+    title: "创建 Notebook",
+    description:
+      "把当前对话或分析结果保存为一份新的 Notebook (研究员的洞察文档)。" +
+      "input.content 接受 Markdown 字符串 (允许嵌入 <merism-quote/> / <merism-theme/> 等 8 类自定义 tag), " +
+      "系统会自动转为 ProseMirror JSON 落库。永远 create 新一份, 不更新已有 notebook " +
+      "(研究员不满意时让 Morris 重新生成新一份)。返回 notebookShortId 用于 /notebooks/{shortId} 跳转。",
+    annotations: { readOnly: false, destructive: false, idempotent: false },
+    requiredScopes: ["notebook:write"],
+    enrichUrl: "/notebooks/{notebookShortId}",
+    type: "write",
+    enabled: true,
+  };
   return {
     contextPromptTemplate: `当前 study 上下文 (PageContext.surveyId 自动注入到工具入参 studyId):
 - studyId: {surveyId}
 
 调用前 Morris 已确认 ownerUserId / studyId 都有效。`,
+    metadata,
     spec: tool({
       description:
         "把当前对话或分析结果保存为一份新的 Notebook (研究员的洞察文档)。" +
@@ -79,7 +94,7 @@ export function buildCreateNotebookTool(ctx: AssistantToolContext) {
           }
 
           // content path: 校验 study, 落库, 返回 shortId
-          const study = await getStudy(ownerUserId, input.studyId);
+          const study = await getStudy(input.studyId);
           if (!study) {
             return toToolError(
               "保存 Notebook",

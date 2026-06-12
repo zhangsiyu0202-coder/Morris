@@ -1,6 +1,7 @@
 "use server";
 
 import { generateText, Output } from "ai";
+import { withLLMCall, createLogger } from "@merism/observability";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { z } from "zod";
 import {
@@ -78,16 +79,25 @@ export async function generateGuide(input: {
   }
 
   try {
-    const { experimental_output } = await generateText({
-      model: deepseek("deepseek-chat"),
-      maxRetries: 2,
-      experimental_output: Output.object({ schema: aiGuideSchema }),
-      system: GUIDE_SYSTEM,
-      prompt: `请为以下调研设计一份完整的访谈提纲:
+    const log = createLogger("action.guide-ai.generateGuide");
+    const { experimental_output } = await withLLMCall(
+      {
+        scope: "action.guide-ai.generateGuide",
+        traceId: log.traceId,
+        defaultModel: "deepseek-chat",
+      },
+      () =>
+        generateText({
+          model: deepseek("deepseek-chat"),
+          maxRetries: 2,
+          experimental_output: Output.object({ schema: aiGuideSchema }),
+          system: GUIDE_SYSTEM,
+          prompt: `请为以下调研设计一份完整的访谈提纲:
 标题:${title || "(未填写)"}
 研究目标:${goal || "(未填写)"}
 目标受众:${audience || "(未填写)"}`,
-    });
+        }),
+    );
 
     if (!experimental_output?.sections?.length) {
       return { error: "AI 未能生成有效提纲,请重试。" };
@@ -107,21 +117,30 @@ export async function expandSection(input: {
   existingQuestions: string[];
 }): Promise<{ questions: GuideQuestion[] } | { error: string }> {
   try {
-    const { experimental_output } = await generateText({
-      model: deepseek("deepseek-chat"),
-      maxRetries: 2,
-      experimental_output: Output.object({
-        schema: z.object({ questions: z.array(aiQuestionSchema).min(1).max(4) }),
-      }),
-      system: GUIDE_SYSTEM,
-      prompt: `调研:${input.studyTitle || "(未填写)"}
+    const log = createLogger("action.guide-ai.expandSection");
+    const { experimental_output } = await withLLMCall(
+      {
+        scope: "action.guide-ai.expandSection",
+        traceId: log.traceId,
+        defaultModel: "deepseek-chat",
+      },
+      () =>
+        generateText({
+          model: deepseek("deepseek-chat"),
+          maxRetries: 2,
+          experimental_output: Output.object({
+            schema: z.object({ questions: z.array(aiQuestionSchema).min(1).max(4) }),
+          }),
+          system: GUIDE_SYSTEM,
+          prompt: `调研:${input.studyTitle || "(未填写)"}
 分节标题:${input.sectionTitle || "(未填写)"}
 分节目标:${input.sectionObjective || "(未填写)"}
 该节已有问题:
 ${input.existingQuestions.length ? input.existingQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n") : "(暂无)"}
 
 请为这一节再补充 2-3 个不重复、能深化该节目标的问题。`,
-    });
+        }),
+    );
 
     if (!experimental_output?.questions?.length) {
       return { error: "AI 未能生成新问题,请重试。" };

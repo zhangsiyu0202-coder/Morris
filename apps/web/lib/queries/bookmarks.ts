@@ -1,27 +1,23 @@
 import type { Databases } from "node-appwrite";
 import { BookmarkSchema } from "@merism/contracts";
 import type { Bookmark } from "@merism/contracts";
-import { DATABASE_ID, getServerClient, Query } from "./client";
+import { DATABASE_ID, getSessionDb, Query } from "./client";
 
 const BOOKMARKS = "bookmarks";
-
-function db(): Databases {
-  return getServerClient().databases;
-}
 
 function parseBookmark(raw: unknown): Bookmark | null {
   const parsed = BookmarkSchema.safeParse(raw);
   return parsed.success ? parsed.data : null;
 }
 
-/** List bookmarks owned by `ownerUserId`, newest first. */
-export async function listBookmarksForOwner(
-  ownerUserId: string,
+/** List bookmarks the caller may read (owner + workspace team), newest first.
+ * Reads via the session client — Appwrite enforces tenant isolation natively. */
+export async function listBookmarksForTenant(
   limit = 50,
-  databases: Databases = db(),
+  databases?: Databases,
 ): Promise<Bookmark[]> {
-  const result = await databases.listDocuments(DATABASE_ID, BOOKMARKS, [
-    Query.equal("ownerUserId", ownerUserId),
+  const dbx = databases ?? (await getSessionDb());
+  const result = await dbx.listDocuments(DATABASE_ID, BOOKMARKS, [
     Query.orderDesc("createdAt"),
     Query.limit(limit),
   ]);
@@ -33,14 +29,18 @@ export async function listBookmarksForOwner(
   return out;
 }
 
-/** List bookmarks for a session, scoped to owner. */
+/**
+ * List bookmarks for a session. Via the session client the whole team's
+ * annotations are returned when the caller is a workspace member (Role.team),
+ * else only the owner's (Role.user) — Appwrite enforces the tenant scope, so we
+ * only filter by sessionId here.
+ */
 export async function listBookmarksBySession(
-  ownerUserId: string,
   sessionId: string,
-  databases: Databases = db(),
+  databases?: Databases,
 ): Promise<Bookmark[]> {
-  const result = await databases.listDocuments(DATABASE_ID, BOOKMARKS, [
-    Query.equal("ownerUserId", ownerUserId),
+  const dbx = databases ?? (await getSessionDb());
+  const result = await dbx.listDocuments(DATABASE_ID, BOOKMARKS, [
     Query.equal("sessionId", sessionId),
     Query.orderDesc("createdAt"),
     Query.limit(200),

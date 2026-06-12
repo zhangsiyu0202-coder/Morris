@@ -10,8 +10,6 @@ function db(): Databases {
 }
 
 export interface TranscriptHit extends TranscriptSegment {
-  /** Owner of the survey this transcript belongs to. */
-  ownerUserId: string;
   sessionId: string;
   segmentIndex: number;
   transcriptId: string;
@@ -28,35 +26,35 @@ interface SearchParams {
  *
  * - `query` is a case-insensitive substring match over `segment.text`. Empty
  *   query returns every segment (capped by `limit`).
- * - When `surveyId` is provided, we first check the requested survey is owned
- *   by `ownerUserId` and only walk transcripts of that survey's sessions.
- * - When `surveyId` is omitted, we walk every survey owned by the user.
+ * - `surveyId` is required; `listSessions` gates access via the caller's session
+ *   client (the survey read returns nothing if the caller may not read it), then
+ *   we walk the transcripts of that survey's sessions (read by sessionId via the
+ *   API-key client, as children of the authorized survey).
  *
- * Implementation note: Appwrite full-text search would be a better fit for
- * v2; for now we paginate transcripts and filter in-process so we never miss
- * matches across segments. The agent currently writes transcript segments as
- * a JSON array on the Transcript document, not separate rows.
+ * Implementation note: Appwrite full-text search would be a better fit for v2;
+ * for now we paginate transcripts and filter in-process so we never miss matches
+ * across segments. The agent writes transcript segments as a JSON array on the
+ * Transcript document, not separate rows.
  */
 export async function searchTranscriptSegments(
-  ownerUserId: string,
   params: SearchParams,
-  databases: Databases = db(),
+  databases?: Databases,
 ): Promise<TranscriptHit[]> {
   const limit = params.limit ?? 30;
   const needle = params.query.trim().toLowerCase();
 
   if (!params.surveyId) {
-    // Without a surveyId we'd need to enumerate every owner's surveys; this
-    // path is rare for now (the assistant always passes a study id when the
-    // researcher mentioned one) so we keep it short-circuited.
+    // Without a surveyId we'd need to enumerate every survey; this path is rare
+    // (the assistant always passes a study id) so we keep it short-circuited.
     return [];
   }
 
-  const sessions = await listSessions(ownerUserId, params.surveyId, databases);
+  const sessions = await listSessions(params.surveyId, databases);
   if (sessions.length === 0) return [];
 
   const sessionIds = sessions.map((s) => s.$id);
-  const transcriptResult = await databases.listDocuments(DATABASE_ID, TRANSCRIPTS, [
+  const childDb = databases ?? db();
+  const transcriptResult = await childDb.listDocuments(DATABASE_ID, TRANSCRIPTS, [
     Query.equal("sessionId", sessionIds),
     Query.limit(500),
   ]);
@@ -73,7 +71,6 @@ export async function searchTranscriptSegments(
       if (needle && !segment.text.toLowerCase().includes(needle)) return;
       hits.push({
         ...segment,
-        ownerUserId,
         sessionId: t.sessionId,
         transcriptId: t.$id,
         segmentIndex: index,

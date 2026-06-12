@@ -6,7 +6,7 @@ import type {
 } from "@merism/contracts";
 import {
   getLatestAnalysisReport,
-  listBookmarksForOwner,
+  listBookmarksForTenant,
   listSessions,
   parseSessionReportBody,
   parseSurveyReportBody,
@@ -40,8 +40,8 @@ async function getSurveyReport(
 }
 
 const WIDGET_REGISTRY = {
-  study_progress: async ({ ownerUserId, surveyId }: WidgetRunContext) => {
-    const sessions = await listSessions(ownerUserId, surveyId);
+  study_progress: async ({ surveyId }: WidgetRunContext) => {
+    const sessions = await listSessions(surveyId);
     const completedSessions = sessions.filter((session) => session.state === "completed").length;
     const totalSessions = sessions.length;
     return {
@@ -50,9 +50,9 @@ const WIDGET_REGISTRY = {
       completionRate: totalSessions === 0 ? 0 : Math.round((completedSessions / totalSessions) * 100),
     };
   },
-  recent_sessions: async ({ ownerUserId, surveyId }, widget) => {
+  recent_sessions: async ({ surveyId }, widget) => {
     const limit = configLimit(widget, 6, 20);
-    const sessions = await listSessions(ownerUserId, surveyId);
+    const sessions = await listSessions(surveyId);
     return {
       sessions: sessions.slice(0, limit).map((session) => ({
         sessionId: session.$id,
@@ -74,9 +74,9 @@ const WIDGET_REGISTRY = {
   sentiment_breakdown: async ({ surveyReport }) => {
     return { sentimentBreakdown: surveyReport?.sentimentBreakdown ?? [] };
   },
-  bookmarked_quotes: async ({ ownerUserId, surveyId }, widget) => {
+  bookmarked_quotes: async ({ surveyId }, widget) => {
     const limit = configLimit(widget, 5, 20);
-    const bookmarks = await listBookmarksForOwner(ownerUserId, 100);
+    const bookmarks = await listBookmarksForTenant(100);
     return {
       bookmarks: bookmarks
         .filter((bookmark) => bookmark.surveyId === surveyId)
@@ -93,7 +93,7 @@ const WIDGET_REGISTRY = {
   },
   visual_moments: async ({ ownerUserId, surveyId }, widget) => {
     const limit = configLimit(widget, 5, 20);
-    const sessions = await listSessions(ownerUserId, surveyId);
+    const sessions = await listSessions(surveyId);
     const moments: Array<{
       sessionId: string;
       timestampMs: number;

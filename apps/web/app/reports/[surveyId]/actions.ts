@@ -26,7 +26,7 @@ export async function regenerateSurveyReport(
   const ownerUserId = await getCurrentUserId();
   if (!ownerUserId) return { ok: false, error: "not_signed_in" };
 
-  const owned = await getStudy(ownerUserId, surveyId);
+  const owned = await getStudy(surveyId);
   if (!owned) return { ok: false, error: "not_found_or_forbidden" };
 
   const endpoint = process.env.APPWRITE_ENDPOINT;

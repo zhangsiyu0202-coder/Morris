@@ -1,17 +1,19 @@
 import { ToolLoopAgent, stepCountIs, type StopCondition } from "ai";
 import {
   buildAssistantTools,
+  buildAssistantToolMetadata,
   buildToolContextTemplates,
   type AssistantTools,
 } from "./tools";
 import type { AssistantToolContext } from "./tool-types";
-import { buildSystemPrompt, renderToolContexts, type TodoItem } from "./system-prompt";
+import { buildSystemPrompt, renderToolContexts, type TodoItem, type MemoryItem } from "./system-prompt";
 import {
   EMPTY_PAGE_CONTEXT,
   type PageContext,
 } from "./page-context";
 import { CHAT_MODEL, REASONING_MODEL } from "./model";
 import { hasPendingApproval } from "./approval";
+import type { AgentContext } from "./agent-context";
 
 /**
  * Morris researcher assistant — Vercel AI SDK 6 ToolLoopAgent.
@@ -58,17 +60,27 @@ function hadToolError(
  * - `pageContext`: 客户端 PageContext, 由 PageContextSchema 在路由层校验后传入。
  *   暂时只是占位; Wave D 的 system prompt 拼接器落地后, 会把它喂给
  *   `<page_context>` 与各工具的 `<tool_context>` 段。
+ * - `agentContext`: 当前研究员 / 项目 / 时间 / URL 模式 (P1-1, morris-conversation-persistence).
+ *   由路由层在请求开始时 `await buildAgentContext()` 拿到。缺省时不渲染
+ *   `<agent_context>` 段, 保留向后兼容。
  */
 export interface MorrisRequestContext extends AssistantToolContext {
   pageContext?: PageContext;
   initialTodos?: TodoItem[];
+  agentContext?: AgentContext;
+  memories?: ReadonlyArray<MemoryItem>;
 }
 
 export function buildMorrisAgent(ctx: MorrisRequestContext) {
   const ownerCtx: AssistantToolContext = { ownerUserId: ctx.ownerUserId };
   const pageContext = ctx.pageContext ?? EMPTY_PAGE_CONTEXT;
+  const agentContext = ctx.agentContext;
   const toolContextTemplates = buildToolContextTemplates(ownerCtx);
   const toolContexts = renderToolContexts(pageContext, toolContextTemplates);
+
+  // 工具 manifest: 给 system-prompt 的 <tools_overview> 段自动生成 (R2 §5 / morris-tool-metadata)。
+  // 同一组 metadata 输入产出同一份字符串, 与 prompt cache 友好性兼容。
+  const manifest = buildAssistantToolMetadata(ownerCtx);
 
   // 闭包内 todos 状态: todoWrite 工具整体覆盖, 下一步 buildSystemPrompt 读最新值。
   let todos: TodoItem[] = ctx.initialTodos ? [...ctx.initialTodos] : [];
@@ -83,7 +95,13 @@ export function buildMorrisAgent(ctx: MorrisRequestContext) {
   // 我们把"基础 system prompt"放在 instructions, 通过 prepareStep 的 system 字段
   // 在每步重渲染以反映最新 todos。
   const buildPrompt = () =>
-    buildSystemPrompt({ todos: todoState.get(), pageContext, toolContexts });
+    buildSystemPrompt({
+      todos: todoState.get(),
+      pageContext,
+      toolContexts,
+      manifest,
+      agentContext,
+    });
 
   return new ToolLoopAgent({
     model: CHAT_MODEL,

@@ -1,5 +1,5 @@
 import { OverviewView } from "@/components/studies/overview-view";
-import { loadStudyOverview } from "@/lib/workspace-data";
+import { loadStudyOverview } from "@/lib/workspace/data";
 
 export default async function OverviewTabPage({
   params,

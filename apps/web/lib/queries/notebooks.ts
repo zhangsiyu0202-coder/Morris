@@ -1,13 +1,9 @@
 import type { Databases } from "node-appwrite";
 import { NotebookSchema } from "@merism/contracts";
 import type { Notebook } from "@merism/contracts";
-import { DATABASE_ID, getServerClient, Query } from "./client";
+import { DATABASE_ID, getSessionDb, Query } from "./client";
 
 const NOTEBOOKS = "notebooks";
-
-function db(): Databases {
-  return getServerClient().databases;
-}
 
 /**
  * Decode raw Appwrite document into a Notebook-shaped value:
@@ -36,13 +32,11 @@ function decodeNotebook(raw: unknown): unknown {
   return r;
 }
 
-/** List all notebooks owned by `ownerUserId`, newest first. */
-export async function listNotebooks(
-  ownerUserId: string,
-  databases: Databases = db(),
-): Promise<Notebook[]> {
-  const result = await databases.listDocuments(DATABASE_ID, NOTEBOOKS, [
-    Query.equal("ownerUserId", ownerUserId),
+/** List notebooks the caller may read (owner + workspace team), newest first.
+ * Reads via the session client — Appwrite enforces tenant isolation natively. */
+export async function listNotebooks(databases?: Databases): Promise<Notebook[]> {
+  const dbx = databases ?? (await getSessionDb());
+  const result = await dbx.listDocuments(DATABASE_ID, NOTEBOOKS, [
     Query.orderDesc("createdAt"),
     Query.limit(200),
   ]);
@@ -54,15 +48,15 @@ export async function listNotebooks(
   return out;
 }
 
-/** Read a single notebook by Appwrite `$id`, scoped to its owner. */
+/** Read a single notebook by Appwrite `$id`. Returns null when absent or the
+ * caller may not read it (session client is the gate). */
 export async function getNotebookById(
-  ownerUserId: string,
   id: string,
-  databases: Databases = db(),
+  databases?: Databases,
 ): Promise<Notebook | null> {
-  const result = await databases.listDocuments(DATABASE_ID, NOTEBOOKS, [
+  const dbx = databases ?? (await getSessionDb());
+  const result = await dbx.listDocuments(DATABASE_ID, NOTEBOOKS, [
     Query.equal("$id", id),
-    Query.equal("ownerUserId", ownerUserId),
     Query.limit(1),
   ]);
   const raw = result.documents[0];
@@ -71,17 +65,15 @@ export async function getNotebookById(
   return parsed.success ? parsed.data : null;
 }
 
-/** Read a single notebook by `shortId`, scoped to its owner. Wave B+:
- * URLs are `/notebooks/[shortId]`, so this is the primary read path.
- */
+/** Read a single notebook by `shortId`. Wave B+: URLs are `/notebooks/[shortId]`,
+ * so this is the primary read path. Session client is the read gate. */
 export async function getNotebookByShortId(
-  ownerUserId: string,
   shortId: string,
-  databases: Databases = db(),
+  databases?: Databases,
 ): Promise<Notebook | null> {
   if (!shortId) return null;
-  const result = await databases.listDocuments(DATABASE_ID, NOTEBOOKS, [
-    Query.equal("ownerUserId", ownerUserId),
+  const dbx = databases ?? (await getSessionDb());
+  const result = await dbx.listDocuments(DATABASE_ID, NOTEBOOKS, [
     Query.equal("shortId", shortId),
     Query.limit(1),
   ]);

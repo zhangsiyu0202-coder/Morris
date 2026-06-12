@@ -37,12 +37,12 @@ export default async function NotebookDetailPage({
   }
 
   // First try as shortId (12-char alphanumeric).
-  let record = await getNotebookByShortId(ownerUserId, param);
+  let record = await getNotebookByShortId(param);
 
   // Fall back to legacy $id-based access (Wave A 的 URL); redirect to shortId
   // when the row has one populated.
   if (!record && /^[a-zA-Z0-9_]+$/.test(param) && param.length > 12) {
-    const byId = await getNotebookById(ownerUserId, param);
+    const byId = await getNotebookById(param);
     if (byId) {
       if (byId.shortId && byId.shortId.length === 12) {
         redirect(`/notebooks/${byId.shortId}`);

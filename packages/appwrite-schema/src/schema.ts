@@ -83,6 +83,8 @@ export const COLLECTIONS: CollectionDef[] = [
     documentSecurity: true,
     attributes: [
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       { key: "name", type: "string", size: 256, required: true },
       { key: "description", type: "string", size: 2000, required: false, default: "" },
       { key: "createdAt", type: "datetime", required: true },
@@ -96,6 +98,8 @@ export const COLLECTIONS: CollectionDef[] = [
     documentSecurity: true,
     attributes: [
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       { key: "projectId", type: "string", size: 64, required: true },
       { key: "title", type: "string", size: 512, required: true },
       {
@@ -106,6 +110,9 @@ export const COLLECTIONS: CollectionDef[] = [
         default: "draft",
       },
       { key: "flowConfig", type: "string", size: JSON_SIZE, required: false, default: "{}" },
+      // survey-editor moderator-instruction increment: dedicated long-text column
+      // (not flowConfig) for the AI moderator delivery directives.
+      { key: "moderatorInstruction", type: "string", size: TEXT_SIZE, required: false, default: "" },
       { key: "version", type: "integer", required: false, default: 1 },
       { key: "updatedAt", type: "datetime", required: true },
     ],
@@ -169,6 +176,7 @@ export const COLLECTIONS: CollectionDef[] = [
     documentSecurity: true,
     attributes: [
       { key: "surveyId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
       { key: "token", type: "string", size: 128, required: true },
       { key: "mode", type: "enum", elements: ["single_use", "reusable"], required: true },
       {
@@ -187,6 +195,7 @@ export const COLLECTIONS: CollectionDef[] = [
     indexes: [
       { key: "token_unique", type: "unique", attributes: ["token"] },
       { key: "by_survey", type: "key", attributes: ["surveyId"] },
+      { key: "by_workspace", type: "key", attributes: ["workspaceId"] },
     ],
   },
   {
@@ -197,6 +206,7 @@ export const COLLECTIONS: CollectionDef[] = [
     attributes: [
       { key: "surveyId", type: "string", size: 64, required: true },
       { key: "linkId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
       { key: "intervieweeAlias", type: "string", size: 256, required: false },
       {
         key: "state",
@@ -216,6 +226,7 @@ export const COLLECTIONS: CollectionDef[] = [
     indexes: [
       { key: "by_survey", type: "key", attributes: ["surveyId"] },
       { key: "by_link", type: "key", attributes: ["linkId"] },
+      { key: "by_workspace", type: "key", attributes: ["workspaceId"] },
       { key: "by_quality", type: "key", attributes: ["qualityFlags"] },
     ],
   },
@@ -240,6 +251,8 @@ export const COLLECTIONS: CollectionDef[] = [
     attributes: [
       { key: "sessionId", type: "string", size: 64, required: true },
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       { key: "storageFileId", type: "string", size: 64, required: true },
       { key: "durationMs", type: "integer", required: true },
       { key: "format", type: "enum", elements: ["mp3", "opus", "wav", "mp4", "webm"], required: true },
@@ -270,6 +283,8 @@ export const COLLECTIONS: CollectionDef[] = [
       // that document-level read permissions can be pinned to that user and
       // the read layer in apps/web/lib/queries can filter by it.
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       { key: "themes", type: "string", size: JSON_SIZE, required: false, default: "[]" },
       { key: "insights", type: "string", size: JSON_SIZE, required: false, default: "[]" },
       { key: "citations", type: "string", size: JSON_SIZE, required: false, default: "[]" },
@@ -334,6 +349,8 @@ export const COLLECTIONS: CollectionDef[] = [
       // Wave F (T48): legacy `report` attribute removed. Notebook content
       // lives entirely in `content` (ProseMirror JSON) since Wave D.
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       { key: "createdAt", type: "datetime", required: true },
     ],
     indexes: [
@@ -356,6 +373,8 @@ export const COLLECTIONS: CollectionDef[] = [
     documentSecurity: true,
     attributes: [
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       // Notebook.shortId — links the token to the notebook it grants access to.
       { key: "notebookShortId", type: "string", size: 12, required: true },
       // 32-byte random hex (64 chars). Looked up by `by_token` unique index.
@@ -377,6 +396,8 @@ export const COLLECTIONS: CollectionDef[] = [
     documentSecurity: true,
     attributes: [
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       { key: "surveyId", type: "string", size: 64, required: true },
       { key: "scope", type: "enum", elements: ["study"], required: true },
       { key: "name", type: "string", size: 512, required: true },
@@ -397,6 +418,8 @@ export const COLLECTIONS: CollectionDef[] = [
     documentSecurity: true,
     attributes: [
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       { key: "dashboardId", type: "string", size: 64, required: true },
       { key: "surveyId", type: "string", size: 64, required: true },
       {
@@ -433,6 +456,8 @@ export const COLLECTIONS: CollectionDef[] = [
     documentSecurity: true,
     attributes: [
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       { key: "dashboardId", type: "string", size: 64, required: true },
       { key: "surveyId", type: "string", size: 64, required: true },
       { key: "widgetId", type: "string", size: 64, required: true },
@@ -455,18 +480,249 @@ export const COLLECTIONS: CollectionDef[] = [
     documentSecurity: true,
     attributes: [
       { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
       { key: "surveyId", type: "string", size: 64, required: true },
       { key: "sessionId", type: "string", size: 64, required: true },
       { key: "quote", type: "string", size: TEXT_SIZE, required: true },
       { key: "source", type: "string", size: 512, required: true },
       { key: "respondent", type: "string", size: 128, required: true },
       { key: "segmentIndex", type: "integer", required: false },
+      { key: "startMs", type: "integer", required: false },
+      { key: "note", type: "string", size: TEXT_SIZE, required: false, default: "" },
+      // array 字段不写 default,由 contracts zod default([]) 兜底 (同 qualityFlags)
+      { key: "tags", type: "string", size: 64, required: false, array: true },
       { key: "createdAt", type: "datetime", required: true },
     ],
     indexes: [
       { key: "by_owner_created", type: "key", attributes: ["ownerUserId", "createdAt"] },
       { key: "by_owner_session", type: "key", attributes: ["ownerUserId", "sessionId"] },
+      { key: "by_workspace_session", type: "key", attributes: ["workspaceId", "sessionId"] },
       { key: "by_session", type: "key", attributes: ["sessionId"] },
+    ],
+  },
+  {
+    // ADR 0005: tracks the async post-session Gemini visual-analysis job +
+    // its uploaded Gemini file. $id is deterministic (`vis_<sessionId>`) so
+    // concurrent analyzeSessionVisual claims collide (409 = dedup). Function
+    // writes only (API key bypasses SERVER_ONLY); owner reads per-document.
+    id: "visual_analysis_jobs",
+    name: "VisualAnalysisJob",
+    permissions: SERVER_ONLY,
+    documentSecurity: true,
+    attributes: [
+      { key: "sessionId", type: "string", size: 64, required: true },
+      { key: "surveyId", type: "string", size: 64, required: true },
+      { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "authorId", type: "string", size: 64, required: false },
+      {
+        key: "status",
+        type: "enum",
+        elements: ["queued", "uploading", "analyzing", "consolidating", "succeeded", "failed"],
+        required: false,
+        default: "queued",
+      },
+      // Gemini Files API resource name; null until upload returns one. The sweep's delete target.
+      { key: "geminiFileName", type: "string", size: 256, required: false },
+      { key: "geminiUploadedAt", type: "datetime", required: false },
+      { key: "attemptCount", type: "integer", required: false, default: 0 },
+      { key: "errorContext", type: "string", size: JSON_SIZE, required: false },
+      { key: "createdAt", type: "datetime", required: true },
+      { key: "updatedAt", type: "datetime", required: true },
+    ],
+    indexes: [
+      // Drives the sweep scan: orphans by status + upload age.
+      { key: "by_status_uploaded", type: "key", attributes: ["status", "geminiUploadedAt"] },
+      { key: "by_session", type: "key", attributes: ["sessionId"] },
+      { key: "by_owner", type: "key", attributes: ["ownerUserId"] },
+    ],
+  },
+  {
+    // ADR 0006 (workspaces-billing). NOTE: a Workspace itself is an Appwrite
+    // Team (created at runtime by createWorkspace), NOT a collection. The
+    // collections below are the billing/usage storage the Functions manage
+    // (SERVER_ONLY; per-document read pinned to the team/owner at creation).
+    id: "plans",
+    name: "Plan",
+    permissions: SERVER_ONLY,
+    documentSecurity: true,
+    attributes: [
+      { key: "key", type: "enum", elements: ["plus", "pro"], required: true },
+      { key: "includedInterviews", type: "integer", required: true },
+      { key: "features", type: "enum", elements: ["core", "visual_analysis", "survey_rollup"], required: false, array: true },
+      { key: "priceRef", type: "string", size: 128, required: false },
+    ],
+    indexes: [{ key: "key_unique", type: "unique", attributes: ["key"] }],
+  },
+  {
+    id: "subscriptions",
+    name: "Subscription",
+    permissions: SERVER_ONLY,
+    documentSecurity: true,
+    attributes: [
+      { key: "workspaceId", type: "string", size: 64, required: true },
+      { key: "planKey", type: "enum", elements: ["plus", "pro"], required: true },
+      { key: "status", type: "enum", elements: ["trialing", "active", "past_due", "canceled"], required: true },
+      { key: "seats", type: "integer", required: true },
+      { key: "stripeCustomerId", type: "string", size: 64, required: false },
+      { key: "stripeSubscriptionId", type: "string", size: 64, required: false },
+      { key: "currentPeriodStart", type: "datetime", required: true },
+      { key: "currentPeriodEnd", type: "datetime", required: true },
+    ],
+    indexes: [{ key: "by_workspace", type: "unique", attributes: ["workspaceId"] }],
+  },
+  {
+    id: "usage_events",
+    name: "UsageEvent",
+    permissions: SERVER_ONLY,
+    documentSecurity: true,
+    attributes: [
+      { key: "workspaceId", type: "string", size: 64, required: true },
+      { key: "studyId", type: "string", size: 64, required: true },
+      { key: "sessionId", type: "string", size: 64, required: true },
+      { key: "unit", type: "enum", elements: ["completed_interview"], required: false, default: "completed_interview" },
+      { key: "occurredAt", type: "datetime", required: true },
+    ],
+    indexes: [
+      { key: "session_unique", type: "unique", attributes: ["sessionId"] },
+      { key: "by_workspace", type: "key", attributes: ["workspaceId"] },
+    ],
+  },
+  {
+    id: "usage_counters",
+    name: "UsageCounter",
+    permissions: SERVER_ONLY,
+    documentSecurity: true,
+    attributes: [
+      { key: "workspaceId", type: "string", size: 64, required: true },
+      { key: "periodStart", type: "datetime", required: true },
+      { key: "periodEnd", type: "datetime", required: true },
+      { key: "completedInterviews", type: "integer", required: false, default: 0 },
+    ],
+    indexes: [{ key: "by_workspace_period", type: "unique", attributes: ["workspaceId", "periodStart"] }],
+  },
+  {
+    id: "workspace_quota",
+    name: "WorkspaceQuota",
+    permissions: SERVER_ONLY,
+    documentSecurity: true,
+    attributes: [
+      { key: "workspaceId", type: "string", size: 64, required: true },
+      { key: "periodEnd", type: "datetime", required: true },
+      { key: "usedInterviews", type: "integer", required: false, default: 0 },
+      { key: "includedInterviews", type: "integer", required: true },
+      { key: "hardCeiling", type: "integer", required: true },
+      { key: "state", type: "enum", elements: ["ok", "over"], required: false, default: "ok" },
+    ],
+    indexes: [{ key: "by_workspace", type: "unique", attributes: ["workspaceId"] }],
+  },
+  {
+    // Denormalized read view of Appwrite Team membership (the Team is canonical).
+    id: "workspace_memberships",
+    name: "WorkspaceMembership",
+    permissions: SERVER_ONLY,
+    documentSecurity: true,
+    attributes: [
+      { key: "workspaceId", type: "string", size: 64, required: true },
+      { key: "userId", type: "string", size: 64, required: true },
+      { key: "role", type: "enum", elements: ["owner", "admin", "member"], required: true },
+      { key: "status", type: "enum", elements: ["active", "invited"], required: false, default: "invited" },
+      { key: "invitedBy", type: "string", size: 64, required: false },
+      { key: "createdAt", type: "datetime", required: true },
+    ],
+    indexes: [
+      { key: "by_workspace", type: "key", attributes: ["workspaceId"] },
+      { key: "by_user", type: "key", attributes: ["userId"] },
+      { key: "member_unique", type: "unique", attributes: ["workspaceId", "userId"] },
+    ],
+  },
+  {
+    // ADR 0006 M5: Stripe webhook idempotency store. $id == Stripe event id;
+    // presence = already processed (replays acked without re-applying).
+    id: "stripe_events",
+    name: "StripeEvent",
+    permissions: SERVER_ONLY,
+    documentSecurity: true,
+    attributes: [{ key: "processedAt", type: "datetime", required: true }],
+    indexes: [],
+  },
+  {
+    // Morris page assistant conversation persistence
+    // (per .kiro/specs/morris-conversation-persistence/).
+    //
+    // Owner-scoped: each researcher's conversations are private to them.
+    // documentSecurity=true → per-doc permissions pinned at creation pin
+    // read+update+delete to the creator (Role.user(ownerUserId)) so even
+    // another researcher co-residing on the same Appwrite instance cannot list
+    // or load the rows.
+    //
+    // messagesJson is a JSON.stringify(UIMessage[]) string. Schema-level
+    // upper bound is JSON_SIZE (1MB); contract-level early bound is 256KB
+    // (MAX_MESSAGES_JSON_BYTES) — front-end compaction.ts (token budget 12K)
+    // keeps real conversations well below either ceiling.
+    id: "conversations",
+    name: "Conversation",
+    permissions: OWNER_SCOPED,
+    documentSecurity: true,
+    attributes: [
+      { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "title", type: "string", size: 256, required: false, default: "" },
+      { key: "messagesJson", type: "string", size: JSON_SIZE, required: false, default: "[]" },
+      { key: "messageCount", type: "integer", required: false, default: 0 },
+      { key: "lastMessageAt", type: "datetime", required: true },
+      { key: "lastMessagePreview", type: "string", size: 256, required: false, default: "" },
+      { key: "createdAt", type: "datetime", required: true },
+      { key: "updatedAt", type: "datetime", required: true },
+    ],
+    indexes: [
+      // owner-scoped lookup (used by listConversations + ownership check
+      // in load/save/delete).
+      { key: "by_owner", type: "key", attributes: ["ownerUserId"] },
+      // History drawer / HistoryPreview ordering: most-recent activity first.
+      { key: "by_owner_lastmsg", type: "key", attributes: ["ownerUserId", "lastMessageAt"] },
+      // Created/updated orderings as secondary sort (admin / debug surfaces).
+      { key: "by_owner_created", type: "key", attributes: ["ownerUserId", "createdAt"] },
+      { key: "by_owner_updated", type: "key", attributes: ["ownerUserId", "updatedAt"] },
+    ],
+  },
+  {
+    // Morris page assistant long-term memory
+    // (per .kiro/specs/morris-memory/).
+    //
+    // Owner-scoped: each researcher's memories are private to them.
+    // documentSecurity=true → per-doc permissions pin read+update+delete to
+    // the creator (Role.user(ownerUserId)) so a co-residing researcher cannot
+    // list or load the rows.
+    //
+    // content is the embedded fact text (1-4000 chars). metadata is JSON
+    // tag-shape (e.g. {"type":"preference","domain":"fintech"}). metadataKeys
+    // is redundant Object.keys(metadata) so Appwrite can index/Query.contains
+    // (Appwrite has no jsonb-inner index). embedding is JSON-stringified
+    // number[1024] from Qwen text-embedding-v3, same shape as Notebook.
+    id: "morris_memories",
+    name: "MorrisMemory",
+    permissions: OWNER_SCOPED,
+    documentSecurity: true,
+    attributes: [
+      { key: "content", type: "string", size: 4000, required: true },
+      { key: "metadata", type: "string", size: JSON_SIZE, required: false, default: "{}" },
+      { key: "metadataKeys", type: "string", size: 64, required: false, default: "", array: true },
+      { key: "embedding", type: "string", size: 16_384, required: false, default: "" },
+      { key: "embeddingModel", type: "string", size: 64, required: false, default: "" },
+      { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "createdAt", type: "datetime", required: true },
+      { key: "updatedAt", type: "datetime", required: true },
+    ],
+    indexes: [
+      // owner-scoped lookup (listMemoriesForOwner + ownership check on load/update/delete).
+      { key: "by_owner", type: "key", attributes: ["ownerUserId"] },
+      // most-recent ordering for system-prompt prepend (newest 20 first).
+      { key: "by_owner_updated", type: "key", attributes: ["ownerUserId", "updatedAt"] },
+      // metadata-tag filter (manageMemories action=query/list with metadataFilter).
+      { key: "by_metadata_keys", type: "key", attributes: ["metadataKeys"] },
+      // fulltext fallback when Qwen embedder is unavailable (per design.md §5).
+      { key: "by_text_search", type: "fulltext", attributes: ["content"] },
     ],
   },
 ];

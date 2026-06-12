@@ -2,6 +2,7 @@
 import { Client, Databases, ID, Permission, Query, Role } from "node-appwrite";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { generateText, Output } from "ai";
+import { withLLMCall, createLogger } from "@merism/observability";
 import type {
   AnalyzeSurveyDeps,
   AssignThemesInput,
@@ -180,40 +181,67 @@ export function createRealDeps(): AnalyzeSurveyDeps {
     },
 
     async extractThemesWithLLM(input: ExtractThemesInput) {
-      const { experimental_output } = await generateText({
-        model: deepseek(modelName),
-        temperature: ROLLUP_LLM_TEMPERATURE,
-        maxRetries: 2,
-        experimental_output: Output.object({ schema: ExtractedThemesListSchema }),
-        system: THEME_EXTRACTION_SYSTEM,
-        prompt: buildThemeExtractionUserPrompt(input),
-      });
+      const log = createLogger("function.analyzeSurvey.extract-themes");
+      const { experimental_output } = await withLLMCall(
+        {
+          scope: "function.analyzeSurvey.extract-themes",
+          traceId: log.traceId,
+          defaultModel: modelName,
+        },
+        () =>
+          generateText({
+            model: deepseek(modelName),
+            temperature: ROLLUP_LLM_TEMPERATURE,
+            maxRetries: 2,
+            experimental_output: Output.object({ schema: ExtractedThemesListSchema }),
+            system: THEME_EXTRACTION_SYSTEM,
+            prompt: buildThemeExtractionUserPrompt(input),
+          }),
+      );
       return ExtractedThemesListSchema.parse(experimental_output);
     },
 
     async assignThemesWithLLM(input: AssignThemesInput) {
-      const { experimental_output } = await generateText({
-        model: deepseek(modelName),
-        temperature: ROLLUP_LLM_TEMPERATURE,
-        maxRetries: 2,
-        experimental_output: Output.object({ schema: ThemeAssignmentListSchema }),
-        system: THEME_ASSIGNMENT_SYSTEM,
-        prompt: buildThemeAssignmentUserPrompt(input),
-      });
+      const log = createLogger("function.analyzeSurvey.assign-themes");
+      const { experimental_output } = await withLLMCall(
+        {
+          scope: "function.analyzeSurvey.assign-themes",
+          traceId: log.traceId,
+          defaultModel: modelName,
+        },
+        () =>
+          generateText({
+            model: deepseek(modelName),
+            temperature: ROLLUP_LLM_TEMPERATURE,
+            maxRetries: 2,
+            experimental_output: Output.object({ schema: ThemeAssignmentListSchema }),
+            system: THEME_ASSIGNMENT_SYSTEM,
+            prompt: buildThemeAssignmentUserPrompt(input),
+          }),
+      );
       return ThemeAssignmentListSchema.parse(experimental_output);
     },
 
     async combineThemesWithLLM(input: CombineThemesInput) {
       // Wave F (D15): combination LLM 把多份 chunked extraction 结果合一份。
       // 输出 schema 复用 ExtractedThemesListSchema (合并后形态与单次抽取等价)。
-      const { experimental_output } = await generateText({
-        model: deepseek(modelName),
-        temperature: ROLLUP_LLM_TEMPERATURE,
-        maxRetries: 2,
-        experimental_output: Output.object({ schema: ExtractedThemesListSchema }),
-        system: THEME_COMBINATION_SYSTEM,
-        prompt: buildThemeCombinationUserPrompt(input),
-      });
+      const log = createLogger("function.analyzeSurvey.combine-themes");
+      const { experimental_output } = await withLLMCall(
+        {
+          scope: "function.analyzeSurvey.combine-themes",
+          traceId: log.traceId,
+          defaultModel: modelName,
+        },
+        () =>
+          generateText({
+            model: deepseek(modelName),
+            temperature: ROLLUP_LLM_TEMPERATURE,
+            maxRetries: 2,
+            experimental_output: Output.object({ schema: ExtractedThemesListSchema }),
+            system: THEME_COMBINATION_SYSTEM,
+            prompt: buildThemeCombinationUserPrompt(input),
+          }),
+      );
       return ExtractedThemesListSchema.parse(experimental_output);
     },
 
@@ -241,14 +269,23 @@ export function createRealDeps(): AnalyzeSurveyDeps {
             baseUserPrompt,
           ].join("\n")
         : baseUserPrompt;
-      const { experimental_output } = await generateText({
-        model: deepseek(modelName),
-        temperature: ROLLUP_LLM_TEMPERATURE,
-        maxRetries: 2,
-        experimental_output: Output.object({ schema: ComposeInsightsOutputSchema }),
-        system: COMPOSE_INSIGHTS_SYSTEM,
-        prompt: userPrompt,
-      });
+      const log = createLogger("function.analyzeSurvey.compose-insights");
+      const { experimental_output } = await withLLMCall(
+        {
+          scope: "function.analyzeSurvey.compose-insights",
+          traceId: log.traceId,
+          defaultModel: modelName,
+        },
+        () =>
+          generateText({
+            model: deepseek(modelName),
+            temperature: ROLLUP_LLM_TEMPERATURE,
+            maxRetries: 2,
+            experimental_output: Output.object({ schema: ComposeInsightsOutputSchema }),
+            system: COMPOSE_INSIGHTS_SYSTEM,
+            prompt: userPrompt,
+          }),
+      );
       return ComposeInsightsOutputSchema.parse(experimental_output);
     },
 
@@ -273,11 +310,22 @@ export function createRealDeps(): AnalyzeSurveyDeps {
       if (generationMeta) {
         payload.generationMeta = JSON.stringify(generationMeta);
       }
-      const permissions = [Permission.read(Role.user(ownerUserId))];
+      // ADR-0006 (B): survey-level report readable by the survey's workspace
+      // team + owner (additive; enables native session-client team reads).
+      let wsId: string | undefined;
+      try {
+        wsId = ((await db.getDocument(DB, "surveys", surveyId)) as { workspaceId?: string }).workspaceId ?? undefined;
+      } catch {
+        // survey unreadable/deleted → owner-only perms
+      }
+      const permissions = [
+        Permission.read(Role.user(ownerUserId)),
+        ...(wsId ? [Permission.read(Role.team(wsId))] : []),
+      ];
 
       if (existing.documents.length > 0) {
         const doc = existing.documents[0] as any;
-        await db.updateDocument(DB, "analysis_reports", doc.$id, payload);
+        await db.updateDocument(DB, "analysis_reports", doc.$id, payload, permissions);
         return { reportId: doc.$id };
       } else {
         const created = await db.createDocument(

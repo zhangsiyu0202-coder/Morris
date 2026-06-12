@@ -17,7 +17,7 @@ import {
   type ResultsTable,
   type SessionDisplayStatus,
 } from "@/lib/mock/workspace";
-import { buildResultsCsv } from "@/lib/export-results-csv";
+import { buildResultsCsv } from "@/lib/survey/export-results-csv";
 import { RecordingDownloadButton } from "@/components/studies/recording-download-button";
 
 /**

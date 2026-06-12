@@ -1,13 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock the queries + server-side notebook saver at module boundary so the
-// tool factory's static imports resolve to spies.
-vi.mock("@/lib/queries", () => ({
-  getStudy: vi.fn(),
-}));
-vi.mock("@/lib/server/notebooks", () => ({
-  saveNotebookFromMarkdown: vi.fn(),
-}));
+// Mock the queries + server-side notebook saver at module boundary; factory 实现
+// 集中在 fixtures/install-mocks.ts. async + dynamic import 绕过 vitest hoisting.
+vi.mock("@/lib/queries", async () => (await import("./fixtures/install-mocks")).fakeQueriesModule());
+vi.mock("@/lib/server/notebooks", async () => (await import("./fixtures/install-mocks")).fakeNotebooksServerModule());
 
 import * as queries from "@/lib/queries";
 import * as serverNotebooks from "@/lib/server/notebooks";
@@ -48,7 +44,7 @@ describe("Morris createNotebook tool", () => {
         "# Why high price sensitivity?\n\n直接答案。\n\n## 核心结论\n...\n\n## 主题分析\n...\n\n## 立场分歧\n...\n\n## 行动建议\n...",
     });
 
-    expect(mockGetStudy).toHaveBeenCalledWith("user-1", "sv1");
+    expect(mockGetStudy).toHaveBeenCalledWith("sv1");
     expect(mockSave).toHaveBeenCalledWith(
       expect.objectContaining({
         ownerUserId: "user-1",

@@ -1,5 +1,8 @@
 import { FileText, Search, BarChart3, Layers } from "lucide-react";
 import { Conversation } from "@/components/assistant/conversation";
+import { AssistantSceneShell } from "@/components/assistant/assistant-scene-shell";
+import { loadConversation } from "@/lib/conversations/actions";
+import type { UIMessage } from "ai";
 
 const CAPABILITIES = [
   { icon: FileText, title: "创建调研", desc: "描述目标,生成可用的问题草稿" },
@@ -15,7 +18,35 @@ const SUGGESTIONS = [
   "列出我当前的所有调研",
 ];
 
-export default function AssistantPage() {
+interface AssistantPageProps {
+  searchParams: Promise<{ conversationId?: string }>;
+}
+
+/**
+ * Standalone Morris page (/assistant).
+ *
+ * URL contract (per `.kiro/specs/morris-conversation-persistence/` design.md
+ * §6): `/assistant?conversationId=<id>` loads a persisted conversation; absent
+ * the param, the welcome screen renders. Server-side loadConversation runs in
+ * this RSC so the first paint already has the seed messages, no client-side
+ * spinner.
+ *
+ * Cross-owner / not-found / not signed-in: loadConversation returns null
+ * (server-action gate) and we silently fall through to welcome screen rather
+ * than 404 — that matches the dock pattern (URL editing should not error).
+ */
+export default async function AssistantPage({ searchParams }: AssistantPageProps) {
+  const { conversationId } = await searchParams;
+  let initialMessages: UIMessage[] | undefined;
+  if (conversationId) {
+    try {
+      const data = await loadConversation(conversationId);
+      if (data) initialMessages = data.messages as UIMessage[];
+    } catch {
+      // not_signed_in / not_authorized: silently fall back to welcome.
+    }
+  }
+
   return (
     <div className="flex h-full bg-mauve-50">
       <aside className="hidden w-80 shrink-0 flex-col border-r border-mauve-200 bg-ink-0 p-6 lg:flex">
@@ -42,7 +73,11 @@ export default function AssistantPage() {
       </aside>
 
       <section className="flex min-w-0 flex-1 flex-col">
-        <Conversation suggestions={SUGGESTIONS} />
+        <AssistantSceneShell
+          conversationId={conversationId ?? null}
+          initialMessages={initialMessages}
+          suggestions={SUGGESTIONS}
+        />
       </section>
     </div>
   );

@@ -1,7 +1,7 @@
 import { ResultsTableView } from "@/components/studies/results-table";
 import type { Recording } from "@merism/contracts";
 import { listRecordingsBySessionIds } from "@/lib/queries/recordings";
-import { loadStudyResults } from "@/lib/workspace-data";
+import { loadStudyResults } from "@/lib/workspace/data";
 
 export default async function ResultsTabPage({
   params,

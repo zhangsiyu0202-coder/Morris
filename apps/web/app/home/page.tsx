@@ -1,6 +1,6 @@
-import { listSurveysForOwner } from "@/lib/survey-read";
+import { listSurveysForOwner } from "@/lib/survey/read";
 import { getCurrentUserId } from "@/lib/queries/auth";
-import { loadHomeBookmarks, loadHomeReportPreviews } from "@/lib/home-data";
+import { loadHomeBookmarks, loadHomeReportPreviews } from "@/lib/workspace/home-data";
 import { StudiesHome } from "@/components/studies/studies-home";
 
 export const dynamic = "force-dynamic";

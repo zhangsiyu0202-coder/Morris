@@ -28,11 +28,10 @@ export default async function ReportDetailPage({
   const { surveyId } = await params;
   const ownerUserId = await getCurrentUserId();
   if (!ownerUserId) return <NotAllowed />;
-
-  const study = await getStudy(ownerUserId, surveyId);
+  const study = await getStudy(surveyId);
   if (!study) return <NotFound />;
 
-  const completed = await countCompletedSessions(ownerUserId, surveyId);
+  const completed = await countCompletedSessions(surveyId);
   const stored = await getLatestAnalysisReport(ownerUserId, {
     surveyId,
     scope: "survey",

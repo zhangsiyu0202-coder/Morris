@@ -287,3 +287,9 @@ class Notebook(BaseModel):  # zod: NotebookSchema
 
 # Wave F (T46): legacy alias removed (was Insight ↦ Notebook). All
 # consumers must use Notebook / NotebookReport.
+
+
+# NOTE (ADR 0006, workspaces-billing M1): the TS contract adds UsageEventSchema
+# (workspaceId/studyId/sessionId/unit/occurredAt) and adds workspaceId to
+# InterviewSession. The agent does not emit usage yet; mirror UsageEvent here
+# when the M6 session-completion emit lands. See products/workspaces-billing/spec.

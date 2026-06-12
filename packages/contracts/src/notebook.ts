@@ -83,6 +83,8 @@ export const NotebookSchema = z.object({
   studyTitle: z.string(),
   question: z.string(),
   ownerUserId: z.string(),
+  workspaceId: z.string().optional(),
+  authorId: z.string().optional(),
   // shortId: 12 字符 alphanumeric URL-friendly id, unique within owner.
   // 由 lib/notebooks/short-id.ts::generateShortId 生成。Wave A 数据用空字符串,
   // 后端 lazy 补 (P-NB-01b 锁定)。

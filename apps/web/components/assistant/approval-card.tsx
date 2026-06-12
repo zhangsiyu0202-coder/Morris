@@ -28,10 +28,11 @@ export interface ApprovalCardProps {
 
 type Phase = "idle" | "submitting" | "approved" | "rejected" | "error";
 
-export function ApprovalCard({ proposalId, toolName, preview }: ApprovalCardProps) {
+export function ApprovalCard({ proposalId, toolName, preview, payload }: ApprovalCardProps) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [feedback, setFeedback] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [result, setResult] = useState<{ message?: string; url?: string } | null>(null);
 
   async function send(decision: "approve" | "reject") {
     setPhase("submitting");
@@ -43,22 +44,26 @@ export function ApprovalCard({ proposalId, toolName, preview }: ApprovalCardProp
         body: JSON.stringify({
           proposalId,
           decision,
+          toolName,
+          ...(decision === "approve" ? { payload } : {}),
           ...(decision === "reject" && feedback.trim() ? { feedback: feedback.trim() } : {}),
         }),
       });
       if (res.status === 501) {
-        // 占位阶段: 端点已就位但写动作待消费端 Spec 接入。
+        // 该工具的写动作尚未接入(其它消费端 spec 待落地)。
         setPhase("error");
-        setErrorMsg(
-          "Approval confirm 端点尚未接入具体写动作 (本 Spec 仅落骨架, 待 survey-editor 子 spec 落地)。",
-        );
+        setErrorMsg("该工具的 approval 写动作尚未接入。");
         return;
       }
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setPhase("error");
-        setErrorMsg(typeof data?.error === "string" ? data.error : "confirm 请求失败");
+        setErrorMsg(typeof data?.reason === "string" ? data.reason : typeof data?.error === "string" ? data.error : "confirm 请求失败");
         return;
+      }
+      if (decision === "approve") {
+        const data = (await res.json().catch(() => ({}))) as { message?: string; url?: string };
+        setResult({ message: data.message, url: data.url });
       }
       setPhase(decision === "approve" ? "approved" : "rejected");
     } catch (err) {
@@ -117,7 +122,17 @@ export function ApprovalCard({ proposalId, toolName, preview }: ApprovalCardProp
       )}
 
       {phase === "approved" && (
-        <p className="mt-3 text-body-sm text-ink-900">已批准。Morris 将继续执行此操作。</p>
+        <div className="mt-3 text-body-sm text-ink-900">
+          <p>{result?.message ?? "已批准。"}</p>
+          {result?.url && (
+            <a
+              href={result.url}
+              className="mt-1 inline-block font-ui text-body-sm text-ink-900 underline hover:text-ink-800"
+            >
+              打开调研 →
+            </a>
+          )}
+        </div>
       )}
       {phase === "rejected" && (
         <p className="mt-3 text-body-sm text-ink-900">已拒绝。可继续与 Morris 对话, 它会调整方案。</p>

@@ -5,7 +5,7 @@ import { AssistantDock } from "@/components/assistant/assistant-dock";
 import { PageContextProvider } from "@/components/assistant/page-context-provider";
 import { AppShell } from "@/components/shell/app-shell";
 import { getCurrentResearcher } from "@/lib/auth/current-user";
-import { listSurveysForOwner } from "@/lib/survey-read";
+import { listSurveysForOwner } from "@/lib/survey/read";
 import type { StudyStatus } from "@/lib/guide";
 
 const inter = Inter({

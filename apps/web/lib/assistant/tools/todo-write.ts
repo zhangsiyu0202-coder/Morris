@@ -6,6 +6,7 @@ import {
   type ToolResultEnvelope,
 } from "../envelope";
 import type { TodoItem } from "../system-prompt";
+import type { ToolMetadata } from "../tool-metadata";
 
 const TodoItemSchema = z.object({
   id: z.string().min(1).max(64),
@@ -33,11 +34,26 @@ interface TodoWriteArtifact {
  */
 export function buildTodoWriteTool(args: { todoState: TodoState }) {
   const { todoState } = args;
+  const metadata: ToolMetadata = {
+    title: "更新任务 todo",
+    description:
+      "写入或更新当前任务的 todo 列表 (整体覆盖, 不 patch)。用于跨多步任务追踪进度, " +
+      "每完成一步就重新调用并把状态推进 (pending → in_progress → done)。" +
+      "每个 TodoItem 含 id / title / status / 可选 note。一次写满整份列表 (最多 20 项), agent 自管不持久化。" +
+      "Morris 在 ≥3 步复合任务开始时应主动调用一次, 之后每完成一步再调用一次更新状态。",
+    annotations: { readOnly: true, destructive: false, idempotent: false },
+    requiredScopes: [],
+    type: "meta",
+    enabled: true,
+  };
   return {
     contextPromptTemplate: undefined as string | undefined,
+    metadata,
     spec: tool({
       description:
-        "写入或更新当前任务的 todo 列表 (整体覆盖)。用于跨多步任务追踪进度,每完成一步就重新调用并把状态推进。",
+        "写入或更新当前任务的 todo 列表 (整体覆盖, 不 patch)。用于跨多步任务追踪进度, " +
+        "每完成一步就重新调用并把状态推进 (pending → in_progress → done)。" +
+        "每个 TodoItem 含 id / title / status / 可选 note。一次写满整份列表 (最多 20 项), agent 自管不持久化。",
       inputSchema: z.object({
         todos: z.array(TodoItemSchema).max(20),
       }),
