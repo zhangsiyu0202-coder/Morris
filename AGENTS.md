@@ -1,5 +1,22 @@
 # MerismV2 Agent Instructions
 
+> **Steering Index (auto-loaded, do not re-inline)**
+>
+> The seven files below live in `.kiro/steering/` and are auto-injected into the default agent's context every turn. They are the binding source of truth — when the rules below in this file conflict with a steering file, the steering file wins. Do NOT re-quote their content inline; reference by filename.
+>
+> | Steering | Covers |
+> |---|---|
+> | `design-system.md` | Visual tokens, typography roles, button/sidebar patterns, Figma → code translation. |
+> | `architecture.md` | Module map, Function `handler+main+deps` shape, agent realtime↔persistence boundary, concurrency contract, cross-module change order, globally forbidden imports. |
+> | `contracts.md` | `packages/contracts` source-of-truth rules, camelCase + datetime + JSON conventions, `superRefine` invariants, TS↔Python mirror discipline, JSON-bucket sunset rules, deprecation pattern. |
+> | `errors-and-observability.md` | `try/catch` matrix, `createLogger` contract, error code registry, `maskSecret`, `withRetry` semantics, `traceId` propagation, `withErrorBoundary`, provider adapter rules. |
+> | `testing.md` | Four-layer test model, mandatory property-based scenarios, `MERISM_LIVE_TESTS=1` gating, naming/placement, coverage expectations, forbidden test patterns. |
+> | `scope.md` | Permanent product-shape exclusions (no teams/billing/quotas/etc.), borrow-or-build decision flow, anti-patterns to refuse, scope-drift signal words, `pnpm scope-guard`. |
+> | `pre-implementation.md` | Investigation order before writing code, blind-men anti-patterns, GitHub reference research priority, no-MVP rule with forbidden phrases, investigation deliverable for non-trivial PRs. |
+>
+> Sections later in this file that pre-date the steering split (Hard Architecture Rules, Coding Standards, Testing Expectations, Backend Rules, Scope Guard) are kept for product context and the existing repo map; for **binding rules** always defer to the steering files above.
+
+
 ## Project Context
 
 MerismV2 is an AI-driven voice interview qualitative research platform. The intended architecture is:
@@ -267,3 +284,146 @@ Do not introduce fields, collections, functions, UI, dependencies, or docs that 
 - usage metering.
 
 If a future request appears to require one of these, stop and ask for an explicit architecture update rather than implementing it implicitly.
+
+---
+
+## Commits and Pull Requests
+
+Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) for every commit message and PR title.
+
+### Commit types
+
+- `feat`: new feature or behaviour (touches production code)
+- `fix`: bug fix (touches production code)
+- `refactor`: structural change without behaviour change
+- `chore`: non-production changes (docs, tests, config, CI, steering, AGENTS.md)
+- `docs`: ADR / sub-spec / README updates
+- `test`: test-only changes
+
+### Scope convention
+
+Use the touched module as scope. Single-module changes get a single scope:
+
+- `feat(contracts): add probeConfig.maxRounds`
+- `fix(agent): preserve traceId across supervisor failure`
+- `chore(steering): tighten errors-and-observability try/catch matrix`
+- `feat(functions/issueLivekitToken): test-link bypass for draft surveys`
+
+Multi-module changes use the leading module's scope and call out the rest in the PR description's data-flow sketch (per `pre-implementation.md`).
+
+### Format
+
+```
+<type>(<scope>): <description>
+```
+
+Rules:
+
+- First line under 72 characters.
+- Description lowercase, no trailing period.
+- Use American English spelling.
+- No "AI:" / "agent:" / "GPT:" / "Claude:" attribution in commit messages.
+
+Examples:
+
+- ✅ `feat(interview): persist quality flags after analyzeSession`
+- ✅ `fix(contracts): mutex check for silent vs deep-engagement`
+- ❌ `Update some files` — no type, no scope
+- ❌ `feat(interview): added quality flags.` — uppercase + period
+- ❌ `feat: AI added this fix per user request` — attribution
+
+### PR descriptions
+
+Non-trivial PRs MUST include the **investigation deliverable** from `pre-implementation.md`:
+
+- A short data-flow sketch (ASCII or mermaid) showing the touched chain.
+- The list of upstream/downstream callers found via LSP `find_references`.
+- Links to the GitHub reference implementations consulted, plus a one-liner per reference describing the difference.
+- Alternatives considered and rejected, with one-line reasons.
+
+Trivial PRs (single-line typo, doc fix, dependency bump under stable contract) MAY skip this.
+
+### Push discipline
+
+- Do NOT push to remote until the task is complete or you need someone else to review.
+- Batch local commits and push once. Pushing after every change burns CI runner time and creates noisy PR notifications.
+- NEVER push directly to `main` / `master`. Branch workflow only, via PR.
+
+### Public repository hygiene
+
+This repo is private today but treat every commit as if the repo could be open-sourced tomorrow:
+
+- No customer names, real interviewee data, or production tokens in commit messages or code.
+- No internal-only tool names (`.env` paths from a specific deploy, internal Slack channel names) in commits.
+- If sensitive context is needed for the change rationale, summarize at high level in the PR description (which lives in our PR system) rather than in the commit body.
+
+---
+
+## CI guardrails
+
+CI runner time is a budgeted resource. Treat every CI run as if it costs money — because at scale it does.
+
+- Every workflow file under `.github/workflows/*.yml` MUST declare `timeout-minutes` on every job. A stuck job without timeout is a defect.
+- Workflow changes hit every in-flight PR immediately (the workflow runs against PR-merged-with-main), but companion changes (a new dependency, a new file, a new env var) only reach a branch once it rebases. **Workflow edits MUST stay backwards-compatible with unrebased branches** — gate new behaviour with a feature toggle or graceful no-op when the prerequisite is missing.
+- Do NOT push every commit. Batch locally; push once when the task is complete or when you need an extra reviewer. (Repeat from "Push discipline" above because this rule is the most violated.)
+- A PR is not ready to merge until `pnpm test && pnpm typecheck && pnpm test:py && pnpm scope-guard` all pass locally. Don't rely on CI to find what these would catch on your laptop.
+- When tests are flaky in CI, fix the test or quarantine it explicitly with a tracking issue. Re-running CI hoping it passes is a defect, not a workflow.
+
+---
+
+## Mandatory skill invocation
+
+The project ships skills under `.kiro/skills/`. Some scenarios MUST start with a specific skill — not "you may want to use it", but "the agent MUST invoke it before doing the work".
+
+| Scenario | Required skill |
+|---|---|
+| Authoring a new sub-spec under `.kiro/specs/<name>/` | `bmad-spec` |
+| Authoring or editing a PRD | `bmad-prd` |
+| Authoring an architecture ADR under `docs/adr/` | `bmad-create-architecture` |
+| Investigating an unfamiliar code area before changing it (the `pre-implementation.md` Investigation order) | `bmad-investigate` |
+| Reviewing a PR (other than your own trivial change) | `bmad-code-review` |
+| Designing a test plan for a new module or sub-spec | `bmad-testarch-test-design` |
+| Generating epics + stories from requirements | `bmad-create-epics-and-stories` |
+| Implementing a story end-to-end | `bmad-dev-story` |
+
+Skill invocation is not optional in these scenarios. It is the project's escape hatch from "improvising the same workflow each time and producing inconsistent artifacts".
+
+For exploratory / discovery work (brainstorming, market research, prfaq), the BMAD `bmad-brainstorming`, `bmad-domain-research`, `bmad-market-research`, `bmad-prfaq` skills are available but not mandatory — pick when the situation matches.
+
+---
+
+## Automation hierarchy
+
+When enforcing a new convention, prefer the highest-strength tool that fits. Climb DOWN this ladder only when the higher rung does not apply:
+
+1. **Steering** (`.kiro/steering/*.md`, always-loaded). For binding cross-cutting rules every agent must obey every turn (architecture boundaries, contracts, errors, testing, scope, design system).
+2. **CI checks** — automated gates that block merge:
+   - `pnpm typecheck` + `pnpm -F @merism/contracts typecheck` for type drift
+   - `pnpm test` + `pnpm test:py` + `pnpm test:properties` for behaviour invariants
+   - `pnpm lint` (ESLint) for style
+   - `pnpm scope-guard` for forbidden product-shape concepts
+   - `pnpm schema:verify` for Appwrite drift
+   - Targeted `grep -RIn ...` rules in CI for the patterns documented in steering
+3. **Module AGENTS.md** (`packages/*/AGENTS.md`, `apps/*/AGENTS.md`). Per-module rules and gotchas that don't generalize. Loaded on demand, enforced by reviewer.
+4. **Sub-spec / ADR**. Architectural decisions that are too narrow for steering or change too rarely to live in CI.
+
+Adding a new rule:
+
+- If the rule is testable mechanically → make it a CI check first.
+- If the rule applies everywhere → write it in steering, link it from a CI check.
+- If the rule applies to one module → write it in that module's `AGENTS.md`.
+- If the rule is a one-off architectural decision → write an ADR.
+
+A rule that lives only in code review notes will eventually be ignored. Promote it to one of the four levels above.
+
+---
+
+## Code style: forbidden comment patterns
+
+In addition to the comment guidance in `.kiro/steering/architecture.md` (comments explain non-obvious decisions, default to ASCII):
+
+- No `// AI:` / `// agent:` / `// GPT:` / `// Claude:` attribution comments in code. Attribution belongs in commit messages, not in source.
+- No change-history comments in code: never write `// previously did X, now does Y`, `// per PR #123`, `// changed because foo`, `// AI rewrote this`. Change history lives in commit messages and PR descriptions.
+- When refactoring or moving code, preserve existing comments unless they are explicitly made obsolete by the change.
+- Comments should explain **why** (non-obvious decisions, invariants, tradeoffs), not **what** (the code already shows what).
+- Default to short / one-line comments. Multi-line comments are reserved for non-obvious invariants (rollback semantics, concurrency notes, ADR pointers).
