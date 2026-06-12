@@ -488,11 +488,16 @@ export const COLLECTIONS: CollectionDef[] = [
       { key: "source", type: "string", size: 512, required: true },
       { key: "respondent", type: "string", size: 128, required: true },
       { key: "segmentIndex", type: "integer", required: false },
+      { key: "startMs", type: "integer", required: false },
+      { key: "note", type: "string", size: TEXT_SIZE, required: false, default: "" },
+      // array 字段不写 default,由 contracts zod default([]) 兜底 (同 qualityFlags)
+      { key: "tags", type: "string", size: 64, required: false, array: true },
       { key: "createdAt", type: "datetime", required: true },
     ],
     indexes: [
       { key: "by_owner_created", type: "key", attributes: ["ownerUserId", "createdAt"] },
       { key: "by_owner_session", type: "key", attributes: ["ownerUserId", "sessionId"] },
+      { key: "by_workspace_session", type: "key", attributes: ["workspaceId", "sessionId"] },
       { key: "by_session", type: "key", attributes: ["sessionId"] },
     ],
   },
@@ -628,6 +633,7 @@ export const COLLECTIONS: CollectionDef[] = [
     ],
     indexes: [
       { key: "by_workspace", type: "key", attributes: ["workspaceId"] },
+      { key: "by_user", type: "key", attributes: ["userId"] },
       { key: "member_unique", type: "unique", attributes: ["workspaceId", "userId"] },
     ],
   },

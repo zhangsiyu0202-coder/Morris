@@ -332,6 +332,12 @@ export const BookmarkSchema = z.object({
   source: z.string(),
   respondent: z.string(),
   segmentIndex: z.number().int().nonnegative().optional(),
+  /** Absolute recording offset (ms) this quote anchors to — the seek target for in-app playback. */
+  startMs: z.number().int().nonnegative().optional(),
+  /** Researcher's own free-text annotation on this saved quote. Empty when unset. */
+  note: z.string().default(""),
+  /** Researcher-assigned tags for grouping/filtering bookmarks. Deduped, no empties. */
+  tags: z.array(z.string()).default([]),
   createdAt: z.string().datetime(),
 });
 

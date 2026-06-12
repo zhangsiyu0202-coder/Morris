@@ -192,11 +192,13 @@ export const StudyProbeLevelSchema = z.enum(["standard", "deep"]);
 
 export const SurveyDraftQuestionSchema = z
   .object({
-    questionText: z.string().min(1),
+    // `.trim()` 归一化前后空白后再 `.min(1)`,纯空白串(" ")会被裁成 "" 并拒绝。
+    // 借鉴 PostHog CreateUserInterviewTopicTool 对 topic/questions 的 strip 处理。
+    questionText: z.string().trim().min(1),
     questionType: StudyQuestionTypeSchema,
     probeLevel: StudyProbeLevelSchema.default("standard"),
-    probeInstruction: z.string().default(""),
-    options: z.array(z.string().min(1)).default([]),
+    probeInstruction: z.string().trim().default(""),
+    options: z.array(z.string().trim().min(1)).default([]),
     allowSkip: z.boolean().default(false),
     stimulus: StimulusSchema.optional(),
   })
@@ -214,22 +216,22 @@ export const SurveyDraftQuestionSchema = z
   });
 
 export const SurveyDraftSectionSchema = z.object({
-  title: z.string().min(1),
-  objective: z.string().min(1),
+  title: z.string().trim().min(1),
+  objective: z.string().trim().min(1),
   questions: z.array(SurveyDraftQuestionSchema).min(1),
 });
 
 export const SurveyDraftSchema = z.object({
-  title: z.string().min(1),
-  researchGoal: z.string().min(1),
-  targetAudience: z.string().min(1),
-  introScript: z.string().min(1),
+  title: z.string().trim().min(1),
+  researchGoal: z.string().trim().min(1),
+  targetAudience: z.string().trim().min(1),
+  introScript: z.string().trim().min(1),
   // survey-editor moderator-instruction increment: researcher-authored directives
   // for the AI voice moderator (tone, pacing-as-behavior, interview style). The
   // interview GOAL is NOT duplicated here — it stays in `researchGoal`. Composed
   // into InterviewWorkflowConfig.supervisorInstruction at build time. Default ""
   // keeps existing drafts valid and means "use the operational default only".
-  moderatorInstruction: z.string().default(""),
+  moderatorInstruction: z.string().trim().default(""),
   sections: z.array(SurveyDraftSectionSchema).min(1),
 });
 
