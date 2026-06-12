@@ -7,6 +7,7 @@ import {
   getStudy,
   parseSurveyReportBody,
 } from "@/lib/queries";
+import { scopeForOwner } from "@/lib/auth/workspace";
 import { ReportHeader } from "@/components/report/report-header";
 import { SummarySection } from "@/components/report/summary-section";
 import { HighlightsSection } from "@/components/report/highlights-section";
@@ -29,10 +30,11 @@ export default async function ReportDetailPage({
   const ownerUserId = await getCurrentUserId();
   if (!ownerUserId) return <NotAllowed />;
 
-  const study = await getStudy(ownerUserId, surveyId);
+  const scope = await scopeForOwner(ownerUserId);
+  const study = await getStudy(scope, surveyId);
   if (!study) return <NotFound />;
 
-  const completed = await countCompletedSessions(ownerUserId, surveyId);
+  const completed = await countCompletedSessions(scope, surveyId);
   const stored = await getLatestAnalysisReport(ownerUserId, {
     surveyId,
     scope: "survey",

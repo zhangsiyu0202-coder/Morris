@@ -1,6 +1,6 @@
 import type { Databases } from "node-appwrite";
 import { TranscriptSchema, type TranscriptSegment } from "@merism/contracts";
-import { DATABASE_ID, getServerClient, Query } from "./client";
+import { DATABASE_ID, getServerClient, Query, type TenantScope } from "./client";
 import { listSessions } from "./sessions";
 
 const TRANSCRIPTS = "transcripts";
@@ -38,7 +38,7 @@ interface SearchParams {
  * a JSON array on the Transcript document, not separate rows.
  */
 export async function searchTranscriptSegments(
-  ownerUserId: string,
+  scope: TenantScope,
   params: SearchParams,
   databases: Databases = db(),
 ): Promise<TranscriptHit[]> {
@@ -46,13 +46,13 @@ export async function searchTranscriptSegments(
   const needle = params.query.trim().toLowerCase();
 
   if (!params.surveyId) {
-    // Without a surveyId we'd need to enumerate every owner's surveys; this
+    // Without a surveyId we'd need to enumerate every tenant's surveys; this
     // path is rare for now (the assistant always passes a study id when the
     // researcher mentioned one) so we keep it short-circuited.
     return [];
   }
 
-  const sessions = await listSessions(ownerUserId, params.surveyId, databases);
+  const sessions = await listSessions(scope, params.surveyId, databases);
   if (sessions.length === 0) return [];
 
   const sessionIds = sessions.map((s) => s.$id);
@@ -73,7 +73,7 @@ export async function searchTranscriptSegments(
       if (needle && !segment.text.toLowerCase().includes(needle)) return;
       hits.push({
         ...segment,
-        ownerUserId,
+        ownerUserId: scope.ownerUserId,
         sessionId: t.sessionId,
         transcriptId: t.$id,
         segmentIndex: index,

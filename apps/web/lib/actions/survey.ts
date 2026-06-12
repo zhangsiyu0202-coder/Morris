@@ -1,6 +1,6 @@
 "use server";
 
-import { ID } from "node-appwrite";
+import { ID, Permission, Role } from "node-appwrite";
 import {
   SurveyDraftSchema,
   canTransitionSurveyStatus,
@@ -40,13 +40,17 @@ function db() {
   return getServerClient().databases;
 }
 
-/** 读取并校验 survey 归属当前 owner;不属于则抛错(P-SEC-04)。 */
+/** 读取并校验 survey 可被当前 caller 写(作者本人);不是作者则抛错(P-SEC-04 / ADR-0006 D3 写私有)。 */
 async function assertOwned(
   surveyId: string,
 ): Promise<{ ownerUserId: string; version: number; currentStatus: SurveyStatus }> {
   const owner = await requireOwnerUserId();
   const doc = await db().getDocument(DATABASE_ID, SURVEYS, surveyId);
-  if ((doc as { ownerUserId?: string }).ownerUserId !== owner) {
+  const d = doc as { ownerUserId?: string; authorId?: string };
+  // ADR-0006 D3: edit/delete is author-private. authorId is the creator; fall
+  // back to ownerUserId for rows written before the authorId recast.
+  const isAuthor = d.authorId === owner || d.ownerUserId === owner;
+  if (!isAuthor) {
     throw new Error("survey_not_owned");
   }
   const rawStatus = String((doc as { status?: string }).status ?? "draft");
@@ -68,18 +72,39 @@ async function assertOwned(
 export async function createSurvey(title: string): Promise<string> {
   const owner = await requireOwnerUserId();
   const workspaceId = await getCurrentWorkspaceId();
-  const doc = await db().createDocument(DATABASE_ID, SURVEYS, ID.unique(), {
-    ownerUserId: owner,
-    authorId: owner,
-    ...(workspaceId ? { workspaceId } : {}),
-    projectId: DEFAULT_PROJECT,
-    title: title.trim() || "未命名调研",
-    status: "draft",
-    flowConfig: JSON.stringify({}),
-    moderatorInstruction: "",
-    version: 1,
-    updatedAt: new Date().toISOString(),
-  });
+  // ADR-0006 D3: in a workspace the whole team can read, only the author edits/
+  // deletes; solo (no workspace) is owner-only. Server reads use the API key, so
+  // tenant isolation is also enforced in-code via tenantFilter; these doc
+  // permissions are the declarative mirror + defense for any client read.
+  const permissions = workspaceId
+    ? [
+        Permission.read(Role.team(workspaceId)),
+        Permission.update(Role.user(owner)),
+        Permission.delete(Role.user(owner)),
+      ]
+    : [
+        Permission.read(Role.user(owner)),
+        Permission.update(Role.user(owner)),
+        Permission.delete(Role.user(owner)),
+      ];
+  const doc = await db().createDocument(
+    DATABASE_ID,
+    SURVEYS,
+    ID.unique(),
+    {
+      ownerUserId: owner,
+      authorId: owner,
+      ...(workspaceId ? { workspaceId } : {}),
+      projectId: DEFAULT_PROJECT,
+      title: title.trim() || "未命名调研",
+      status: "draft",
+      flowConfig: JSON.stringify({}),
+      moderatorInstruction: "",
+      version: 1,
+      updatedAt: new Date().toISOString(),
+    },
+    permissions,
+  );
   return doc.$id;
 }
 

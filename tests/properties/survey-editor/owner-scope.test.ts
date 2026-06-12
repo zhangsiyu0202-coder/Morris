@@ -2,20 +2,25 @@ import { describe, it, expect } from "vitest";
 import fc from "fast-check";
 import { getStudy, listStudies } from "../../../apps/web/lib/queries/studies";
 import { makeFakeDatabases } from "../../../apps/web/lib/queries/__tests__/helpers";
+import type { TenantScope } from "../../../apps/web/lib/queries/client";
 
 /**
- * P-SEC-04 (survey-editor): 编辑器读写对非 `ownerUserId` 的 survey 一律拒绝/返回空。
+ * P-SEC-04 + P-SEC-TENANT (ADR-0006): the editor read paths (`getStudy` /
+ * `listStudies`) scope every read through `tenantFilter`:
+ *   - solo researcher (workspaceId null) → `ownerUserId` scope (legacy);
+ *   - workspace member → `workspaceId` scope (ADR-0006 D3 read-shared-within-
+ *     workspace). A user in workspace X can NEVER read a row whose
+ *     `workspaceId !== X`.
  *
- * 编辑器读路径(`getStudy` / `listStudies`)按 `ownerUserId` 作用域过滤。写路径
- * `lib/actions/survey.ts::assertOwned` 应用**完全相同**的所有权谓词
- * (`doc.ownerUserId !== owner → 拒绝`),其针对 live Appwrite 的端到端验证由
- * scripts 的 stack 校验覆盖。这里用内存 Deps 穷举所有权边界:对任意
- * (owner, stranger) 文档集,owner 调用绝不读到 stranger 的 survey,反之亦然。
+ * The write path (`lib/actions/survey.ts::assertOwned`) applies the matching
+ * author predicate; its end-to-end enforcement against live Appwrite Team
+ * permissions is covered by the stack-gated integration tests. Here we exhaust
+ * the read-scope boundary with in-memory Deps.
  */
 
 type OwnerId = "owner" | "stranger";
 
-function survey(id: string, ownerUserId: OwnerId) {
+function survey(id: string, ownerUserId: OwnerId, workspaceId?: string) {
   return {
     $id: id,
     projectId: "p1",
@@ -24,11 +29,14 @@ function survey(id: string, ownerUserId: OwnerId) {
     flowConfig: {},
     version: 1,
     ownerUserId,
+    ...(workspaceId ? { workspaceId } : {}),
     updatedAt: "2026-06-11T00:00:00.000Z",
   };
 }
 
-describe("P-SEC-04: survey-editor read scope never crosses ownerUserId", () => {
+const solo = (ownerUserId: OwnerId): TenantScope => ({ ownerUserId, workspaceId: null });
+
+describe("P-SEC-04: solo read scope never crosses ownerUserId", () => {
   it("listStudies returns only the caller's surveys", async () => {
     await fc.assert(
       fc.asyncProperty(
@@ -40,7 +48,7 @@ describe("P-SEC-04: survey-editor read scope never crosses ownerUserId", () => {
           ];
           const { databases } = makeFakeDatabases({ surveys: { documents } });
 
-          const mine = await listStudies("owner", databases);
+          const mine = await listStudies(solo("owner"), databases);
           expect(mine).toHaveLength(ownerCount);
           for (const s of mine) expect(s.$id.startsWith("o-")).toBe(true);
         },
@@ -49,7 +57,7 @@ describe("P-SEC-04: survey-editor read scope never crosses ownerUserId", () => {
     );
   });
 
-  it("getStudy returns null for a survey owned by a stranger, the survey for the owner", async () => {
+  it("getStudy returns null for a stranger's survey, the survey for the owner", async () => {
     await fc.assert(
       fc.asyncProperty(fc.constantFrom<OwnerId>("owner", "stranger"), async (docOwner) => {
         const { databases } = makeFakeDatabases({
@@ -58,9 +66,8 @@ describe("P-SEC-04: survey-editor read scope never crosses ownerUserId", () => {
           question_blocks: { documents: [] },
         });
 
-        const asOwner = await getStudy("owner", "sv1", databases);
+        const asOwner = await getStudy(solo("owner"), "sv1", databases);
         if (docOwner === "owner") {
-          expect(asOwner).not.toBeNull();
           expect(asOwner?.survey.$id).toBe("sv1");
         } else {
           expect(asOwner).toBeNull();
@@ -85,17 +92,48 @@ describe("P-SEC-04: survey-editor read scope never crosses ownerUserId", () => {
             question_blocks: { documents: [] },
           });
 
-          // owner cannot read any stranger-owned survey by id
           for (const d of strangerDocs) {
-            expect(await getStudy("owner", d.$id, databases)).toBeNull();
+            expect(await getStudy(solo("owner"), d.$id, databases)).toBeNull();
           }
-          // stranger cannot read any owner-owned survey by id
           for (const d of ownerDocs) {
-            expect(await getStudy("stranger", d.$id, databases)).toBeNull();
+            expect(await getStudy(solo("stranger"), d.$id, databases)).toBeNull();
           }
         },
       ),
       { numRuns: 20 },
+    );
+  });
+});
+
+describe("P-SEC-TENANT (ADR-0006): workspace read scope never crosses workspaceId", () => {
+  it("a workspace-X caller reads only rows whose workspaceId === X", async () => {
+    const rowArb = fc.record({
+      id: fc.string({ minLength: 1 }).filter((s) => s.trim().length > 0),
+      ws: fc.constantFrom("ws_x", "ws_y", "ws_z"),
+      owner: fc.constantFrom<OwnerId>("owner", "stranger"),
+    });
+    await fc.assert(
+      fc.asyncProperty(fc.array(rowArb, { maxLength: 20 }), fc.constantFrom("ws_x", "ws_y"), async (rows, callerWs) => {
+        // de-dupe ids so the fixture is well-formed
+        const seen = new Set<string>();
+        const documents = rows
+          .filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true)))
+          .map((r, i) => survey(`row-${i}`, r.owner, r.ws));
+
+        const { databases } = makeFakeDatabases({ surveys: { documents } });
+        // caller belongs to workspace `callerWs`; ownerUserId is irrelevant to a
+        // workspace-scoped read (D3: any member reads the whole workspace).
+        const scope: TenantScope = { ownerUserId: "owner", workspaceId: callerWs };
+        const visible = await listStudies(scope, databases);
+
+        const expected = documents.filter((d) => d.workspaceId === callerWs).length;
+        expect(visible).toHaveLength(expected);
+        for (const s of visible) {
+          const row = documents.find((d) => d.$id === s.$id)!;
+          expect(row.workspaceId).toBe(callerWs);
+        }
+      }),
+      { numRuns: 40 },
     );
   });
 });

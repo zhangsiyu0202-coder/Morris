@@ -16,6 +16,7 @@ import {
   parseSurveyReportBody,
   searchTranscriptSegments,
 } from "../queries";
+import { scopeForOwner } from "@/lib/auth/workspace";
 
 // 报告契约统一在 @merism/contracts/insight 维护;本文件只 re-export 以保持
 // 现有 import 路径(lib/actions/insights.ts 等)不破裂。
@@ -31,21 +32,22 @@ export { notebookReportSchema, type NotebookReport } from "@merism/contracts";
 export async function listStudyOptions(
   ownerUserId: string,
 ): Promise<Array<{ id: string; title: string; status: string; responses: number }>> {
-  const surveys = await listStudies(ownerUserId);
+  const scope = await scopeForOwner(ownerUserId);
+  const surveys = await listStudies(scope);
   const enriched = await Promise.all(
     surveys.map(async (s) => ({
       id: s.$id,
       title: s.title,
       status: s.status,
-      responses: await countCompletedSessions(ownerUserId, s.$id),
+      responses: await countCompletedSessions(scope, s.$id),
     })),
   );
   return enriched;
 }
 
-/** 校验 studyId 是否属于该研究员。 */
+/** 校验 studyId 是否属于该研究员(或其 workspace)。 */
 export async function isValidStudyId(ownerUserId: string, studyId: string): Promise<boolean> {
-  const study = await getStudy(ownerUserId, studyId);
+  const study = await getStudy(await scopeForOwner(ownerUserId), studyId);
   return study !== null;
 }
 
@@ -59,7 +61,8 @@ export async function buildStudyContext(
   ownerUserId: string,
   studyId: string,
 ): Promise<string> {
-  const study = await getStudy(ownerUserId, studyId);
+  const scope = await scopeForOwner(ownerUserId);
+  const study = await getStudy(scope, studyId);
   if (!study) return "(找不到该调研)";
 
   const report = await getLatestAnalysisReport(ownerUserId, {
@@ -68,7 +71,7 @@ export async function buildStudyContext(
   });
   const body = report ? parseSurveyReportBody(report) : null;
 
-  const snippets = await searchTranscriptSegments(ownerUserId, {
+  const snippets = await searchTranscriptSegments(scope, {
     query: "",
     surveyId: studyId,
     limit: 30,

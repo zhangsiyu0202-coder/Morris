@@ -64,7 +64,7 @@ describe("Morris tools factory: signed-in path", () => {
     ]);
     const tools = buildAssistantTools({ ownerUserId: "user-1" });
     const result: any = await (tools.listStudies as any).execute({});
-    expect(mockListStudies).toHaveBeenCalledWith("user-1");
+    expect(mockListStudies).toHaveBeenCalledWith({ ownerUserId: "user-1", workspaceId: null });
     expect(result.content).toContain("已读取 1 个调研");
     expect(result.artifact.studies).toEqual([
       {
@@ -95,7 +95,7 @@ describe("Morris tools factory: signed-in path", () => {
       query: "hello",
       studyId: "sv1",
     });
-    expect(mockSearch).toHaveBeenCalledWith("user-1", {
+    expect(mockSearch).toHaveBeenCalledWith({ ownerUserId: "user-1", workspaceId: null }, {
       query: "hello",
       surveyId: "sv1",
       limit: 20,

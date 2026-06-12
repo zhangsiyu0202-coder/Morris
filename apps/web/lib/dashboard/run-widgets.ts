@@ -6,11 +6,12 @@ import type {
 } from "@merism/contracts";
 import {
   getLatestAnalysisReport,
-  listBookmarksForOwner,
+  listBookmarksForTenant,
   listSessions,
   parseSessionReportBody,
   parseSurveyReportBody,
 } from "@/lib/queries";
+import { scopeForOwner } from "@/lib/auth/workspace";
 import { getOrCreateStudyDashboard, type DashboardTileWithWidget } from "./queries";
 
 type WidgetRunner = (ctx: WidgetRunContext, widget: DashboardWidget) => Promise<unknown>;
@@ -41,7 +42,7 @@ async function getSurveyReport(
 
 const WIDGET_REGISTRY = {
   study_progress: async ({ ownerUserId, surveyId }: WidgetRunContext) => {
-    const sessions = await listSessions(ownerUserId, surveyId);
+    const sessions = await listSessions(await scopeForOwner(ownerUserId), surveyId);
     const completedSessions = sessions.filter((session) => session.state === "completed").length;
     const totalSessions = sessions.length;
     return {
@@ -52,7 +53,7 @@ const WIDGET_REGISTRY = {
   },
   recent_sessions: async ({ ownerUserId, surveyId }, widget) => {
     const limit = configLimit(widget, 6, 20);
-    const sessions = await listSessions(ownerUserId, surveyId);
+    const sessions = await listSessions(await scopeForOwner(ownerUserId), surveyId);
     return {
       sessions: sessions.slice(0, limit).map((session) => ({
         sessionId: session.$id,
@@ -76,7 +77,7 @@ const WIDGET_REGISTRY = {
   },
   bookmarked_quotes: async ({ ownerUserId, surveyId }, widget) => {
     const limit = configLimit(widget, 5, 20);
-    const bookmarks = await listBookmarksForOwner(ownerUserId, 100);
+    const bookmarks = await listBookmarksForTenant(await scopeForOwner(ownerUserId), 100);
     return {
       bookmarks: bookmarks
         .filter((bookmark) => bookmark.surveyId === surveyId)
@@ -93,7 +94,7 @@ const WIDGET_REGISTRY = {
   },
   visual_moments: async ({ ownerUserId, surveyId }, widget) => {
     const limit = configLimit(widget, 5, 20);
-    const sessions = await listSessions(ownerUserId, surveyId);
+    const sessions = await listSessions(await scopeForOwner(ownerUserId), surveyId);
     const moments: Array<{
       sessionId: string;
       timestampMs: number;

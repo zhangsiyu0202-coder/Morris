@@ -5,5 +5,5 @@ export { searchTranscriptSegments } from "./transcripts";
 export type { TranscriptHit } from "./transcripts";
 export { getLatestAnalysisReport, parseSurveyReportBody, parseSessionReportBody } from "./reports";
 export { listNotebooks, getNotebookById, getNotebookByShortId } from "./notebooks";
-export { listBookmarksForOwner, listBookmarksBySession } from "./bookmarks";
+export { listBookmarksForTenant, listBookmarksBySession } from "./bookmarks";
 export { getCurrentUserId } from "./auth";

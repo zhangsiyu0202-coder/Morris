@@ -1,7 +1,7 @@
 import type { Databases } from "node-appwrite";
 import { BookmarkSchema } from "@merism/contracts";
 import type { Bookmark } from "@merism/contracts";
-import { DATABASE_ID, getServerClient, Query } from "./client";
+import { DATABASE_ID, getServerClient, Query, tenantFilter, type TenantScope } from "./client";
 
 const BOOKMARKS = "bookmarks";
 
@@ -14,14 +14,14 @@ function parseBookmark(raw: unknown): Bookmark | null {
   return parsed.success ? parsed.data : null;
 }
 
-/** List bookmarks owned by `ownerUserId`, newest first. */
-export async function listBookmarksForOwner(
-  ownerUserId: string,
+/** List bookmarks in the caller's tenant (workspace, else solo owner), newest first. */
+export async function listBookmarksForTenant(
+  scope: TenantScope,
   limit = 50,
   databases: Databases = db(),
 ): Promise<Bookmark[]> {
   const result = await databases.listDocuments(DATABASE_ID, BOOKMARKS, [
-    Query.equal("ownerUserId", ownerUserId),
+    tenantFilter(scope),
     Query.orderDesc("createdAt"),
     Query.limit(limit),
   ]);

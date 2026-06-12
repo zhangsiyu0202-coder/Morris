@@ -44,7 +44,7 @@ describe("Morris createNotebook tool", () => {
         "# Why high price sensitivity?\n\n直接答案。\n\n## 核心结论\n...\n\n## 主题分析\n...\n\n## 立场分歧\n...\n\n## 行动建议\n...",
     });
 
-    expect(mockGetStudy).toHaveBeenCalledWith("user-1", "sv1");
+    expect(mockGetStudy).toHaveBeenCalledWith({ ownerUserId: "user-1", workspaceId: null }, "sv1");
     expect(mockSave).toHaveBeenCalledWith(
       expect.objectContaining({
         ownerUserId: "user-1",

@@ -1,7 +1,7 @@
 import type { Databases } from "node-appwrite";
 import { SurveySchema, SurveySectionSchema, QuestionBlockSchema } from "@merism/contracts";
 import type { Survey, SurveySection, QuestionBlock } from "@merism/contracts";
-import { DATABASE_ID, getServerClient, Query } from "./client";
+import { DATABASE_ID, getServerClient, Query, tenantFilter, type TenantScope } from "./client";
 
 const SURVEYS = "surveys";
 const SURVEY_SECTIONS = "survey_sections";
@@ -41,13 +41,13 @@ function parseQuestion(raw: unknown): QuestionBlock | null {
   return r.success ? r.data : null;
 }
 
-/** List every survey owned by `ownerUserId`. */
+/** List every survey in the caller's tenant (workspace, else solo owner). */
 export async function listStudies(
-  ownerUserId: string,
+  scope: TenantScope,
   databases: Databases = db(),
 ): Promise<Survey[]> {
   const result = await databases.listDocuments(DATABASE_ID, SURVEYS, [
-    Query.equal("ownerUserId", ownerUserId),
+    tenantFilter(scope),
     Query.orderDesc("updatedAt"),
     Query.limit(100),
   ]);
@@ -56,18 +56,19 @@ export async function listStudies(
 
 /**
  * Get a single survey plus its sections and question blocks. Returns null when
- * the survey does not exist or is not owned by `ownerUserId`. Used by the
+ * the survey does not exist or is not readable by the caller's tenant (its
+ * `workspaceId` differs, or — solo — its `ownerUserId` differs). Used by the
  * analyze Functions and by the report viewer to render question-level
  * structure.
  */
 export async function getStudy(
-  ownerUserId: string,
+  scope: TenantScope,
   surveyId: string,
   databases: Databases = db(),
 ): Promise<{ survey: Survey; sections: SurveySection[]; questions: QuestionBlock[] } | null> {
   const surveyResult = await databases.listDocuments(DATABASE_ID, SURVEYS, [
     Query.equal("$id", surveyId),
-    Query.equal("ownerUserId", ownerUserId),
+    tenantFilter(scope),
     Query.limit(1),
   ]);
   const survey = parseSurvey(surveyResult.documents[0] ?? null);

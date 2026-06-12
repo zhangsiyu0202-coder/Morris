@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 
 import { searchTranscriptSegments } from "@/lib/queries";
+import { scopeForOwner } from "@/lib/auth/workspace";
 
 import {
   NOT_SIGNED_IN,
@@ -66,7 +67,7 @@ export function buildSearchInterviewDataTool(ctx: AssistantToolContext) {
       }): Promise<ToolResultEnvelope<SearchArtifact | ToolErrorArtifact>> => {
         if (!ownerUserId) return NOT_SIGNED_IN;
         try {
-          const hits = await searchTranscriptSegments(ownerUserId, {
+          const hits = await searchTranscriptSegments(await scopeForOwner(ownerUserId), {
             query: query ?? "",
             surveyId: studyId,
             limit: 20,

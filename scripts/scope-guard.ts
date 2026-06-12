@@ -62,6 +62,11 @@ const EXEMPT_PREFIXES = [
   "apps/web/lib/actions/bookmarks.ts",
   "apps/web/lib/queries/bookmarks.ts",
   "apps/web/lib/queries/studies.ts", // getStudyForViewer: workspace-member read auth
+  // ADR-0006 M2 tenant read-scoping consistency: these carry the tenant-scope
+  // primitive / Team document permissions (Role.team(workspaceId)) so every
+  // workspace-entity read filters uniformly. The field-name guard below still runs.
+  "apps/web/lib/queries/client.ts", // TenantScope + tenantFilter primitive
+  "apps/web/lib/actions/survey.ts", // createSurvey: read(team)+write(author) permissions
   "apps/web/app/studies/[id]/results/[sessionId]/page.tsx", // viewer auth for shared review
   "scripts/backfill-workspace-tenancy.ts", // ADR-0006 M2 tenancy backfill tool
   "scripts/seed-workspace.ts", // ADR-0006 dev workspace seed

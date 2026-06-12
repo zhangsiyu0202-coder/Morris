@@ -5,6 +5,7 @@ import {
   getCurrentUserId,
   listStudies,
 } from "@/lib/queries";
+import { scopeForOwner } from "@/lib/auth/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -17,13 +18,14 @@ export default async function ReportsListPage() {
   const ownerUserId = await getCurrentUserId();
   if (!ownerUserId) return <SignedOutEmpty />;
 
-  const studies = await listStudies(ownerUserId);
+  const scope = await scopeForOwner(ownerUserId);
+  const studies = await listStudies(scope);
   const cards = await Promise.all(
     studies.map(async (study) => ({
       surveyId: study.$id,
       title: study.title,
       status: study.status,
-      completedRespondents: await countCompletedSessions(ownerUserId, study.$id),
+      completedRespondents: await countCompletedSessions(scope, study.$id),
       updatedAt: study.updatedAt,
     })),
   );

@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 
 import { listStudies } from "@/lib/queries";
+import { scopeForOwner } from "@/lib/auth/workspace";
 
 import {
   NOT_SIGNED_IN,
@@ -54,7 +55,7 @@ export function buildListStudiesTool(ctx: AssistantToolContext) {
       > => {
         if (!ownerUserId) return NOT_SIGNED_IN;
         try {
-          const surveys = await listStudies(ownerUserId);
+          const surveys = await listStudies(await scopeForOwner(ownerUserId));
           const artifact: ListStudiesArtifact = {
             studies: surveys.map((s) => ({
               id: s.$id,

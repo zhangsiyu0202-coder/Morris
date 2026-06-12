@@ -1,7 +1,7 @@
 import type { Databases } from "node-appwrite";
 import { NotebookSchema } from "@merism/contracts";
 import type { Notebook } from "@merism/contracts";
-import { DATABASE_ID, getServerClient, Query } from "./client";
+import { DATABASE_ID, getServerClient, Query, tenantFilter, type TenantScope } from "./client";
 
 const NOTEBOOKS = "notebooks";
 
@@ -36,13 +36,13 @@ function decodeNotebook(raw: unknown): unknown {
   return r;
 }
 
-/** List all notebooks owned by `ownerUserId`, newest first. */
+/** List all notebooks in the caller's tenant (workspace, else solo owner), newest first. */
 export async function listNotebooks(
-  ownerUserId: string,
+  scope: TenantScope,
   databases: Databases = db(),
 ): Promise<Notebook[]> {
   const result = await databases.listDocuments(DATABASE_ID, NOTEBOOKS, [
-    Query.equal("ownerUserId", ownerUserId),
+    tenantFilter(scope),
     Query.orderDesc("createdAt"),
     Query.limit(200),
   ]);
@@ -54,15 +54,15 @@ export async function listNotebooks(
   return out;
 }
 
-/** Read a single notebook by Appwrite `$id`, scoped to its owner. */
+/** Read a single notebook by Appwrite `$id`, scoped to the caller's tenant. */
 export async function getNotebookById(
-  ownerUserId: string,
+  scope: TenantScope,
   id: string,
   databases: Databases = db(),
 ): Promise<Notebook | null> {
   const result = await databases.listDocuments(DATABASE_ID, NOTEBOOKS, [
     Query.equal("$id", id),
-    Query.equal("ownerUserId", ownerUserId),
+    tenantFilter(scope),
     Query.limit(1),
   ]);
   const raw = result.documents[0];
@@ -71,17 +71,17 @@ export async function getNotebookById(
   return parsed.success ? parsed.data : null;
 }
 
-/** Read a single notebook by `shortId`, scoped to its owner. Wave B+:
+/** Read a single notebook by `shortId`, scoped to the caller's tenant. Wave B+:
  * URLs are `/notebooks/[shortId]`, so this is the primary read path.
  */
 export async function getNotebookByShortId(
-  ownerUserId: string,
+  scope: TenantScope,
   shortId: string,
   databases: Databases = db(),
 ): Promise<Notebook | null> {
   if (!shortId) return null;
   const result = await databases.listDocuments(DATABASE_ID, NOTEBOOKS, [
-    Query.equal("ownerUserId", ownerUserId),
+    tenantFilter(scope),
     Query.equal("shortId", shortId),
     Query.limit(1),
   ]);

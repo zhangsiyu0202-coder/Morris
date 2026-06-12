@@ -1,9 +1,10 @@
 import {
   countCompletedSessions,
   getLatestAnalysisReport,
-  listBookmarksForOwner,
+  listBookmarksForTenant,
   listStudies,
 } from "@/lib/queries";
+import { scopeForOwner } from "@/lib/auth/workspace";
 
 export type HomeBookmark = {
   id: string;
@@ -31,11 +32,12 @@ function formatShortDate(iso: string): string {
 export async function loadHomeReportPreviews(
   ownerUserId: string,
 ): Promise<HomeReportPreview[]> {
-  const studies = await listStudies(ownerUserId);
+  const scope = await scopeForOwner(ownerUserId);
+  const studies = await listStudies(scope);
 
   const cards = await Promise.all(
     studies.map(async (study) => {
-      const completed = await countCompletedSessions(ownerUserId, study.$id);
+      const completed = await countCompletedSessions(scope, study.$id);
       if (completed === 0) return null;
 
       const report = await getLatestAnalysisReport(ownerUserId, {
@@ -63,7 +65,7 @@ export async function loadHomeReportPreviews(
 
 /** Load recent bookmarks for the home dashboard bookmark wall. */
 export async function loadHomeBookmarks(ownerUserId: string): Promise<HomeBookmark[]> {
-  const bookmarks = await listBookmarksForOwner(ownerUserId, 20);
+  const bookmarks = await listBookmarksForTenant(await scopeForOwner(ownerUserId), 20);
   return bookmarks.map((bm) => ({
     id: bm.$id,
     respondent: bm.respondent,

@@ -5,11 +5,14 @@ import { listSessions, countCompletedSessions } from "../sessions";
 import { searchTranscriptSegments } from "../transcripts";
 import { getLatestAnalysisReport, parseSessionReportBody } from "../reports";
 import { listNotebooks, getNotebookById } from "../notebooks";
-import { listBookmarksForOwner, listBookmarksBySession } from "../bookmarks";
+import { listBookmarksForTenant, listBookmarksBySession } from "../bookmarks";
 import { makeFakeDatabases } from "./helpers";
 
 const owner = "user-owner";
 const stranger = "user-other";
+// Solo researcher (no workspace) — tenantFilter falls back to ownerUserId, so
+// these query tests assert the same ownership scoping as before the migration.
+const scope = { ownerUserId: owner, workspaceId: null };
 
 const survey = {
   $id: "sv1",
@@ -27,14 +30,14 @@ describe("queries: studies", () => {
     const { databases, calls } = makeFakeDatabases({
       surveys: { documents: [survey, { ...survey, $id: "sv2", ownerUserId: stranger }] },
     });
-    const result = await listStudies(owner, databases);
+    const result = await listStudies(scope, databases);
     expect(result.map((s) => s.$id)).toEqual(["sv1"]);
     expect(calls[0]?.queries.some((q) => q.includes(owner))).toBe(true);
   });
 
   it("listStudies returns [] when collection is empty", async () => {
     const { databases } = makeFakeDatabases({ surveys: { documents: [] } });
-    expect(await listStudies(owner, databases)).toEqual([]);
+    expect(await listStudies(scope, databases)).toEqual([]);
   });
 
   it("getStudy returns null when survey not owned by caller", async () => {
@@ -43,7 +46,7 @@ describe("queries: studies", () => {
       survey_sections: { documents: [] },
       question_blocks: { documents: [] },
     });
-    expect(await getStudy(owner, "sv1", databases)).toBeNull();
+    expect(await getStudy(scope, "sv1", databases)).toBeNull();
   });
 
   it("getStudy returns survey + sections + questions when owned", async () => {
@@ -71,7 +74,7 @@ describe("queries: studies", () => {
       survey_sections: { documents: [section] },
       question_blocks: { documents: [question] },
     });
-    const result = await getStudy(owner, "sv1", databases);
+    const result = await getStudy(scope, "sv1", databases);
     expect(result?.survey.$id).toBe("sv1");
     expect(result?.sections.map((s) => s.$id)).toEqual(["sec1"]);
     expect(result?.questions.map((q) => q.$id)).toEqual(["q1"]);
@@ -93,7 +96,7 @@ describe("queries: sessions", () => {
       surveys: { documents: [{ ...survey, ownerUserId: stranger }] },
       interview_sessions: { documents: [session] },
     });
-    expect(await listSessions(owner, "sv1", databases)).toEqual([]);
+    expect(await listSessions(scope, "sv1", databases)).toEqual([]);
   });
 
   it("listSessions returns sessions for owned survey", async () => {
@@ -101,7 +104,7 @@ describe("queries: sessions", () => {
       surveys: { documents: [survey] },
       interview_sessions: { documents: [session] },
     });
-    const result = await listSessions(owner, "sv1", databases);
+    const result = await listSessions(scope, "sv1", databases);
     expect(result.map((s) => s.$id)).toEqual(["sess1"]);
   });
 
@@ -116,14 +119,14 @@ describe("queries: sessions", () => {
         ],
       },
     });
-    expect(await countCompletedSessions(owner, "sv1", databases)).toBe(2);
+    expect(await countCompletedSessions(scope, "sv1", databases)).toBe(2);
   });
 });
 
 describe("queries: transcripts", () => {
   it("returns [] when surveyId is omitted (forbidden cross-survey scan)", async () => {
     const { databases } = makeFakeDatabases({});
-    expect(await searchTranscriptSegments(owner, { query: "foo" }, databases)).toEqual([]);
+    expect(await searchTranscriptSegments(scope, { query: "foo" }, databases)).toEqual([]);
   });
 
   it("matches by case-insensitive substring across stored transcripts", async () => {
@@ -151,7 +154,7 @@ describe("queries: transcripts", () => {
       transcripts: { documents: [transcript] },
     });
     const hits = await searchTranscriptSegments(
-      owner,
+      scope,
       { query: "AIRBNB", surveyId: "sv1" },
       databases,
     );
@@ -321,7 +324,7 @@ describe("queries: notebooks", () => {
         documents: [insightDoc, { ...insightDoc, $id: "i2", ownerUserId: stranger }],
       },
     });
-    const result = await listNotebooks(owner, databases);
+    const result = await listNotebooks(scope, databases);
     expect(result.map((r) => r.$id)).toEqual(["i1"]);
   });
 
@@ -329,14 +332,14 @@ describe("queries: notebooks", () => {
     const { databases } = makeFakeDatabases({
       notebooks: { documents: [{ ...insightDoc, ownerUserId: stranger }] },
     });
-    expect(await getNotebookById(owner, "i1", databases)).toBeNull();
+    expect(await getNotebookById(scope, "i1", databases)).toBeNull();
   });
 
   it("getNotebookById returns the insight when owned", async () => {
     const { databases } = makeFakeDatabases({
       notebooks: { documents: [insightDoc] },
     });
-    const result = await getNotebookById(owner, "i1", databases);
+    const result = await getNotebookById(scope, "i1", databases);
     expect(result?.headline).toBe("Because of pricing");
     // Wave F (T48): legacy `report` field removed — assert headline only.
   });
@@ -361,7 +364,7 @@ describe("queries: bookmarks", () => {
         documents: [bookmarkDoc, { ...bookmarkDoc, $id: "bm2", ownerUserId: stranger }],
       },
     });
-    const result = await listBookmarksForOwner(owner, 10, databases);
+    const result = await listBookmarksForTenant(scope, 10, databases);
     expect(result.map((b) => b.$id)).toEqual(["bm1"]);
     expect(result[0]?.quote).toBe("A memorable quote.");
   });

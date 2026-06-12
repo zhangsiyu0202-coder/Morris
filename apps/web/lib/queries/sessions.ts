@@ -1,7 +1,7 @@
 import type { Databases } from "node-appwrite";
 import { InterviewSessionSchema } from "@merism/contracts";
 import type { InterviewSession } from "@merism/contracts";
-import { DATABASE_ID, getServerClient, Query } from "./client";
+import { DATABASE_ID, getServerClient, Query, tenantFilter, type TenantScope } from "./client";
 
 const SESSIONS = "interview_sessions";
 const SURVEYS = "surveys";
@@ -11,22 +11,23 @@ function db(): Databases {
 }
 
 /**
- * List sessions for a given survey, scoped to the owner. We pre-check survey
- * ownership rather than relying on Appwrite filters alone — the agent worker
- * may write sessions with a different document-permission shape, so the
- * survey check is the canonical authorization gate.
+ * List sessions for a given survey, scoped to the caller's tenant. We pre-check
+ * that the survey is readable by the caller (workspace, else solo owner) rather
+ * than relying on Appwrite filters on the sessions alone — the agent worker may
+ * write sessions with a different document-permission shape, so the survey
+ * check is the canonical authorization gate.
  */
 export async function listSessions(
-  ownerUserId: string,
+  scope: TenantScope,
   surveyId: string,
   databases: Databases = db(),
 ): Promise<InterviewSession[]> {
-  // Verify the survey is owned by this user. Skipping ownerUserId check on
+  // Verify the survey belongs to the caller's tenant. Skipping a scope check on
   // sessions themselves is intentional: sessions are written by the agent
   // worker (server key) and may not carry a researcher-pinned permission.
   const surveyCheck = await databases.listDocuments(DATABASE_ID, SURVEYS, [
     Query.equal("$id", surveyId),
-    Query.equal("ownerUserId", ownerUserId),
+    tenantFilter(scope),
     Query.limit(1),
   ]);
   if (surveyCheck.documents.length === 0) return [];
@@ -51,10 +52,10 @@ export async function listSessions(
  * P-ANL-03 (completedRespondents == count of completed sessions).
  */
 export async function countCompletedSessions(
-  ownerUserId: string,
+  scope: TenantScope,
   surveyId: string,
   databases: Databases = db(),
 ): Promise<number> {
-  const sessions = await listSessions(ownerUserId, surveyId, databases);
+  const sessions = await listSessions(scope, surveyId, databases);
   return sessions.filter((s) => s.state === "completed").length;
 }

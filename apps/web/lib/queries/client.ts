@@ -46,3 +46,24 @@ export const DATABASE_ID = "merism";
 
 /** Re-export Query so callers don't need to import node-appwrite directly. */
 export { Query };
+
+/**
+ * The tenant a read is scoped to: the caller's `workspaceId` (an Appwrite Team
+ * id) when they belong to a workspace, else `null` (legacy single-researcher
+ * fallback). Resolved from the session's native Team membership in
+ * `@/lib/auth/workspace`; defined here (a dependency-light module) so the query
+ * layer can use it without importing the cookie-reading resolver.
+ */
+export type TenantScope = { ownerUserId: string; workspaceId: string | null };
+
+/**
+ * Single source of truth for "which rows may this caller read" on a
+ * workspace-scoped collection while reads run through the API-key client (which
+ * bypasses Appwrite permissions): filter by `workspaceId` when present, else the
+ * legacy `ownerUserId` scope (ADR-0006 D3 read-shared-within-workspace).
+ */
+export function tenantFilter(scope: TenantScope): string {
+  return scope.workspaceId
+    ? Query.equal("workspaceId", scope.workspaceId)
+    : Query.equal("ownerUserId", scope.ownerUserId);
+}

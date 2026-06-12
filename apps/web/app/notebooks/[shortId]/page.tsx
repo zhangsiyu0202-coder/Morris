@@ -7,6 +7,7 @@ import {
   getNotebookById,
   getNotebookByShortId,
 } from "@/lib/queries";
+import { scopeForOwner } from "@/lib/auth/workspace";
 
 export const metadata = {
   title: "Notebook 详情",
@@ -37,12 +38,13 @@ export default async function NotebookDetailPage({
   }
 
   // First try as shortId (12-char alphanumeric).
-  let record = await getNotebookByShortId(ownerUserId, param);
+  const scope = await scopeForOwner(ownerUserId);
+  let record = await getNotebookByShortId(scope, param);
 
   // Fall back to legacy $id-based access (Wave A 的 URL); redirect to shortId
   // when the row has one populated.
   if (!record && /^[a-zA-Z0-9_]+$/.test(param) && param.length > 12) {
-    const byId = await getNotebookById(ownerUserId, param);
+    const byId = await getNotebookById(scope, param);
     if (byId) {
       if (byId.shortId && byId.shortId.length === 12) {
         redirect(`/notebooks/${byId.shortId}`);

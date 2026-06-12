@@ -52,7 +52,7 @@ describe("P-SEC-04: read layer enforces ownerUserId scoping", () => {
         async ([ownerCount, strangerCount]) => {
           const documents = makeFixtureSet(ownerCount, strangerCount);
           const { databases } = makeFakeDatabases({ surveys: { documents } });
-          const result = await listStudies("owner", databases);
+          const result = await listStudies({ ownerUserId: "owner", workspaceId: null }, databases);
           expect(result).toHaveLength(ownerCount);
           for (const s of result) expect(s.$id.startsWith("sv-o-")).toBe(true);
         },
@@ -89,7 +89,7 @@ describe("P-SEC-04: read layer enforces ownerUserId scoping", () => {
           },
           interview_sessions: { documents: sessions },
         });
-        const result = await listSessions("owner", "sv1", databases);
+        const result = await listSessions({ ownerUserId: "owner", workspaceId: null }, "sv1", databases);
         expect(result).toEqual([]);
       }),
       { numRuns: 20 },
@@ -173,13 +173,13 @@ describe("P-SEC-04: read layer enforces ownerUserId scoping", () => {
           ];
           const { databases } = makeFakeDatabases({ notebooks: { documents } });
 
-          const list = await listNotebooks("owner", databases);
+          const list = await listNotebooks({ ownerUserId: "owner", workspaceId: null }, databases);
           expect(list).toHaveLength(ownerCount);
           for (const item of list) expect(item.ownerUserId).toBe("owner");
 
           // Try to read a stranger-owned insight via getNotebookById as owner.
           for (let i = 0; i < strangerCount; i++) {
-            const result = await getNotebookById("owner", `i-s-${i}`, databases);
+            const result = await getNotebookById({ ownerUserId: "owner", workspaceId: null }, `i-s-`, databases);
             expect(result).toBeNull();
           }
         },
