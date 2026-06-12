@@ -92,3 +92,65 @@ export async function getStudy(
     questions: parseAll(questionResult.documents, parseQuestion, "getStudy:questions"),
   };
 }
+
+/**
+ * Fetch a study for a *viewer* who may be the author or another member of the
+ * study's workspace (ADR-0006 read=team). Returns null when the study does not
+ * exist or the viewer is neither its author nor a member of its workspace.
+ *
+ * Authorization is resolved here in code because server reads use the API key
+ * (which bypasses Appwrite document permissions). Callers pass their own
+ * resolved `workspaceId`, so a viewer can only ever reach studies in their own
+ * workspace. Legacy studies without a `workspaceId` stay author-only.
+ */
+export async function getStudyForViewer(
+  surveyId: string,
+  viewer: { userId: string; workspaceId: string | null },
+  databases: Databases = db(),
+): Promise<{
+  survey: Survey;
+  sections: SurveySection[];
+  questions: QuestionBlock[];
+  ownerUserId: string;
+} | null> {
+  const surveyResult = await databases.listDocuments(DATABASE_ID, SURVEYS, [
+    Query.equal("$id", surveyId),
+    Query.limit(1),
+  ]);
+  const rawSurvey = surveyResult.documents[0] ?? null;
+  const survey = parseSurvey(rawSurvey);
+  if (!survey) return null;
+
+  // `ownerUserId` is the legacy author column (recast to `authorId` per
+  // ADR-0006 but not in SurveySchema); read it off the raw doc so both old and
+  // new studies authorize correctly.
+  const legacyOwner = (rawSurvey as { ownerUserId?: string } | null)?.ownerUserId;
+  const effectiveOwner = survey.authorId ?? legacyOwner ?? "";
+  const isAuthor =
+    (legacyOwner !== undefined && legacyOwner === viewer.userId) ||
+    survey.authorId === viewer.userId;
+  const sameWorkspace = Boolean(
+    survey.workspaceId && viewer.workspaceId && survey.workspaceId === viewer.workspaceId,
+  );
+  if (!isAuthor && !sameWorkspace) return null;
+
+  const [sectionResult, questionResult] = await Promise.all([
+    databases.listDocuments(DATABASE_ID, SURVEY_SECTIONS, [
+      Query.equal("surveyId", surveyId),
+      Query.orderAsc("order"),
+      Query.limit(200),
+    ]),
+    databases.listDocuments(DATABASE_ID, QUESTION_BLOCKS, [
+      Query.equal("surveyId", surveyId),
+      Query.orderAsc("order"),
+      Query.limit(500),
+    ]),
+  ]);
+
+  return {
+    survey,
+    sections: parseAll(sectionResult.documents, parseSection, "getStudyForViewer:sections"),
+    questions: parseAll(questionResult.documents, parseQuestion, "getStudyForViewer:questions"),
+    ownerUserId: effectiveOwner,
+  };
+}

@@ -15,7 +15,7 @@ import {
   type TranscriptSegmentUpdate,
   type TranscriptSpeaker,
   type TransportPhase,
-} from "./interview-transport"
+} from "@/lib/interview/transport"
 
 /** A coalesced transcript line surfaced to the conversation panel. */
 export interface TranscriptLine {

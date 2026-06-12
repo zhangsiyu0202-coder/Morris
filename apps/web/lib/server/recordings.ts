@@ -1,7 +1,7 @@
 import { Storage } from "node-appwrite";
 import { DATABASE_ID, getServerClient } from "@/lib/queries/client";
 import { getRecordingBySession } from "@/lib/queries/recordings";
-import { getSessionById } from "@/lib/survey-read";
+import { getSessionById } from "@/lib/survey/read";
 
 /**
  * Server-only helpers for the recordings download path. NOT a `"use server"`

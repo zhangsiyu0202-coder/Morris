@@ -13,7 +13,7 @@ import {
   VideoOff,
 } from "lucide-react"
 import type { InterviewAnswerPayload, LinkKind } from "@merism/contracts"
-import type { LiveInterviewSession } from "@/lib/use-live-interview"
+import type { LiveInterviewSession } from "@/lib/hooks/use-live-interview"
 import { Brand } from "./pre-interview-flow"
 import { ConversationPanel } from "./conversation-panel"
 import { QuestionStage } from "./question-stage"

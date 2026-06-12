@@ -8,12 +8,12 @@ import {
   type TranscriptDetail,
   type RecruitMock,
 } from "@/lib/mock/workspace";
-import { getOwnerUserIdOrNull } from "@/lib/owner";
-import { sessionsToOverview, sessionsToResults, transcriptToDetail, sessionReportToSummary } from "@/lib/workspace-map";
+import { getOwnerUserIdOrNull } from "@/lib/auth/owner";
+import { sessionsToOverview, sessionsToResults, transcriptToDetail, sessionReportToSummary } from "@/lib/workspace/map";
 import { listSessions } from "@/lib/queries";
 import { getLatestAnalysisReport, parseSessionReportBody } from "@/lib/queries/reports";
 import { getRecordingBySession } from "@/lib/queries/recordings";
-import { listQuestionRefs, getSessionById, getTranscriptBySession } from "@/lib/survey-read";
+import { listQuestionRefs, getSessionById, getTranscriptBySession } from "@/lib/survey/read";
 
 /**
  * 工作台各视图的**服务端数据访问层(seam)**。
@@ -63,12 +63,17 @@ export async function loadStudyResults(studyId: string): Promise<ResultsTable> {
   }
 }
 
-export async function loadStudyTranscript(sessionId: string): Promise<TranscriptDetail> {
+export async function loadStudyTranscript(
+  sessionId: string,
+  reportOwnerUserId?: string | null,
+): Promise<TranscriptDetail> {
   try {
     const transcript = await getTranscriptBySession(sessionId);
     if (!transcript) return getMockTranscript(sessionId);
     const session = await getSessionById(sessionId);
-    const owner = await getOwnerUserIdOrNull();
+    // The AnalysisReport is keyed by the study's author; a teammate viewer
+    // passes it in so they see the same AI summary the author does.
+    const owner = reportOwnerUserId ?? (await getOwnerUserIdOrNull());
     let aiSummary = "";
     let visualAnalysis = null;
     let recording = null;

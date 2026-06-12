@@ -121,6 +121,12 @@ export function withApprovalGuard<
   toolName: string,
   metadata: ToolMetadata,
   execute: ToolExecute<TInput, TArtifact>,
+  /**
+   * 可选: 工具自描述的人读预览构造器。让 approval 卡片显示「将要做什么」的具体内容
+   * (而非泛泛的 "执行 {title}"), 同时保持"提议动作仍由 guard 统一发起"的不变量 —
+   * builder 只描述 payload, 不自调 proposeApproval。
+   */
+  buildPreview?: (input: TInput) => string,
 ): ToolExecute<TInput, TArtifact | ApprovalEnvelope> {
   if (!metadata.annotations.destructive) {
     return execute as ToolExecute<TInput, TArtifact | ApprovalEnvelope>;
@@ -132,9 +138,18 @@ export function withApprovalGuard<
       // 实现 token 校验逻辑后, 这里直接转发即可。
       return execute(input) as Promise<ToolResultEnvelope<TArtifact | ApprovalEnvelope | ToolErrorArtifact>>;
     }
+    const preview = (() => {
+      if (!buildPreview) return `执行 ${metadata.title}`;
+      try {
+        return buildPreview(input);
+      } catch {
+        // 预览构造不应阻断 approval 流程; 退回泛化文案。
+        return `执行 ${metadata.title}`;
+      }
+    })();
     const proposal = proposeApproval({
       toolName,
-      preview: `执行 ${metadata.title}`,
+      preview,
       payload: input as Record<string, unknown>,
     });
     return {

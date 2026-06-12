@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { AnalysisReport } from "@merism/contracts";
-import { listStudies, getStudy } from "../studies";
+import { listStudies, getStudy, getStudyForViewer } from "../studies";
 import { listSessions, countCompletedSessions } from "../sessions";
 import { searchTranscriptSegments } from "../transcripts";
 import { getLatestAnalysisReport, parseSessionReportBody } from "../reports";
@@ -376,7 +376,59 @@ describe("queries: bookmarks", () => {
         ],
       },
     });
-    const result = await listBookmarksBySession(owner, "sess1", databases);
+    const result = await listBookmarksBySession({ ownerUserId: owner }, "sess1", databases);
     expect(result.map((b) => b.$id)).toEqual(["bm1"]);
+  });
+
+  it("listBookmarksBySession scopes to workspace (team) when a workspaceId is given", async () => {
+    const { databases } = makeFakeDatabases({
+      bookmarks: {
+        documents: [
+          { ...bookmarkDoc, workspaceId: "ws_1" },
+          { ...bookmarkDoc, $id: "bm5", ownerUserId: stranger, workspaceId: "ws_1" },
+          { ...bookmarkDoc, $id: "bm6", workspaceId: "ws_other" },
+        ],
+      },
+    });
+    const result = await listBookmarksBySession(
+      { ownerUserId: owner, workspaceId: "ws_1" },
+      "sess1",
+      databases,
+    );
+    // Both owners' bookmarks in ws_1 are returned; ws_other is excluded.
+    expect(result.map((b) => b.$id).sort()).toEqual(["bm1", "bm5"]);
+  });
+});
+
+describe("queries: getStudyForViewer (workspace read auth)", () => {
+  const wsSurvey = { ...survey, $id: "sv_ws", workspaceId: "ws_1" };
+  const empty = { survey_sections: { documents: [] }, question_blocks: { documents: [] } };
+
+  it("allows the author (legacy ownerUserId) and returns the effective owner", async () => {
+    const { databases } = makeFakeDatabases({ surveys: { documents: [survey] }, ...empty });
+    const r = await getStudyForViewer("sv1", { userId: owner, workspaceId: null }, databases);
+    expect(r?.ownerUserId).toBe(owner);
+  });
+
+  it("allows a workspace member who is not the author", async () => {
+    const { databases } = makeFakeDatabases({ surveys: { documents: [wsSurvey] }, ...empty });
+    const r = await getStudyForViewer("sv_ws", { userId: stranger, workspaceId: "ws_1" }, databases);
+    expect(r).not.toBeNull();
+  });
+
+  it("denies a non-author from a different workspace", async () => {
+    const { databases } = makeFakeDatabases({ surveys: { documents: [wsSurvey] }, ...empty });
+    const r = await getStudyForViewer(
+      "sv_ws",
+      { userId: stranger, workspaceId: "ws_other" },
+      databases,
+    );
+    expect(r).toBeNull();
+  });
+
+  it("denies a non-author when the study has no workspace (legacy solo study)", async () => {
+    const { databases } = makeFakeDatabases({ surveys: { documents: [survey] }, ...empty });
+    const r = await getStudyForViewer("sv1", { userId: stranger, workspaceId: "ws_1" }, databases);
+    expect(r).toBeNull();
   });
 });

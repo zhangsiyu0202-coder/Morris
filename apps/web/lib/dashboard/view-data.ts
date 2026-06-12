@@ -1,5 +1,5 @@
 import type { RunDashboardWidgetsOutput } from "@merism/contracts";
-import { getOwnerUserIdOrNull } from "@/lib/owner";
+import { getOwnerUserIdOrNull } from "@/lib/auth/owner";
 import { getStudy } from "@/lib/queries";
 import { getOrCreateStudyDashboard, type StudyDashboard } from "./queries";
 import { runDashboardWidgets } from "./run-widgets";

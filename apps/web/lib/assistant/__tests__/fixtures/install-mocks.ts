@@ -39,6 +39,17 @@ export function fakeNotebooksServerModule() {
   };
 }
 
+/** Fake `@/lib/actions/survey` (server actions: create + persist SurveyDraft). */
+export function fakeSurveyActionsModule() {
+  return {
+    createSurveyFromDraft: vi.fn(),
+    createSurvey: vi.fn(),
+    saveSurveyDraft: vi.fn(),
+    updateSurveyStatus: vi.fn(),
+    deleteSurvey: vi.fn(),
+  };
+}
+
 /** Fake `@/lib/server/embedder-qwen` (Qwen text-embedding-v3 client). */
 export function fakeEmbedderQwenModule() {
   return {

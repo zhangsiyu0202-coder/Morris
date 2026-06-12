@@ -160,17 +160,24 @@ describe("Morris tools factory: signed-in path", () => {
   });
 });
 
-describe("Morris tools factory: createStudyDraft (mock)", () => {
-  it("returns a draft with the study disclaimer note", async () => {
-    const tools = buildAssistantTools({ ownerUserId: "user-1" });
+describe("Morris tools factory: createStudyDraft", () => {
+  it("anonymous → preview artifact (no Appwrite write)", async () => {
+    const tools = buildAssistantTools({ ownerUserId: null });
     const result: any = await (tools.createStudyDraft as any).execute({
-      goal: "差旅住宿预订习惯",
-      audience: "经常出差的上班族",
-      questionCount: 5,
+      title: "差旅住宿预订习惯",
+      researchGoal: "了解差旅住宿预订习惯",
+      targetAudience: "经常出差的上班族",
+      introScript: "你好,感谢参与这次访谈。",
+      sections: [
+        {
+          title: "预订渠道",
+          objective: "了解渠道选择",
+          questions: [{ questionText: "你通常怎么订住宿?", questionType: "open_ended" }],
+        },
+      ],
     });
-    expect(result.content).toContain("已生成");
-    expect(result.artifact.title).toContain("差旅");
-    expect(result.artifact.questions).toHaveLength(5);
-    expect(result.artifact.note).toContain("survey-editor");
+    expect(result.content).toContain("草稿预览");
+    expect(result.artifact).toMatchObject({ persisted: false });
+    expect(result.artifact.draft.title).toContain("差旅");
   });
 });

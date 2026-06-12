@@ -14,8 +14,8 @@ import {
 } from "lucide-react";
 import { STATUS_LABELS, type StudyStatus } from "@/lib/guide";
 import { createSurvey, deleteSurvey } from "@/lib/actions/survey";
-import type { SurveyListItem } from "@/lib/survey-read";
-import type { HomeBookmark, HomeReportPreview } from "@/lib/home-data";
+import type { SurveyListItem } from "@/lib/survey/read";
+import type { HomeBookmark, HomeReportPreview } from "@/lib/workspace/home-data";
 
 const STATUS_PILL: Record<StudyStatus, string> = {
   live: "bg-mauve-50 text-ink-900",

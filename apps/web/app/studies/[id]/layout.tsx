@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { loadSurveyMeta } from "@/lib/survey-read";
+import { loadSurveyMeta } from "@/lib/survey/read";
 import { WorkspaceHeader } from "@/components/studies/workspace-header";
 import { WorkspaceTabs } from "@/components/studies/workspace-tabs";
 import { StudyPageContextBridge } from "@/components/studies/page-context-bridge";

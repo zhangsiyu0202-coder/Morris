@@ -9,6 +9,7 @@ import {
 } from "@merism/contracts";
 import { getServerClient, DATABASE_ID, Query } from "@/lib/queries/client";
 import { requireOwnerUserId } from "@/lib/auth/owner";
+import { getCurrentWorkspaceId } from "@/lib/auth/workspace";
 
 /**
  * 编辑器写路径(Appwrite)。把编辑态 `SurveyDraft` 规范化落到
@@ -66,8 +67,11 @@ async function assertOwned(
 /** 新建空白调研,返回其 $id。 */
 export async function createSurvey(title: string): Promise<string> {
   const owner = await requireOwnerUserId();
+  const workspaceId = await getCurrentWorkspaceId();
   const doc = await db().createDocument(DATABASE_ID, SURVEYS, ID.unique(), {
     ownerUserId: owner,
+    authorId: owner,
+    ...(workspaceId ? { workspaceId } : {}),
     projectId: DEFAULT_PROJECT,
     title: title.trim() || "未命名调研",
     status: "draft",
@@ -144,6 +148,25 @@ export async function saveSurveyDraft(surveyId: string, draftInput: SurveyDraft)
       });
     }
   }
+}
+
+/**
+ * 从一份完整 `SurveyDraft` 一步创建调研:建空 survey + 全量保存提纲。
+ *
+ * 给 Morris `createStudyDraft` 工具的「批准后落库」路径用(approval confirm 端点),
+ * 也可被编辑器复用。两步都经 `requireOwnerUserId()`(在 createSurvey / saveSurveyDraft
+ * 内部),未登录直接抛 `not_authenticated`,不会留下半截 survey。
+ *
+ * 边界用 `SurveyDraftSchema.parse` 校验(含 choice 题至少两选项等 superRefine 不变量),
+ * 校验失败在创建任何文档前抛出。
+ */
+export async function createSurveyFromDraft(
+  draftInput: SurveyDraft,
+): Promise<{ surveyId: string; url: string }> {
+  const draft = SurveyDraftSchema.parse(draftInput);
+  const surveyId = await createSurvey(draft.title);
+  await saveSurveyDraft(surveyId, draft);
+  return { surveyId, url: `/studies/${surveyId}` };
 }
 
 /** 切换调研状态;通过 canTransitionSurveyStatus 守卫非法迁移。 */

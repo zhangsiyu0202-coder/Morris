@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { issueLivekitToken } from "./issue-token"
+import { issueLivekitToken } from "@/lib/interview/issue-token"
 
 export type BootstrapPhase = "idle" | "issuing" | "ready" | "error"
 

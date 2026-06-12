@@ -71,14 +71,14 @@ function makeDefaultTodoState(): TodoState {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnySpec = any;
-function wrapWithApproval<T extends { spec: AnySpec; metadata: ToolMetadata }>(
-  name: string,
-  built: T,
-): T["spec"] {
+function wrapWithApproval<
+  T extends { spec: AnySpec; metadata: ToolMetadata; approvalPreview?: (input: never) => string },
+>(name: string, built: T): T["spec"] {
   const guarded = withApprovalGuard(
     name,
     built.metadata,
     built.spec.execute as never,
+    built.approvalPreview as never,
   );
   return { ...built.spec, execute: guarded } as T["spec"];
 }

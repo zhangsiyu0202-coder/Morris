@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { InterviewSession, Transcript } from "@merism/contracts";
-import { sessionsToOverview, sessionsToResults, transcriptToDetail, sessionReportToSummary } from "../workspace-map";
+import { sessionsToOverview, sessionsToResults, transcriptToDetail, sessionReportToSummary } from "../map";
 import type { AnalysisReportOutput } from "@merism/contracts";
 
 function session(over: Partial<InterviewSession>): InterviewSession {

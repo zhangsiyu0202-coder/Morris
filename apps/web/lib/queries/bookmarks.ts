@@ -33,14 +33,21 @@ export async function listBookmarksForOwner(
   return out;
 }
 
-/** List bookmarks for a session, scoped to owner. */
+/**
+ * List bookmarks for a session. In a workspace the whole team's annotations are
+ * returned (scoped by the caller's own workspaceId — they can only ever query
+ * their own workspace); solo researchers fall back to ownerUserId scoping.
+ */
 export async function listBookmarksBySession(
-  ownerUserId: string,
+  scope: { ownerUserId: string; workspaceId?: string | null },
   sessionId: string,
   databases: Databases = db(),
 ): Promise<Bookmark[]> {
+  const tenantFilter = scope.workspaceId
+    ? Query.equal("workspaceId", scope.workspaceId)
+    : Query.equal("ownerUserId", scope.ownerUserId);
   const result = await databases.listDocuments(DATABASE_ID, BOOKMARKS, [
-    Query.equal("ownerUserId", ownerUserId),
+    tenantFilter,
     Query.equal("sessionId", sessionId),
     Query.orderDesc("createdAt"),
     Query.limit(200),

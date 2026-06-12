@@ -1,8 +1,8 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { useInterviewBootstrap } from "@/lib/use-interview-bootstrap"
-import { useLiveInterview } from "@/lib/use-live-interview"
+import { useInterviewBootstrap } from "@/lib/hooks/use-interview-bootstrap"
+import { useLiveInterview } from "@/lib/hooks/use-live-interview"
 import { InterviewRoomShell } from "./interview-room-shell"
 import { InterviewLoadingScreen, PreInterviewFlow } from "./pre-interview-flow"
 import { InterviewStatus } from "./interview-status"

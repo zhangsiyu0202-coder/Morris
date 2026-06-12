@@ -46,6 +46,25 @@ const EXEMPT_PREFIXES = [
   "apps/functions/stripeWebhook/",
   "apps/functions/aggregateWorkspaceUsage/",
   "apps/functions/issueLivekitToken/",
+  // ADR-0006 web surface. This repo has no top-level products/ dir; the
+  // workspaces-billing UI + data seams live under apps/web. Exempt exactly the
+  // billing/members surface so the lifted concepts are allowed here only.
+  "apps/web/app/settings/billing/",
+  "apps/web/app/settings/members/",
+  "apps/web/components/workspace-billing/",
+  "apps/web/lib/workspace-billing/",
+  "apps/web/lib/mock/workspace-billing.ts",
+  // ADR-0006 M2: the session-review surface joins the tenancy surface so a
+  // workspace's members can see each other's transcript bookmark annotations
+  // (read=team, write=author). These files legitimately reference Appwrite
+  // Teams (Role.team(workspaceId)); the field-name guard below still applies.
+  "apps/web/lib/auth/workspace.ts",
+  "apps/web/lib/actions/bookmarks.ts",
+  "apps/web/lib/queries/bookmarks.ts",
+  "apps/web/lib/queries/studies.ts", // getStudyForViewer: workspace-member read auth
+  "apps/web/app/studies/[id]/results/[sessionId]/page.tsx", // viewer auth for shared review
+  "scripts/backfill-workspace-tenancy.ts", // ADR-0006 M2 tenancy backfill tool
+  "scripts/seed-workspace.ts", // ADR-0006 dev workspace seed
 ];
 const BILLING_COLLECTIONS = new Set([
   "plans", "subscriptions", "usage_events", "usage_counters",

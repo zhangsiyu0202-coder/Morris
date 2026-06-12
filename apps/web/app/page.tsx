@@ -1,6 +1,6 @@
 "use client"
 
-import { useInterviewSession } from "@/lib/use-interview-session"
+import { useInterviewSession } from "@/lib/hooks/use-interview-session"
 import { QuestionStage } from "@/components/interview/question-stage"
 import { MOCK_RUNTIME_QUESTIONS } from "@/lib/mock-session"
 

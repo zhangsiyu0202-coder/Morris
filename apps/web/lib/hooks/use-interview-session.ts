@@ -6,7 +6,7 @@ import type {
   InterviewAnswerPayload,
   InterviewRuntimeQuestion,
 } from "@merism/contracts";
-import { MOCK_RUNTIME_QUESTIONS } from "./mock-session";
+import { MOCK_RUNTIME_QUESTIONS } from "@/lib/mock-session";
 
 export interface InterviewSession {
   /** Agent-published runtime state (mocked here). */
@@ -50,9 +50,10 @@ export function useInterviewSession(): InterviewSession {
   );
 
   const submitAnswer = useCallback(
-    (answer: InterviewAnswerPayload) => {
+    (_answer: InterviewAnswerPayload) => {
       // TODO(interview-portal): replace with `merism.submit_answer` RPC.
-      console.log("[v0] submitAnswer", answer);
+      // This mock-session preview only advances the cursor; the live path is
+      // `useLiveInterview` (interviewee-portal). Do not log answer payloads.
       setIndex((current) => Math.min(current + 1, questions.length));
     },
     [questions.length],
