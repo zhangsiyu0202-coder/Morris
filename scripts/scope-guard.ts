@@ -83,6 +83,7 @@ const EXEMPT_PREFIXES = [
   "scripts/backfill-workspace-tenancy.ts", // ADR-0006 M2 tenancy backfill tool
   "scripts/seed-workspace.ts", // ADR-0006 dev workspace seed
   "scripts/seed-plans.ts", // ADR-0006 plans catalog seed (Plus/Pro entitlements)
+  "scripts/migrate-default-workspaces.ts", // ADR-0006 NFR-3 default-workspace migration
 ];
 const BILLING_COLLECTIONS = new Set([
   "plans", "subscriptions", "usage_events", "usage_counters",
