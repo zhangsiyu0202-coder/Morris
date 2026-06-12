@@ -46,7 +46,12 @@ flowchart LR
 - [x] **US-aggregate 纯核（已存在）**：`aggregateWorkspaceUsage.deriveUsageRollup` 把周期完成数 + 套餐额度算成 UsageCounter + QuotaState（degrade-never-delete）。`Validates: FR-7`
 - [x] **US-aggregate 内部链路（已存在 + e2e 验证）**：`aggregateWorkspaceUsage` 纯核 + `createRealDeps` 真扫 `usage_events`（按 workspace + 当月 occurredAt 计 `res.total`）写 `usage_counters` + `workspace_quota`，scheduled main.ts 入口。live e2e 已证：3 个 usage_events → 聚合 → `quota.usedInterviews=3 / includedInterviews=50（来自 seeded plus）/ state=ok`。`deriveUsageRollup` 纯核 + handler.test 覆盖 over 态。`Validates: FR-7`
 - [ ] **US-wire. CRON 调度声明 + Stripe metered 上报**：aggregateWorkspaceUsage 的 Appwrite CRON schedule 声明（部署配置，非代码）+ M5 的 Stripe metered/invoice-item 上报。`Validates: FR-6`
-- [ ] **MIG. 一次性数据迁移**：现存账号 → 个人默认工作区；幂等 + 非破坏。`Validates: FR-1` `NFR-3`
-- [ ] **FAKE. MERISM_FAKE_PROVIDERS**：实现确定性 fake provider 工厂，解锁计费/配额的 Layer-4 live 集成测试（与 ai-interview-engine 共享前置）。
+- [ ] **MIG. 一次性数据迁移：现存账号 → 个人默认工作区**（独立排期 + 先备份）。`Validates: FR-1` `NFR-3`
+  - **现状**：`scripts/backfill-workspace-tenancy.ts` 已覆盖"打标"部分——把现存 studies/sessions/transcripts/recordings/reports/bookmarks 用 `Role.user(author)` + 有 ws 时 `Role.team(ws)` 标好权限(ADR-0006 B 已跑通)。
+  - **缺口**：尚无"保证每个现存 owner 都有一个个人默认工作区(Appwrite Team)"的迁移。当前仅 `scripts/seed-workspace.ts` 给本地单个 `MERISM_OWNER_USER_ID` 建 dev workspace,不是面向全量账号的迁移。
+  - **要做**：一次性 ops 脚本——遍历所有 owner(有数据的账号)→ 若无所属 Team 则建一个个人默认 Workspace(Team `teamId===workspaceId`)+ owner membership + seed `subscriptions sub_<ws>`(trial)+ `workspace_quota wq_<ws>`→ 再对该 owner 的存量行回填 `workspaceId` 并加 `Role.team(ws)` 读(复用 backfill-tenancy 的打标逻辑)。
+  - **约束**(`appwrite-schema` 规则 + NFR-3)：**幂等**(确定性 id;重跑只补缺、不重复建)、**非破坏**(只增权限/补字段,绝不删数据)、**可回滚**(记录所建 Team/sub/quota id;失败可清理)、**先备份**(对生产数据先导出/快照再跑)。
+  - **验证**：dev stack 上构造"有数据但无 Team 的 owner",跑迁移 → 该 owner 解析出默认 Team、存量行带 `read(team:ws)`、其 session client 能按工作区读到自己的数据;重跑无副作用(幂等)。
+- [ ] **FAKE. MERISM_FAKE_PROVIDERS**：实现确定性 fake **AI provider**(DeepSeek LLM + Qwen ASR/TTS)工厂,解锁 Layer-4 live 集成测试不烧真 key/不依赖网络。**注意:这与 LiveKit 无关**——LiveKit 是实时媒体通道(Docker stack + `--extra realtime`),FAKE 只替换那颗"AI 大脑/耳朵/嘴";语音 live 测试两者都要。与 ai-interview-engine 共享此前置。
 - [ ] **SCOPE. scope-guard 收窄复核**：确认 `scope.md` 解禁项已"ADR-0006 治理下在范围"、保留项仍禁；`scope-guard` 豁免与 ADR 范围一致。`NFR-4`
 - [ ] **E2E. 端到端 smoke**：本地栈下手工跑通 建工作区 → 邀请 → 成员读共享 → 套餐/账单页 → 完成访谈累计用量 → 超配额挡新访谈，完成后勾选。
