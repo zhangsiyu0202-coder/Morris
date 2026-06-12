@@ -48,22 +48,18 @@ export const DATABASE_ID = "merism";
 export { Query };
 
 /**
- * The tenant a read is scoped to: the caller's `workspaceId` (an Appwrite Team
- * id) when they belong to a workspace, else `null` (legacy single-researcher
- * fallback). Resolved from the session's native Team membership in
- * `@/lib/auth/workspace`; defined here (a dependency-light module) so the query
- * layer can use it without importing the cookie-reading resolver.
+ * Databases bound to the CURRENT researcher's session. Reads through this client
+ * are enforced by Appwrite's permission engine — a row is returned only when the
+ * caller has `read(user:self)` or `read(team:theirWorkspace)` on it (ADR-0006 B
+ * native tenant isolation), so the read layer needs no in-code tenant filter.
+ *
+ * `@/lib/auth/appwrite` (which imports `next/headers`) is loaded dynamically so
+ * this module stays importable in the query unit tests, which inject a
+ * Databases mock and never reach this path.
  */
-export type TenantScope = { ownerUserId: string; workspaceId: string | null };
-
-/**
- * Single source of truth for "which rows may this caller read" on a
- * workspace-scoped collection while reads run through the API-key client (which
- * bypasses Appwrite permissions): filter by `workspaceId` when present, else the
- * legacy `ownerUserId` scope (ADR-0006 D3 read-shared-within-workspace).
- */
-export function tenantFilter(scope: TenantScope): string {
-  return scope.workspaceId
-    ? Query.equal("workspaceId", scope.workspaceId)
-    : Query.equal("ownerUserId", scope.ownerUserId);
+export async function getSessionDb(): Promise<Databases> {
+  const { readSessionSecret, sessionClient } = await import("@/lib/auth/appwrite");
+  const secret = await readSessionSecret();
+  if (!secret) throw new Error("not_authenticated");
+  return new Databases(sessionClient(secret));
 }

@@ -15,7 +15,6 @@ import {
   type SaveNotebookResult,
 } from "@/lib/server/notebooks";
 import { getStudy } from "@/lib/queries";
-import { scopeForOwner } from "@/lib/auth/workspace";
 
 interface CreateNotebookArtifact {
   notebookShortId: string;
@@ -95,7 +94,7 @@ export function buildCreateNotebookTool(ctx: AssistantToolContext) {
           }
 
           // content path: 校验 study, 落库, 返回 shortId
-          const study = await getStudy(await scopeForOwner(ownerUserId), input.studyId);
+          const study = await getStudy(input.studyId);
           if (!study) {
             return toToolError(
               "保存 Notebook",

@@ -9,7 +9,6 @@ import {
   type RecruitMock,
 } from "@/lib/mock/workspace";
 import { getOwnerUserIdOrNull } from "@/lib/auth/owner";
-import { scopeForOwner } from "@/lib/auth/workspace";
 import { sessionsToOverview, sessionsToResults, transcriptToDetail, sessionReportToSummary } from "@/lib/workspace/map";
 import { listSessions } from "@/lib/queries";
 import { getLatestAnalysisReport, parseSessionReportBody } from "@/lib/queries/reports";
@@ -41,7 +40,7 @@ export async function loadStudyOverview(studyId: string): Promise<WorkspaceOverv
   try {
     const owner = await getOwnerUserIdOrNull();
     if (!owner) return getMockOverview(studyId);
-    const sessions = await listSessions(await scopeForOwner(owner), studyId);
+    const sessions = await listSessions(studyId);
     // No sessions yet -> show the illustrative mock rather than an empty panel.
     if (sessions.length === 0) return getMockOverview(studyId);
     return sessionsToOverview(sessions);
@@ -55,7 +54,7 @@ export async function loadStudyResults(studyId: string): Promise<ResultsTable> {
   try {
     const owner = await getOwnerUserIdOrNull();
     if (!owner) return getMockResults(studyId);
-    const sessions = await listSessions(await scopeForOwner(owner), studyId);
+    const sessions = await listSessions(studyId);
     if (sessions.length === 0) return getMockResults(studyId);
     const questions = await listQuestionRefs(studyId);
     return sessionsToResults(questions, sessions);

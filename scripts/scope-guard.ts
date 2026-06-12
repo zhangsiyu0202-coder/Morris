@@ -74,6 +74,8 @@ const EXEMPT_PREFIXES = [
   // primitive / Team document permissions (Role.team(workspaceId)) so every
   // workspace-entity read filters uniformly. The field-name guard below still runs.
   "apps/web/lib/queries/client.ts", // TenantScope + tenantFilter primitive
+  "apps/web/lib/queries/sessions.ts", // session-client read gate (workspace team reads)
+  "apps/web/lib/queries/notebooks.ts", // session-client native reads (workspace team)
   "apps/web/lib/actions/survey.ts", // createSurvey: read(team)+write(author) permissions
   "apps/web/app/studies/[id]/results/[sessionId]/page.tsx", // viewer auth for shared review
   "scripts/backfill-workspace-tenancy.ts", // ADR-0006 M2 tenancy backfill tool

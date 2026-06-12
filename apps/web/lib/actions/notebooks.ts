@@ -18,7 +18,6 @@ import {
   getStudy,
   listNotebooks as readNotebooks,
 } from "@/lib/queries";
-import { scopeForOwner } from "@/lib/auth/workspace";
 import { saveNotebookFromMarkdown } from "@/lib/server/notebooks";
 
 // 与 Morris AI 一致:直连 DeepSeek 官方,不引入其它供应商。
@@ -151,7 +150,7 @@ export async function createNotebook(input: {
   const valid = await isValidStudyId(ownerUserId, studyId);
   if (!valid) return { error: "指定的调研不存在或不属于当前账户。" };
 
-  const study = await getStudy(await scopeForOwner(ownerUserId), studyId);
+  const study = await getStudy(studyId);
   if (!study) return { error: "找不到该调研。" };
 
   try {
@@ -201,7 +200,7 @@ export async function createNotebook(input: {
 export async function listNotebooks(): Promise<NotebookListItem[]> {
   const ownerUserId = await getCurrentUserId();
   if (!ownerUserId) return [];
-  const notebooks = await readNotebooks(await scopeForOwner(ownerUserId));
+  const notebooks = await readNotebooks();
   return notebooks.map(toListItem);
 }
 
@@ -209,7 +208,7 @@ export async function listNotebooks(): Promise<NotebookListItem[]> {
 export async function getNotebookById(id: string): Promise<Notebook | null> {
   const ownerUserId = await getCurrentUserId();
   if (!ownerUserId) return null;
-  return readNotebookById(await scopeForOwner(ownerUserId), id);
+  return readNotebookById(id);
 }
 
 /** 删除一条 notebook。仅 owner 可删。 */
@@ -218,7 +217,7 @@ export async function deleteNotebook(id: string): Promise<{ ok: boolean }> {
   if (!ownerUserId) return { ok: false };
   // Verify ownership via a read first; the server key bypasses Permissions
   // so we cannot rely on Appwrite to enforce it here.
-  const existing = await readNotebookById(await scopeForOwner(ownerUserId), id);
+  const existing = await readNotebookById(id);
   if (!existing) return { ok: false };
   const { db } = getServerKeyClient();
   const DATABASE_ID = process.env.APPWRITE_DATABASE_ID ?? "merism";

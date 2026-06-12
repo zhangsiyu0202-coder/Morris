@@ -1,7 +1,7 @@
 import type { Databases } from "node-appwrite";
 import { InterviewSessionSchema } from "@merism/contracts";
 import type { InterviewSession } from "@merism/contracts";
-import { DATABASE_ID, getServerClient, Query, tenantFilter, type TenantScope } from "./client";
+import { DATABASE_ID, getServerClient, getSessionDb, Query } from "./client";
 
 const SESSIONS = "interview_sessions";
 const SURVEYS = "surveys";
@@ -11,28 +11,25 @@ function db(): Databases {
 }
 
 /**
- * List sessions for a given survey, scoped to the caller's tenant. We pre-check
- * that the survey is readable by the caller (workspace, else solo owner) rather
- * than relying on Appwrite filters on the sessions alone — the agent worker may
- * write sessions with a different document-permission shape, so the survey
- * check is the canonical authorization gate.
+ * List sessions for a survey. The survey read goes through the caller's session
+ * client — it returns the survey only if the caller may read it (owner or
+ * workspace team), which authorizes the request. The sessions themselves are
+ * children of that authorized survey and are read by surveyId via the API-key
+ * client (the agent writes them and their per-row perms vary).
  */
 export async function listSessions(
-  scope: TenantScope,
   surveyId: string,
-  databases: Databases = db(),
+  databases?: Databases,
 ): Promise<InterviewSession[]> {
-  // Verify the survey belongs to the caller's tenant. Skipping a scope check on
-  // sessions themselves is intentional: sessions are written by the agent
-  // worker (server key) and may not carry a researcher-pinned permission.
-  const surveyCheck = await databases.listDocuments(DATABASE_ID, SURVEYS, [
+  const dbx = databases ?? (await getSessionDb());
+  const surveyCheck = await dbx.listDocuments(DATABASE_ID, SURVEYS, [
     Query.equal("$id", surveyId),
-    tenantFilter(scope),
     Query.limit(1),
   ]);
   if (surveyCheck.documents.length === 0) return [];
 
-  const result = await databases.listDocuments(DATABASE_ID, SESSIONS, [
+  const childDb = databases ?? db();
+  const result = await childDb.listDocuments(DATABASE_ID, SESSIONS, [
     Query.equal("surveyId", surveyId),
     Query.orderDesc("startedAt"),
     Query.limit(500),
@@ -52,10 +49,9 @@ export async function listSessions(
  * P-ANL-03 (completedRespondents == count of completed sessions).
  */
 export async function countCompletedSessions(
-  scope: TenantScope,
   surveyId: string,
-  databases: Databases = db(),
+  databases?: Databases,
 ): Promise<number> {
-  const sessions = await listSessions(scope, surveyId, databases);
+  const sessions = await listSessions(surveyId, databases);
   return sessions.filter((s) => s.state === "completed").length;
 }

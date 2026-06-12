@@ -4,7 +4,6 @@ import { Client, Functions } from "node-appwrite";
 import { revalidatePath } from "next/cache";
 import { getCurrentUserId } from "@/lib/queries/auth";
 import { getStudy } from "@/lib/queries/studies";
-import { scopeForOwner } from "@/lib/auth/workspace";
 
 const ANALYZE_SURVEY_FN = process.env.ANALYZE_SURVEY_FUNCTION_ID ?? "analyzeSurvey";
 
@@ -27,7 +26,7 @@ export async function regenerateSurveyReport(
   const ownerUserId = await getCurrentUserId();
   if (!ownerUserId) return { ok: false, error: "not_signed_in" };
 
-  const owned = await getStudy(await scopeForOwner(ownerUserId), surveyId);
+  const owned = await getStudy(surveyId);
   if (!owned) return { ok: false, error: "not_found_or_forbidden" };
 
   const endpoint = process.env.APPWRITE_ENDPOINT;
