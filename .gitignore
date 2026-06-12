@@ -35,4 +35,17 @@ test-results/
 
 # figma make reference export (kept locally as a design reference, not committed)
 _figma_make_export/
+_bmad/
+_bmad-output/
 Recreate Front-End Page*.zip
+Design Interviewer Page*.zip
+
+# local scratch / one-off debug (kept locally, never committed)
+scripts/_dbg.mjs
+handoff.md
+
+# installed agent tooling (never vendored into the repo; like _bmad/)
+.agents/
+.kiro/skills/
+.opencode/
+.vscode/
