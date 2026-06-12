@@ -326,13 +326,25 @@ export function createRealDeps(): AnalyzeSessionDeps {
       if (generationMeta) {
         payload.generationMeta = JSON.stringify(generationMeta);
       }
+      // ADR-0006 (B): a report is readable by its survey's workspace team
+      // (resolve workspaceId from the survey) plus the owner. Additive — the
+      // study-level API-key read still works; this enables native session-client
+      // reads by workspace members. Update path passes perms too so re-runs
+      // converge old owner-only reports to team-readable.
+      let wsId: string | undefined;
+      try {
+        wsId = ((await db.getDocument(DB, "surveys", surveyId)) as { workspaceId?: string }).workspaceId ?? undefined;
+      } catch {
+        // survey unreadable/deleted → owner-only perms
+      }
       const permissions = [
         Permission.read(Role.user(ownerUserId)),
+        ...(wsId ? [Permission.read(Role.team(wsId))] : []),
       ];
 
       if (existing.documents.length > 0) {
         const doc = existing.documents[0] as any;
-        await db.updateDocument(DB, "analysis_reports", doc.$id, payload);
+        await db.updateDocument(DB, "analysis_reports", doc.$id, payload, permissions);
         return { reportId: doc.$id };
       } else {
         const created = await db.createDocument(

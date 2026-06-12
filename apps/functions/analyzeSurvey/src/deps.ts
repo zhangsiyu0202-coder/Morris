@@ -310,11 +310,22 @@ export function createRealDeps(): AnalyzeSurveyDeps {
       if (generationMeta) {
         payload.generationMeta = JSON.stringify(generationMeta);
       }
-      const permissions = [Permission.read(Role.user(ownerUserId))];
+      // ADR-0006 (B): survey-level report readable by the survey's workspace
+      // team + owner (additive; enables native session-client team reads).
+      let wsId: string | undefined;
+      try {
+        wsId = ((await db.getDocument(DB, "surveys", surveyId)) as { workspaceId?: string }).workspaceId ?? undefined;
+      } catch {
+        // survey unreadable/deleted → owner-only perms
+      }
+      const permissions = [
+        Permission.read(Role.user(ownerUserId)),
+        ...(wsId ? [Permission.read(Role.team(wsId))] : []),
+      ];
 
       if (existing.documents.length > 0) {
         const doc = existing.documents[0] as any;
-        await db.updateDocument(DB, "analysis_reports", doc.$id, payload);
+        await db.updateDocument(DB, "analysis_reports", doc.$id, payload, permissions);
         return { reportId: doc.$id };
       } else {
         const created = await db.createDocument(
