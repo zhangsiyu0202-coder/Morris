@@ -127,3 +127,38 @@ apps/web/lib/actions/survey.ts   ("use server")
 ## 11. 实施顺序
 
 见 `tasks.md`。总原则：契约先行 → 读路径 → 写路径 → 只读视图接线 → 退役 Drizzle → 验证。每步保持 `pnpm typecheck` 绿，可独立提交与回退。
+
+## 12. AI moderator instruction 增量（后续追加，2026-06-11）
+
+> 借鉴依据（GitHub 调研）：PostHog `user_interviews` 把 `agent_context`（主持指令）与 `questions`（题目）作为**两个分开的字段**、运行时再合成；LiveKit 官方"把 persona 写成可听见的行为"也是放系统提示词；Vapi mock-interview 同样把问题作变量注入、persona 在模板里。结论：问题与主持指令分开存、同包发，是通用范式。Merism 现状本就如此（`InterviewWorkflowConfig.supervisorInstruction` 与 `sections[].questions[]` 分立，同走 room metadata）。
+
+### 12.1 产品决策
+
+- 新增 **`Survey.moderatorInstruction`**：研究员给 AI 语音主持人的指令（语调 / 语速 / 主持风格）。
+- **语调/语速作为 prompt 行为描述**，不碰 TTS 参数层（pace 写成"留白/不急促"这类可执行行为，由 LLM 体现）。
+- **访谈目标不重复**：复用既有 `flowConfig.researchGoal`。
+- **独立字段**（不塞进 `flowConfig` json 袋）：研究员意图的一类一等公民。
+
+### 12.2 数据流（contracts-first）
+
+```
+Survey.moderatorInstruction (独立列)
+  └─ assembleSurveyDraft → SurveyDraft.moderatorInstruction
+       └─ buildInterviewWorkflowConfigFromDraft:
+            supervisorInstruction = <moderatorInstruction>\n\n<operational 默认>
+            （显式传入的 supervisorInstruction 仍优先）
+            └─ InterviewWorkflowConfig.supervisorInstruction → room metadata
+                 └─ agent InterviewSupervisorAgent(instructions=supervisorInstruction)
+```
+
+### 12.3 改动落点
+
+- **契约**：`entities.ts::SurveySchema.moderatorInstruction`（default `""`）、`api.ts::SurveyDraftSchema.moderatorInstruction`（default `""`）、`buildInterviewWorkflowConfigFromDraft` 合成逻辑（persona 前置 + 操作性默认）。契约测试覆盖"合成"与"默认空"。
+- **schema**：`surveys.moderatorInstruction`（`TEXT_SIZE` 独立列，非 flowConfig），`schema:apply` 已落 live stack。
+- **web**：`survey/read.ts` 读 doc 字段、`survey/draft.ts::assembleSurveyDraft` 映射、`actions/survey.ts` create/save 写独立列、`guide-editor.tsx::IntroOptions` 加"主持风格指令" textarea。
+- **agent**：无需改动——`InterviewSupervisorAgent` 已 `instructions=workflowConfig.supervisorInstruction`，自动消费合成串（治理见 `ai-interview-engine/design.md §B2`）。
+
+### 12.4 决策（与既有 §6 并列）
+
+- **D6 不做声明式 skip logic**：产品决策——访谈流程/覆盖由 AI Supervisor 在对话中动态判断收集，不引入按回答跳题的声明式分支。`QuestionBlock.skipLogic` 历史死桶保持不消费（治理记在 `ai-interview-engine`）。
+- **D7 moderator 指令喂既有 `supervisorInstruction`，不另造平行字段**：符合"优化既有 artifact 不分叉"（`AGENTS.md`）。研究员侧的源是 `Survey.moderatorInstruction`，运行态的汇是既有 `supervisorInstruction`。
