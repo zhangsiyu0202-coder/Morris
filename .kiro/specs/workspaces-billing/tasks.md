@@ -44,7 +44,8 @@ flowchart LR
 - [x] **US-capture. 会话完成 emit 幂等 UsageEvent**：supervisor 在 `complete_session` 后按时长(>=60s wall-clock)+ 实质回答数(>=1)调 `emit_usage_event`；repo 经 `resolve_survey_tenancy` 取 workspaceId(无则跳过)，确定性 id `ue_<sessionId>` create(409=已计费,幂等)。`isBillableInterview` + `UsageEvent` 已 mirror 到 `agent/contracts.py`;+5 py 测试。`Validates: FR-6` `Property: P-WB-02(每会话至多一次)`
 - [x] **QG. issueLivekitToken 配额门（已存在）**：link 有 workspaceId 且 `checkQuota` 接入时 `quotaState==="over"` 返回 402 `quota_exceeded`，不动既有数据。`Validates: FR-7`
 - [x] **US-aggregate 纯核（已存在）**：`aggregateWorkspaceUsage.deriveUsageRollup` 把周期完成数 + 套餐额度算成 UsageCounter + QuotaState（degrade-never-delete）。`Validates: FR-7`
-- [ ] **US-wire. 聚合 CRON 接线 + Stripe 上报**：把 `deriveUsageRollup` 接到定时 Function 真扫 `usage_events` 写 `usage_counters`/`workspace_quota` + Stripe metered 上报。`Validates: FR-6,FR-7`
+- [x] **US-aggregate 内部链路（已存在 + e2e 验证）**：`aggregateWorkspaceUsage` 纯核 + `createRealDeps` 真扫 `usage_events`（按 workspace + 当月 occurredAt 计 `res.total`）写 `usage_counters` + `workspace_quota`，scheduled main.ts 入口。live e2e 已证：3 个 usage_events → 聚合 → `quota.usedInterviews=3 / includedInterviews=50（来自 seeded plus）/ state=ok`。`deriveUsageRollup` 纯核 + handler.test 覆盖 over 态。`Validates: FR-7`
+- [ ] **US-wire. CRON 调度声明 + Stripe metered 上报**：aggregateWorkspaceUsage 的 Appwrite CRON schedule 声明（部署配置，非代码）+ M5 的 Stripe metered/invoice-item 上报。`Validates: FR-6`
 - [ ] **MIG. 一次性数据迁移**：现存账号 → 个人默认工作区；幂等 + 非破坏。`Validates: FR-1` `NFR-3`
 - [ ] **FAKE. MERISM_FAKE_PROVIDERS**：实现确定性 fake provider 工厂，解锁计费/配额的 Layer-4 live 集成测试（与 ai-interview-engine 共享前置）。
 - [ ] **SCOPE. scope-guard 收窄复核**：确认 `scope.md` 解禁项已"ADR-0006 治理下在范围"、保留项仍禁；`scope-guard` 豁免与 ADR 范围一致。`NFR-4`
