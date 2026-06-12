@@ -123,9 +123,29 @@ def test_repository_save_recording_updates_existing_document():
     assert db.updated[-1][3]["durationMs"] == 2000
 
 
-def test_repository_resolve_owner_user_id():
+def test_repository_resolve_survey_tenancy():
     db = _FakeDatabases()
-    db.documents[("surveys", "sv1")] = {"ownerUserId": "owner1"}
+    db.documents[("surveys", "sv1")] = {"ownerUserId": "owner1", "workspaceId": "ws1"}
+    db.documents[("surveys", "solo")] = {"ownerUserId": "owner2"}
     repo = InterviewRepository(db, _SilentLogger())
-    assert repo.resolve_owner_user_id("sv1") == "owner1"
-    assert repo.resolve_owner_user_id("missing") is None
+    assert repo.resolve_survey_tenancy("sv1") == ("owner1", "ws1")
+    assert repo.resolve_survey_tenancy("solo") == ("owner2", None)
+    assert repo.resolve_survey_tenancy("missing") == (None, None)
+
+
+def test_repository_save_recording_grants_team_read_when_workspaced():
+    db = _FakeDatabases()
+    storage = _FakeStorage()
+    repo = InterviewRepository(db, _SilentLogger(), storage=storage)
+    repo.save_recording(
+        "s1",
+        owner_user_id="owner1",
+        workspace_id="ws1",
+        file_bytes=b"x",
+        duration_ms=10,
+        format="mp4",
+    )
+    # recordings document permissions (last tuple element) carry both owner + team read
+    doc_perms = db.created[-1][4]
+    assert 'read("user:owner1")' in doc_perms
+    assert 'read("team:ws1")' in doc_perms

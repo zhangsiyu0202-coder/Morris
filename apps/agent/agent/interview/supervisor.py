@@ -148,8 +148,13 @@ def create_supervisor_agent_class():
             if self._repo is None or self._transcript is None or self._transcript.is_empty:
                 return
             language = "zh"
+            owner_user_id, workspace_id = self._repo.resolve_survey_tenancy(self._state.surveyId)
             self._repo.save_transcript(
-                self._state.sessionId, self._transcript.snapshot(), language
+                self._state.sessionId,
+                self._transcript.snapshot(),
+                language,
+                owner_user_id=owner_user_id,
+                workspace_id=workspace_id,
             )
 
         async def _persist_recording(self) -> None:
@@ -158,7 +163,7 @@ def create_supervisor_agent_class():
             artifact = await self._egress.finalize(session_id=self._state.sessionId)
             if artifact is None:
                 return
-            owner_user_id = self._repo.resolve_owner_user_id(self._state.surveyId)
+            owner_user_id, workspace_id = self._repo.resolve_survey_tenancy(self._state.surveyId)
             if owner_user_id is None:
                 self._log.warn(
                     "recording skipped: could not resolve ownerUserId",
@@ -169,6 +174,7 @@ def create_supervisor_agent_class():
             self._repo.save_recording(
                 self._state.sessionId,
                 owner_user_id=owner_user_id,
+                workspace_id=workspace_id,
                 file_bytes=artifact.data,
                 duration_ms=artifact.duration_ms,
                 format=artifact.format,
