@@ -38,13 +38,13 @@ flowchart LR
 
 ## 待办（后续波次，形状就位 / 端到端接线）
 
-- [ ] **SEED. plans 目录播种**：seed Plus/Pro 行（seats/features/includedInterviews/priceRef）。当前未 seed → web included fallback=0。`Validates: FR-5`
+- [x] **SEED. plans 目录播种**：`scripts/seed-plans.ts` 幂等 seed Plus(included=50, features=[core]) / Pro(included=200, features=[core,visual_analysis,survey_rollup])，priceRef 占位（STRIPE_PRICE_* 可覆盖）。已在 dev stack 跑通；账单页 `includedInterviews` 现走真值 fallback。`Validates: FR-5`
+- [x] **QG-wire. checkQuota 已注入（核对）**：`issueLivekitToken` main.ts `createRealDeps()` 返回的 deps 含 `checkQuota`，handler 在 link 有 workspaceId 时调用 → 端到端配额阻断闭环已通。`Validates: FR-7`
 - [ ] **ST. stripeWebhook 端到端**：真实验签 + 重放幂等 + 订阅状态同步；Checkout/Portal 接线；密钥按 errors-and-observability 处理。`Validates: FR-6` `Property: webhook 验签幂等`
 - [x] **US-capture. 会话完成 emit 幂等 UsageEvent**：supervisor 在 `complete_session` 后按时长(>=60s wall-clock)+ 实质回答数(>=1)调 `emit_usage_event`；repo 经 `resolve_survey_tenancy` 取 workspaceId(无则跳过)，确定性 id `ue_<sessionId>` create(409=已计费,幂等)。`isBillableInterview` + `UsageEvent` 已 mirror 到 `agent/contracts.py`;+5 py 测试。`Validates: FR-6` `Property: P-WB-02(每会话至多一次)`
 - [x] **QG. issueLivekitToken 配额门（已存在）**：link 有 workspaceId 且 `checkQuota` 接入时 `quotaState==="over"` 返回 402 `quota_exceeded`，不动既有数据。`Validates: FR-7`
 - [x] **US-aggregate 纯核（已存在）**：`aggregateWorkspaceUsage.deriveUsageRollup` 把周期完成数 + 套餐额度算成 UsageCounter + QuotaState（degrade-never-delete）。`Validates: FR-7`
 - [ ] **US-wire. 聚合 CRON 接线 + Stripe 上报**：把 `deriveUsageRollup` 接到定时 Function 真扫 `usage_events` 写 `usage_counters`/`workspace_quota` + Stripe metered 上报。`Validates: FR-6,FR-7`
-- [ ] **QG-wire. checkQuota 接入校验**：确认 `issueLivekitToken` main.ts 真把 `checkQuota` 注入 deps（端到端配额阻断）。`Validates: FR-7` `Property: P-WB-03`
 - [ ] **MIG. 一次性数据迁移**：现存账号 → 个人默认工作区；幂等 + 非破坏。`Validates: FR-1` `NFR-3`
 - [ ] **FAKE. MERISM_FAKE_PROVIDERS**：实现确定性 fake provider 工厂，解锁计费/配额的 Layer-4 live 集成测试（与 ai-interview-engine 共享前置）。
 - [ ] **SCOPE. scope-guard 收窄复核**：确认 `scope.md` 解禁项已"ADR-0006 治理下在范围"、保留项仍禁；`scope-guard` 豁免与 ADR 范围一致。`NFR-4`

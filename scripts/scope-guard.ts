@@ -82,6 +82,7 @@ const EXEMPT_PREFIXES = [
   "apps/web/app/studies/[id]/results/[sessionId]/page.tsx", // viewer auth for shared review
   "scripts/backfill-workspace-tenancy.ts", // ADR-0006 M2 tenancy backfill tool
   "scripts/seed-workspace.ts", // ADR-0006 dev workspace seed
+  "scripts/seed-plans.ts", // ADR-0006 plans catalog seed (Plus/Pro entitlements)
 ];
 const BILLING_COLLECTIONS = new Set([
   "plans", "subscriptions", "usage_events", "usage_counters",
