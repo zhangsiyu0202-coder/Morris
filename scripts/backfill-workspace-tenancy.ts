@@ -1,18 +1,23 @@
 /**
- * One-time, idempotent, non-destructive backfill of ADR-0006 tenancy fields
- * onto pre-workspace data, so existing studies and bookmarks become
- * workspace-shareable (read=team).
+ * One-time, idempotent, non-destructive backfill of ADR-0006 (B) tenancy +
+ * document read permissions, so the web read layer can move to the user's
+ * SESSION client (Appwrite enforces Role.team / Role.user natively) without any
+ * existing row becoming unreadable.
  *
- * For each owner that has an *active* workspace membership, it sets
- * `workspaceId` (and `authorId` when missing) on that owner's `surveys` and
- * `bookmarks` rows that don't yet have a `workspaceId`. Bookmarks additionally
- * get team-read document permissions to match `createBookmark`. Owners with no
- * workspace are left untouched (still solo). Rows already carrying a
- * `workspaceId` are skipped, so re-running is safe.
+ * For every read collection it ensures each document carries:
+ *   - read(user(author))            — author = authorId ?? ownerUserId
+ *   - read(team(workspaceId))       — only when the row belongs to a workspace
+ *   - update/delete(user(author))   — on owner-editable collections only
+ * and sets `workspaceId`/`authorId` on the researcher-authored rows when the
+ * owner has an active workspace and the field is missing.
  *
- * Sessions/transcripts/recordings/reports are intentionally NOT backfilled:
- * the review surface authorizes at the study level and reads them by id, so
- * they don't need a workspaceId for team reads to work.
+ * Tenancy for the interview artifacts (sessions/transcripts/recordings/reports)
+ * is resolved from their parent survey (transcripts/recordings are keyed by
+ * sessionId → session.surveyId → survey).
+ *
+ * Idempotent: re-running re-sets the same permissions (no-op effect) and skips
+ * the field write when already present. Non-destructive: only adds/sets
+ * permissions and the two tenancy fields, never deletes data.
  *
  * Usage:
  *   set -a && . ./.env && set +a && pnpm exec tsx scripts/backfill-workspace-tenancy.ts
@@ -44,6 +49,23 @@ async function listAll(collection: string): Promise<Doc[]> {
   return out;
 }
 
+/** read(user) + optional read(team); used by the read-only artifact collections. */
+function readPerms(author: string | undefined, workspaceId: string | undefined): string[] {
+  const perms: string[] = [];
+  if (author) perms.push(Permission.read(Role.user(author)));
+  if (workspaceId) perms.push(Permission.read(Role.team(workspaceId)));
+  return perms;
+}
+
+/** read(user|team) + write(user(author)); used by the owner-editable collections. */
+function ownerEditablePerms(author: string, workspaceId: string | undefined): string[] {
+  return [
+    ...readPerms(author, workspaceId),
+    Permission.update(Role.user(author)),
+    Permission.delete(Role.user(author)),
+  ];
+}
+
 async function main(): Promise<void> {
   // owner (Appwrite account $id) -> active workspaceId (first active membership)
   const ownerToWorkspace = new Map<string, string>();
@@ -55,39 +77,87 @@ async function main(): Promise<void> {
     }
   }
   console.log(`[backfill] owners with an active workspace: ${ownerToWorkspace.size}`);
-  if (ownerToWorkspace.size === 0) {
-    console.log("[backfill] nothing to do — no workspaces exist yet (create one first).");
-    return;
-  }
 
+  // survey $id -> { author, workspaceId } so artifact rows can resolve tenancy.
+  const surveyTenancy = new Map<string, { author: string; workspaceId?: string }>();
+
+  // --- researcher-authored, owner-editable collections -----------------------
   let surveys = 0;
   for (const s of await listAll("surveys")) {
-    if (s.workspaceId) continue;
-    const ws = ownerToWorkspace.get(s.ownerUserId as string);
-    if (!ws) continue;
-    const patch: Record<string, unknown> = { workspaceId: ws };
-    if (!s.authorId) patch.authorId = s.ownerUserId;
-    await db.updateDocument(DB, "surveys", s.$id, patch);
+    const owner = s.ownerUserId as string;
+    const author = (s.authorId as string | undefined) ?? owner;
+    const ws = (s.workspaceId as string | undefined) ?? ownerToWorkspace.get(owner);
+    surveyTenancy.set(s.$id, { author, workspaceId: ws });
+    const fields: Record<string, unknown> = {};
+    if (!s.workspaceId && ws) fields.workspaceId = ws;
+    if (!s.authorId) fields.authorId = author;
+    await db.updateDocument(DB, "surveys", s.$id, fields, ownerEditablePerms(author, ws));
     surveys++;
+  }
+
+  let notebooks = 0;
+  for (const n of await listAll("notebooks")) {
+    const owner = n.ownerUserId as string;
+    const author = (n.authorId as string | undefined) ?? owner;
+    const ws = (n.workspaceId as string | undefined) ?? ownerToWorkspace.get(owner);
+    const fields: Record<string, unknown> = {};
+    if (!n.workspaceId && ws) fields.workspaceId = ws;
+    if (!n.authorId) fields.authorId = author;
+    await db.updateDocument(DB, "notebooks", n.$id, fields, ownerEditablePerms(author, ws));
+    notebooks++;
   }
 
   let bookmarks = 0;
   for (const b of await listAll("bookmarks")) {
-    if (b.workspaceId) continue;
-    const ws = ownerToWorkspace.get(b.ownerUserId as string);
-    if (!ws) continue;
-    const author = (b.authorId as string | undefined) ?? (b.ownerUserId as string);
-    const patch: Record<string, unknown> = { workspaceId: ws };
-    if (!b.authorId) patch.authorId = author;
-    await db.updateDocument(DB, "bookmarks", b.$id, patch, [
-      Permission.read(Role.team(ws)),
-      Permission.update(Role.user(author)),
-      Permission.delete(Role.user(author)),
-    ]);
+    const owner = b.ownerUserId as string;
+    const author = (b.authorId as string | undefined) ?? owner;
+    // a bookmark belongs to its STUDY's workspace, not the author's current one
+    const ws = (b.workspaceId as string | undefined) ?? surveyTenancy.get(b.surveyId as string)?.workspaceId;
+    const fields: Record<string, unknown> = {};
+    if (!b.workspaceId && ws) fields.workspaceId = ws;
+    if (!b.authorId) fields.authorId = author;
+    await db.updateDocument(DB, "bookmarks", b.$id, fields, ownerEditablePerms(author, ws));
     bookmarks++;
   }
 
-  console.log(`[backfill] done: ${surveys} surveys, ${bookmarks} bookmarks updated.`);
+  // --- read-only interview artifacts (tenancy resolved from parent survey) ---
+  let reports = 0;
+  for (const r of await listAll("analysis_reports")) {
+    const t = surveyTenancy.get(r.surveyId as string);
+    const author = (r.ownerUserId as string | undefined) ?? t?.author;
+    await db.updateDocument(DB, "analysis_reports", r.$id, {}, readPerms(author, t?.workspaceId));
+    reports++;
+  }
+
+  // session $id -> survey tenancy, so transcripts/recordings (keyed by sessionId) resolve.
+  const sessionTenancy = new Map<string, { author?: string; workspaceId?: string }>();
+  let sessions = 0;
+  for (const sess of await listAll("interview_sessions")) {
+    const t = surveyTenancy.get(sess.surveyId as string);
+    sessionTenancy.set(sess.$id, t ?? {});
+    await db.updateDocument(DB, "interview_sessions", sess.$id, {}, readPerms(t?.author, t?.workspaceId));
+    sessions++;
+  }
+
+  let transcripts = 0;
+  for (const tr of await listAll("transcripts")) {
+    const t = sessionTenancy.get(tr.$id); // transcripts use sessionId as $id
+    await db.updateDocument(DB, "transcripts", tr.$id, {}, readPerms(t?.author, t?.workspaceId));
+    transcripts++;
+  }
+
+  let recordings = 0;
+  for (const rec of await listAll("recordings")) {
+    const t = sessionTenancy.get(rec.$id) ?? surveyTenancy.get(rec.surveyId as string);
+    const author = (rec.ownerUserId as string | undefined) ?? t?.author;
+    await db.updateDocument(DB, "recordings", rec.$id, {}, readPerms(author, t?.workspaceId));
+    recordings++;
+  }
+
+  console.log(
+    `[backfill] done: surveys=${surveys} notebooks=${notebooks} bookmarks=${bookmarks} ` +
+      `reports=${reports} sessions=${sessions} transcripts=${transcripts} recordings=${recordings}`,
+  );
 }
 
 main().catch((err) => {
