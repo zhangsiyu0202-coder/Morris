@@ -1,31 +1,28 @@
-// Real deps: Stripe (Checkout) + Appwrite (role lookup). Integration-only.
+// Real deps: Stripe (Checkout) + Appwrite Teams (role lookup). Integration-only.
 // Stripe is the source of truth for plan state; this only starts the session.
 import Stripe from "stripe";
-import { Client, Databases, Query } from "node-appwrite";
+import { Client, Teams } from "node-appwrite";
 import type { ChangePlanDeps } from "./handler.js";
-
-const DB_ID = "merism";
-
-function resolveRole(doc: unknown): "owner" | "admin" | "member" | null {
-  const r = (doc as { role?: string }).role;
-  return r === "owner" || r === "admin" || r === "member" ? r : null;
-}
 
 export function createRealDeps(callerUserId: string | null): ChangePlanDeps {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? "");
-  const db = new Databases(
-    new Client()
-      .setEndpoint(process.env.APPWRITE_ENDPOINT ?? "")
-      .setProject(process.env.APPWRITE_PROJECT_ID ?? "")
-      .setKey(process.env.APPWRITE_API_KEY ?? ""),
-  );
+  const client = new Client()
+    .setEndpoint(process.env.APPWRITE_ENDPOINT ?? "")
+    .setProject(process.env.APPWRITE_PROJECT_ID ?? "")
+    .setKey(process.env.APPWRITE_API_KEY ?? "");
+  const teams = new Teams(client);
 
   return {
     callerUserId,
     async getCallerRole(workspaceId, userId) {
       try {
-        const res = await db.listDocuments(DB_ID, "workspace_memberships", [Query.equal("workspaceId", workspaceId), Query.equal("userId", userId), Query.limit(1)]);
-        return resolveRole(res.documents[0]);
+        // Native Teams is the role truth source (ADR-0006 D1; mirrors inviteMember).
+        const res = await teams.listMemberships(workspaceId);
+        const roles = res.memberships.find((m) => m.userId === userId)?.roles ?? [];
+        if (roles.includes("owner")) return "owner";
+        if (roles.includes("admin")) return "admin";
+        if (roles.includes("member")) return "member";
+        return null;
       } catch {
         return null;
       }
