@@ -289,7 +289,36 @@ class Notebook(BaseModel):  # zod: NotebookSchema
 # consumers must use Notebook / NotebookReport.
 
 
-# NOTE (ADR 0006, workspaces-billing M1): the TS contract adds UsageEventSchema
-# (workspaceId/studyId/sessionId/unit/occurredAt) and adds workspaceId to
-# InterviewSession. The agent does not emit usage yet; mirror UsageEvent here
-# when the M6 session-completion emit lands. See products/workspaces-billing/spec.
+# ADR-0006 (workspaces-billing): the billable unit is a completed interview.
+# Mirrors packages/contracts/src/billing.ts (UsageEventSchema + isBillableInterview
+# + the two thresholds). The agent emits one UsageEvent per billable session on
+# completion; downstream aggregateWorkspaceUsage rolls these into the quota.
+
+
+class UsageEvent(BaseModel):  # zod: UsageEventSchema
+    id: str = Field(alias="$id")
+    workspaceId: str
+    studyId: str
+    sessionId: str
+    unit: Literal["completed_interview"] = "completed_interview"
+    occurredAt: str
+
+
+# A session is billable only past this duration (guards trivially-short joins)
+# and only with at least this many substantive answers (prd-pricing.md).
+COMPLETED_INTERVIEW_MIN_DURATION_MS = 60_000
+COMPLETED_INTERVIEW_MIN_ANSWERS = 1
+
+
+def usage_event_id(session_id: str) -> str:
+    """Deterministic id = the billing-idempotency gate (one event per session)."""
+    return f"ue_{session_id}"
+
+
+def is_billable_interview(*, state: str, duration_ms: int, answered_count: int) -> bool:
+    """Pure mirror of `isBillableInterview` in billing.ts. No I/O."""
+    return (
+        state == "completed"
+        and duration_ms >= COMPLETED_INTERVIEW_MIN_DURATION_MS
+        and answered_count >= COMPLETED_INTERVIEW_MIN_ANSWERS
+    )

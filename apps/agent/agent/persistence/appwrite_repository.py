@@ -15,7 +15,13 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 
-from agent.contracts import RecordingFormat, SessionState, TranscriptSegment
+from agent.contracts import (
+    RecordingFormat,
+    SessionState,
+    TranscriptSegment,
+    is_billable_interview,
+    usage_event_id,
+)
 from agent.persistence.serializers import (
     DATABASE_ID,
     RECORDINGS_BUCKET_ID,
@@ -23,11 +29,13 @@ from agent.persistence.serializers import (
     SESSIONS_COLLECTION_ID,
     SURVEYS_COLLECTION_ID,
     TRANSCRIPTS_COLLECTION_ID,
+    USAGE_EVENTS_COLLECTION_ID,
     recording_document,
     session_completion_fields,
     session_failure_fields,
     session_progress_fields,
     transcript_document,
+    usage_event_document,
 )
 
 
@@ -313,6 +321,50 @@ class InterviewRepository:
                     createError=str(create_error),
                     updateError=str(update_error),
                 )
+
+    def emit_usage_event(
+        self,
+        session_id: str,
+        survey_id: str,
+        *,
+        duration_ms: int,
+        answered_count: int,
+    ) -> None:
+        """Emit the billable UsageEvent for a completed interview (ADR-0006 D6).
+
+        Only workspace-scoped sessions that clear the prd-pricing thresholds
+        (>=60s + >=1 substantive answer) are billed. The deterministic id
+        ``ue_<sessionId>`` makes this idempotent: a retry/re-finalize collides
+        with the existing row (409) and bills the session at most once. Never
+        raises — the session is already durably completed before this runs.
+        """
+        if not is_billable_interview(
+            state="completed", duration_ms=duration_ms, answered_count=answered_count
+        ):
+            return
+        _owner, workspace_id = self.resolve_survey_tenancy(survey_id)
+        if not workspace_id:
+            # Not a workspace-scoped session (solo/legacy) -> nothing to bill.
+            return
+        document = usage_event_document(
+            workspace_id=workspace_id,
+            study_id=survey_id,
+            session_id=session_id,
+            occurred_at=_now_iso(),
+        )
+        try:
+            self._db.create_document(
+                DATABASE_ID, USAGE_EVENTS_COLLECTION_ID, usage_event_id(session_id), document
+            )
+        except Exception as error:  # noqa: BLE001
+            # 409 = already billed (idempotent, expected). Any other failure must
+            # not kill the completed interview; log and move on.
+            self._log.warn(
+                "usage event not emitted (already billed or transient)",
+                sessionId=session_id,
+                workspaceId=workspace_id,
+                error=str(error),
+            )
 
     def trigger_post_session_analysis(self, session_id: str, survey_id: str) -> None:
         """Fire-and-await the analyze Functions after a session completes.

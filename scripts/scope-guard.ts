@@ -53,7 +53,9 @@ const EXEMPT_PREFIXES = [
   "apps/functions/analyzeSession/",
   "apps/functions/analyzeSurvey/",
   "apps/agent/agent/persistence/appwrite_repository.py",
+  "apps/agent/agent/contracts.py", // ADR-0006 UsageEvent mirror + isBillableInterview
   "apps/agent/tests/test_recording_persistence.py",
+  "apps/agent/tests/test_usage_event_persistence.py",
   // ADR-0006 web surface. This repo has no top-level products/ dir; the
   // workspaces-billing UI + data seams live under apps/web. Exempt exactly the
   // billing/members surface so the lifted concepts are allowed here only.

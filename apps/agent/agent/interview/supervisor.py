@@ -11,6 +11,7 @@ delegated to ``agent.interview.workflow`` (pure, tested).
 """
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -60,6 +61,7 @@ def create_supervisor_agent_class():
         # -- lifecycle ----------------------------------------------------
 
         async def on_enter(self) -> None:
+            started_monotonic = time.monotonic()
             self._publish_state("ready")
             if self._repo is not None:
                 self._repo.mark_in_progress(self._state.sessionId)
@@ -69,8 +71,17 @@ def create_supervisor_agent_class():
                 if self._repo is not None:
                     self._persist_transcript()
                     await self._persist_recording()
-                    self._repo.complete_session(
-                        self._state.sessionId, collected_answers_map(self._state)
+                    answers = collected_answers_map(self._state)
+                    self._repo.complete_session(self._state.sessionId, answers)
+                    # ADR-0006 D6: emit the billable UsageEvent for a completed
+                    # interview. Idempotent + threshold-gated inside the repo.
+                    duration_ms = int((time.monotonic() - started_monotonic) * 1000)
+                    answered_count = sum(1 for a in answers.values() if a.get("answer"))
+                    self._repo.emit_usage_event(
+                        self._state.sessionId,
+                        self._state.surveyId,
+                        duration_ms=duration_ms,
+                        answered_count=answered_count,
                     )
                     # ADR-0003 D1+D4: chain analyzeSession -> analyzeSurvey on
                     # completion. Failures are logged inside the repository

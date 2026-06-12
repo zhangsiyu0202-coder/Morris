@@ -17,7 +17,25 @@ TRANSCRIPTS_COLLECTION_ID = "transcripts"
 SESSIONS_COLLECTION_ID = "interview_sessions"
 RECORDINGS_COLLECTION_ID = "recordings"
 SURVEYS_COLLECTION_ID = "surveys"
+USAGE_EVENTS_COLLECTION_ID = "usage_events"
 RECORDINGS_BUCKET_ID = "recordings"
+
+
+def usage_event_document(
+    *,
+    workspace_id: str,
+    study_id: str,
+    session_id: str,
+    occurred_at: str,
+) -> dict[str, object]:
+    """Build a ``usage_events`` document body (ADR-0006 D6 billable unit)."""
+    return {
+        "workspaceId": workspace_id,
+        "studyId": study_id,
+        "sessionId": session_id,
+        "unit": "completed_interview",
+        "occurredAt": occurred_at,
+    }
 
 
 def transcript_document(
