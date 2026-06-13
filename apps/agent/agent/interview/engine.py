@@ -4,7 +4,8 @@ This is the realtime entry point used by ``agent.main`` when provider
 credentials are present. It:
 
 1. resolves the workflow config from room metadata (pure),
-2. builds an ``AgentSession`` with Qwen STT/TTS + DeepSeek LLM,
+2. builds an ``AgentSession`` — Qwen STT + DeepSeek LLM + Qwen TTS by default,
+   or (ADR-0007, ``MERISM_GEMINI_LIVE=1``) Gemini Live (ASR+LLM, TEXT out) + Qwen TTS,
 3. forwards finalized conversation turns into the ``TranscriptCollector``,
 4. publishes both speakers' transcription to the LiveKit room (so the web
    client can listen via ``RoomEvent.TranscriptionReceived`` / the
@@ -114,11 +115,27 @@ class InterviewEngine:
         from livekit.agents import AgentSession
         from livekit.plugins import silero
 
+        tts = build_tts(self._settings.speech)
+        vad = silero.VAD.load()
+
+        # ADR-0007: Gemini Live (ears+brain, TEXT out) + Qwen TTS. The question
+        # TaskGroup is model-agnostic (completes via tool calls + self.complete),
+        # so only the session's llm/stt wiring differs between modes.
+        if self._settings.gemini is not None:
+            from agent.providers.gemini import build_realtime_llm
+
+            return AgentSession(
+                llm=build_realtime_llm(self._settings.gemini),
+                tts=tts,
+                vad=vad,
+            )
+
+        # Default: Qwen STT + DeepSeek LLM + Qwen TTS cascade.
         return AgentSession(
             stt=build_stt(self._settings.speech),
-            tts=build_tts(self._settings.speech),
+            tts=tts,
             llm=build_llm(self._settings.llm),
-            vad=silero.VAD.load(),
+            vad=vad,
         )
 
     def _build_room_options(self) -> Any:

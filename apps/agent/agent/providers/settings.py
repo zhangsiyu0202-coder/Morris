@@ -27,6 +27,13 @@ DEFAULT_QWEN_TTS_MODEL = "cosyvoice-v1"
 DEFAULT_QWEN_TTS_VOICE = "longxiaochun"
 DEFAULT_LANGUAGE = "zh"
 
+# Gemini Live realtime option (ADR-0007). Opt-in via MERISM_GEMINI_LIVE=1; when
+# off the agent keeps the DeepSeek (LLM) + Qwen (ASR/TTS) cascade. The 2.x Live
+# models keep mutable_chat_context=True (only "3.1" models disable it), so the
+# existing question-task on_enter generate_reply works unchanged.
+DEFAULT_GEMINI_REALTIME_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
+DEFAULT_GEMINI_LANGUAGE = "cmn-CN"  # BCP-47 (Gemini Live), distinct from Qwen's "zh"
+
 
 class ProviderConfigError(ValueError):
     """Raised when a required provider credential is missing."""
@@ -50,9 +57,27 @@ class SpeechSettings:
 
 
 @dataclass(frozen=True)
+class GeminiSettings:
+    """Gemini Live realtime settings (ADR-0007). `base_url` points the google
+    genai client at a proxy (e.g. a Cloudflare AI Gateway) when set; the Live
+    WebSocket endpoint is derived from it. `cf_aig_token` is the optional
+    Cloudflare AI Gateway authorization."""
+
+    api_key: str
+    model: str
+    language: str
+    base_url: str | None = None
+    cf_aig_token: str | None = None
+
+
+@dataclass(frozen=True)
 class ProviderSettings:
-    llm: LLMSettings
+    # `llm` (DeepSeek) is None in Gemini Live mode; `gemini` is None in the
+    # default DeepSeek+Qwen cascade. `speech` (Qwen) is always present because
+    # Qwen TTS speaks in BOTH modes.
+    llm: LLMSettings | None
     speech: SpeechSettings
+    gemini: GeminiSettings | None = None
 
 
 def _first(env: Mapping[str, str], *keys: str, default: str | None = None) -> str | None:
@@ -90,13 +115,41 @@ def resolve_speech_settings(env: Mapping[str, str]) -> SpeechSettings:
     )
 
 
-def resolve_provider_settings(env: Mapping[str, str] | None = None) -> ProviderSettings:
-    """Resolve both LLM and speech settings; raises on any missing credential."""
+def gemini_live_enabled(env: Mapping[str, str] | None = None) -> bool:
+    """Whether the realtime interview uses Gemini Live instead of DeepSeek+Qwen
+    (ADR-0007). Strict literal per the steering flag convention. Unset -> off."""
     resolved = os.environ if env is None else env
-    return ProviderSettings(
-        llm=resolve_llm_settings(resolved),
-        speech=resolve_speech_settings(resolved),
+    return resolved.get("MERISM_GEMINI_LIVE") == "1"
+
+
+def resolve_gemini_settings(env: Mapping[str, str]) -> GeminiSettings:
+    """Resolve Gemini Live settings; raises if the API key is absent."""
+    api_key = _first(env, "GEMINI_API_KEY", "GOOGLE_API_KEY")
+    if not api_key:
+        raise ProviderConfigError(
+            "GEMINI_API_KEY (or GOOGLE_API_KEY) is required when MERISM_GEMINI_LIVE=1"
+        )
+    return GeminiSettings(
+        api_key=api_key,
+        model=_first(env, "GEMINI_REALTIME_MODEL", default=DEFAULT_GEMINI_REALTIME_MODEL),
+        language=_first(env, "GEMINI_LANGUAGE", "INTERVIEW_LANGUAGE", default=DEFAULT_GEMINI_LANGUAGE),
+        # Optional proxy (e.g. Cloudflare AI Gateway). When unset the google
+        # client talks to generativelanguage.googleapis.com directly.
+        base_url=_first(env, "GEMINI_BASE_URL"),
+        cf_aig_token=_first(env, "CF_AIG_TOKEN"),
     )
+
+
+def resolve_provider_settings(env: Mapping[str, str] | None = None) -> ProviderSettings:
+    """Resolve provider settings for the active realtime mode; raises on any
+    missing credential. Qwen speech is resolved in BOTH modes (Qwen TTS speaks
+    even when Gemini Live is the LLM/ASR). In Gemini mode the DeepSeek LLM is not
+    required; in default mode Gemini is not required."""
+    resolved = os.environ if env is None else env
+    speech = resolve_speech_settings(resolved)
+    if gemini_live_enabled(resolved):
+        return ProviderSettings(llm=None, speech=speech, gemini=resolve_gemini_settings(resolved))
+    return ProviderSettings(llm=resolve_llm_settings(resolved), speech=speech, gemini=None)
 
 
 def provider_settings_available(env: Mapping[str, str] | None = None) -> bool:

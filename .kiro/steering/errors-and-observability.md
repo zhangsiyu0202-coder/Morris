@@ -230,6 +230,7 @@ LLM 调用全部走 `llmGate` (p-limit 包装), default 最多 8 并发, env `ME
 | `MERISM_LIVE_TESTS` | bool | 严格 `"1"` 启用 | Layer 4 live integration tests (需 Appwrite Docker stack) | `tests/properties/foundation-setup/permission-matrix.test.ts` |
 | `MERISM_FAKE_PROVIDERS` | bool | 严格 `"1"` 启用 (规划中, 未实现) | 替换真 LLM/ASR/TTS provider 为 deterministic fake (live tests 用) | (规划) |
 | `GEMINI_VISUAL_ANALYSIS_ENABLED` | bool | 严格 `"true"` 启用 (ADR-0005) | analyzeSessionVisual Function 是否实际调用 Gemini | `apps/functions/analyzeSessionVisual/src/main.ts` |
+| `MERISM_GEMINI_LIVE` | bool | 严格 `"1"` 启用 (ADR-0007) | 实时访谈层用 Gemini Live (ASR+LLM, 出文本) + Qwen TTS 替代 DeepSeek+Qwen cascade;unset → 维持现状 | `apps/agent/agent/providers/settings.py` |
 
 ### 不一致点 (历史保留, 不重构)
 

@@ -18,6 +18,8 @@ realtime = [
     # Generic OpenAI-protocol client plugin. NOT used against OpenAI's service:
     # it is pointed at DeepSeek (LLM) and DashScope/Qwen (ASR/TTS) base URLs.
     "livekit-plugins-openai>=1.5.15,<1.6",
+    # Gemini Live realtime option (ADR-0007), opt-in via MERISM_GEMINI_LIVE=1.
+    "livekit-plugins-google>=1.5.15,<1.6",
     # Voice activity detection for AgentSession turn-taking.
     "livekit-plugins-silero>=1.5.15,<1.6",
 ]
