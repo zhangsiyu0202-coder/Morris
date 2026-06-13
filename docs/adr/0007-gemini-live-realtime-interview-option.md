@@ -51,8 +51,11 @@ layer + the `engine.py` `AgentSession` construction; nothing else branches.
 In Gemini mode the session is `AgentSession(llm=Gemini RealtimeModel(modalities=["TEXT"]), tts=Qwen, vad=silero)`.
 Gemini Live is the **ears + brain** (ASR + understanding + response text); **Qwen
 TTS still produces the voice**. This keeps Chinese voice quality (cosyvoice) and
-leaves the transcript/quality-flag pipeline (which reads AgentSession
-transcription) intact. Consequence: this ADR adds a second realtime **LLM + ASR**
+leaves the transcript/quality-flag pipeline intact: the engine forwards the
+AgentSession's `conversation_item_added` events (a model-agnostic, session-level
+event) to the transcript buffer, and `build_realtime_llm` explicitly enables the
+model's input audio transcription so interviewee turns still become text.
+Consequence: this ADR adds a second realtime **LLM + ASR**
 provider, but **no second TTS** — the "single TTS provider (Qwen)" posture holds.
 
 ### D3: Architecture compatibility — no controller change

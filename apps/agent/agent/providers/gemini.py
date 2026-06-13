@@ -21,6 +21,7 @@ from agent.providers.settings import GeminiSettings
 def build_realtime_llm(settings: GeminiSettings) -> Any:
     """Construct a Gemini Live ``RealtimeModel`` (TEXT out). Requires the
     ``realtime`` extra (``uv sync --extra realtime``)."""
+    from google.genai import types
     from livekit.plugins import google
 
     kwargs: dict[str, Any] = {
@@ -28,11 +29,13 @@ def build_realtime_llm(settings: GeminiSettings) -> Any:
         "modalities": ["TEXT"],
         "language": settings.language,
         "api_key": settings.api_key,
+        # Explicitly enable interviewee speech->text. It defaults on, but the
+        # transcript (and the whole analysis pipeline) depends on user turns
+        # becoming conversation items, so we do not leave it to a default.
+        "input_audio_transcription": types.AudioTranscriptionConfig(),
     }
 
     if settings.base_url:
-        from google.genai import types
-
         headers = (
             {"cf-aig-authorization": f"Bearer {settings.cf_aig_token}"}
             if settings.cf_aig_token
