@@ -18,11 +18,14 @@ from typing import Any
 
 from agent.contracts import (
     INTERVIEW_STATE_ATTRIBUTE,
+    SUBMIT_ANSWER_RPC_METHOD,
     InterviewAgentState,
     InterviewRuntimeQuestion,
     InterviewWorkflowState,
     QuestionTaskResult,
     SectionTaskGroupConfig,
+    SubmitInterviewAnswerRpcRequest,
+    SubmitInterviewAnswerRpcResponse,
 )
 from agent.interview.task_group_builder import build_section_task_group
 from agent.interview.workflow import (
@@ -30,6 +33,7 @@ from agent.interview.workflow import (
     collected_answers_map,
     is_complete,
     record_question_result,
+    should_accept_ui_answer,
 )
 
 
@@ -62,12 +66,16 @@ def create_supervisor_agent_class():
             # questionId -> full runtime question, published to the room so the
             # interviewee portal renders the structured control for this question.
             self._runtime_questions = dict(runtime_questions or {})
+            # Handle to the question task currently being asked, so a UI click
+            # (submit_answer RPC) can complete it from outside the model loop.
+            self._active_question_task: Any | None = None
             super().__init__(instructions=state.workflowConfig.supervisorInstruction)
 
         # -- lifecycle ----------------------------------------------------
 
         async def on_enter(self) -> None:
             started_monotonic = time.monotonic()
+            self._register_submit_answer_rpc()
             self._publish_state("ready")
             if self._repo is not None:
                 self._repo.mark_in_progress(self._state.sessionId)
@@ -124,14 +132,71 @@ def create_supervisor_agent_class():
             if self._repo is not None:
                 self._persist_transcript()
 
-        def _on_question_enter(self, question_id: str) -> None:
-            """Publish the current question to the room when its task starts, so
-            the interviewee portal renders the structured control for it."""
+        def _on_question_enter(self, question_id: str, task: Any) -> None:
+            """Publish the current question to the room when its task starts (so
+            the interviewee portal renders the structured control), and hold a
+            handle to the task so a UI click can complete it."""
             self._state.currentQuestionTaskId = question_id
+            self._active_question_task = task
             runtime_question = self._runtime_questions.get(question_id)
             if runtime_question is not None:
                 self._state.currentSectionId = runtime_question.sectionId
             self._publish_state("collecting")
+
+        # -- structured answer over RPC ----------------------------------
+
+        def _register_submit_answer_rpc(self) -> None:
+            """Listen for UI-submitted structured answers. The voice path does
+            not run the runtime bridge (they are mutually exclusive in
+            main.py), so this is the only submit_answer handler in voice mode."""
+            try:
+                self._room.local_participant.register_rpc_method(
+                    SUBMIT_ANSWER_RPC_METHOD, self._handle_submit_answer
+                )
+            except Exception as error:  # noqa: BLE001 - registration is best-effort
+                self._log.warn("failed to register submit_answer rpc", error=str(error))
+
+        async def _handle_submit_answer(self, data: Any) -> str:
+            request = SubmitInterviewAnswerRpcRequest.model_validate_json(data.payload)
+            current_id = self._state.currentQuestionTaskId
+            task = self._active_question_task
+
+            # Only the question currently being asked may be answered by a click;
+            # a mismatch is a stale / duplicate / out-of-order submit.
+            if not should_accept_ui_answer(
+                submitted_question_id=request.answer.questionId,
+                current_question_id=current_id,
+                has_active_task=task is not None,
+            ):
+                self._log.warn(
+                    "interview answer rejected: questionId does not match active question",
+                    submittedQuestionId=request.answer.questionId,
+                    currentQuestionId=current_id,
+                    source=request.answer.source,
+                )
+                return SubmitInterviewAnswerRpcResponse(
+                    accepted=False, nextQuestionId=current_id, completed=False
+                ).model_dump_json()
+
+            # First-writer-wins: returns False if the model already completed
+            # this question by voice (the voice answer stands).
+            accepted = task.complete_with_ui_answer(request.answer)
+            if not accepted:
+                return SubmitInterviewAnswerRpcResponse(
+                    accepted=False, nextQuestionId=current_id, completed=False
+                ).model_dump_json()
+
+            self._log.info(
+                "interview answer accepted from ui",
+                questionId=request.answer.questionId,
+                source=request.answer.source,
+            )
+            # The completed task lets the TaskGroup advance; the supervisor then
+            # publishes the next question's state. The client renders from that
+            # authoritative attribute, so nextQuestionId is left for the publish.
+            return SubmitInterviewAnswerRpcResponse(
+                accepted=True, nextQuestionId=None, completed=False
+            ).model_dump_json()
 
         async def _run_task_group(self, task_group: Any) -> dict[str, QuestionTaskResult]:
             """Run a section TaskGroup and return ``{task_id: QuestionTaskResult}``.

@@ -14,7 +14,9 @@ from __future__ import annotations
 from typing import cast
 
 from agent.contracts import (
+    InterviewAnswerPayload,
     InterviewRoomMetadata,
+    InterviewRuntimeQuestion,
     InterviewRuntimeSection,
     InterviewRuntimeStudy,
     InterviewWorkflowConfig,
@@ -82,6 +84,45 @@ def index_runtime_questions(
         for section in study.sections
         for question in section.questions
     }
+
+
+def should_accept_ui_answer(
+    *,
+    submitted_question_id: str,
+    current_question_id: str | None,
+    has_active_task: bool,
+) -> bool:
+    """Whether a UI-submitted answer may complete the current question (pure).
+
+    A click only counts for the question the agent is currently on: there must
+    be an active question task and the submitted questionId must match the live
+    cursor. Mismatches are stale / duplicate / out-of-order submits. Mirrors the
+    bridge-path guard so both answer paths honor the same authoritative cursor.
+    """
+    return (
+        has_active_task
+        and current_question_id is not None
+        and submitted_question_id == current_question_id
+    )
+
+
+def format_ui_answer(answer: InterviewAnswerPayload) -> str:
+    """Render a UI-submitted structured answer as the human-readable string
+    stored in ``QuestionTaskResult.respondentAnswer`` (pure).
+
+    Precedence matches the response modes: free text, then selected options
+    (single/multi), then a ranking order, then a numeric score (scale/nps).
+    """
+    if answer.text.strip():
+        return answer.text.strip()
+    if answer.selectedOptions:
+        return ", ".join(answer.selectedOptions)
+    if answer.ranking:
+        return " > ".join(answer.ranking)
+    if answer.score is not None:
+        score = answer.score
+        return str(int(score)) if float(score).is_integer() else str(score)
+    return ""
 
 
 def _supervisor_instruction_from_study(study: InterviewRuntimeStudy) -> str:

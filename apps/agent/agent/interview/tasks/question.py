@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 from agent.contracts import (
+    InterviewAnswerPayload,
     ProbeResult,
     ProbeRound,
     QuestionTaskConfig,
     QuestionTaskResult,
 )
+from agent.interview.workflow import format_ui_answer
 
 
 def build_question_instructions(question: QuestionTaskConfig) -> str:
@@ -72,10 +75,19 @@ def create_question_task_class():
             self,
             question: QuestionTaskConfig,
             chat_ctx=None,
-            on_enter_publish: Callable[[], None] | None = None,
+            on_enter_publish: Callable[[Any], None] | None = None,
         ) -> None:
             self.question = question
+            # Called with this task instance when it becomes active, so the
+            # supervisor can both publish the question and hold a handle to
+            # complete it externally (a UI click answer).
             self._on_enter_publish = on_enter_publish
+            # First-writer-wins guard: the question can be finished either by the
+            # model (complete_question) or by a UI click (complete_with_ui_answer).
+            # Whichever lands first wins; the other becomes a no-op. Safe without a
+            # lock because every check+complete pair below is await-free, so the
+            # single-threaded event loop runs each to completion atomically.
+            self._completed = False
             # Accumulates each probe exchange so we can enforce the round ceiling
             # deterministically rather than trusting the LLM to count.
             self._rounds: list[ProbeRound] = []
@@ -90,13 +102,38 @@ def create_question_task_class():
             return probe.maxRounds if probe is not None else 0
 
         async def on_enter(self) -> None:
-            # Publish the current question to the room first, so the interviewee
-            # portal can render its structured control before the AI speaks.
+            # Register active + publish the current question to the room first,
+            # so the interviewee portal renders its structured control before
+            # the AI speaks (and so the supervisor can complete this task from a
+            # UI click).
             if self._on_enter_publish is not None:
-                self._on_enter_publish()
+                self._on_enter_publish(self)
             await self.session.generate_reply(
                 instructions=f"Ask this interview question naturally: {self.question.questionContent}"
             )
+
+        def complete_with_ui_answer(self, answer: InterviewAnswerPayload) -> bool:
+            """Finish this question with a UI-submitted answer (first-writer-wins).
+
+            Called from the supervisor's submit_answer RPC handler when the
+            interviewee picks on screen instead of (or before) answering by
+            voice. Returns False if the question was already completed (by voice
+            or an earlier click), so the caller can report it was not accepted.
+            A clicked answer completes the question directly and does not trigger
+            voice probing.
+            """
+            if self._completed:
+                return False
+            self._completed = True
+            self.complete(
+                QuestionTaskResult(
+                    questionType=self.question.questionType,
+                    questionContent=self.question.questionContent,
+                    respondentAnswer=format_ui_answer(answer),
+                    probe=None,
+                )
+            )
+            return True
 
         @function_tool()
         async def record_probe_round(
@@ -109,6 +146,8 @@ def create_question_task_class():
             Returns guidance on whether more probing is allowed. The probe-round
             ceiling is enforced here: rounds beyond the maximum are not recorded.
             """
+            if self._completed:
+                return "This question was already answered on screen. Move on."
             if self._max_rounds <= 0:
                 return (
                     "This question is not configured for probing. "
@@ -147,9 +186,15 @@ def create_question_task_class():
             Enforces the lower bound: when probing is configured you must record at
             least one probe round before completing.
             """
+            # First-writer-wins: a UI click may have already completed this
+            # question. Calling self.complete() again would double-complete.
+            if self._completed:
+                return None
+
             probe_config = self.question.probeConfig
 
             if probe_config is None:
+                self._completed = True
                 self.complete(
                     QuestionTaskResult(
                         questionType=self.question.questionType,
@@ -167,6 +212,7 @@ def create_question_task_class():
                     "Ask a follow-up question and call record_probe_round first."
                 )
 
+            self._completed = True
             self.complete(
                 QuestionTaskResult(
                     questionType=self.question.questionType,

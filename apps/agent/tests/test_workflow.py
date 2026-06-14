@@ -195,3 +195,47 @@ def test_build_question_instructions_open_ended_has_no_options_block():
     task = workflow_config_from_study(study, session_id="s1").sections[0].questions[0]
     text = build_question_instructions(task)
     assert "preset options" not in text
+
+
+def test_should_accept_ui_answer_matches_cursor():
+    from agent.interview.workflow import should_accept_ui_answer
+
+    # accepted only when there is an active task and the id matches the cursor
+    assert should_accept_ui_answer(
+        submitted_question_id="q1", current_question_id="q1", has_active_task=True
+    ) is True
+    # mismatch (stale / out-of-order)
+    assert should_accept_ui_answer(
+        submitted_question_id="q2", current_question_id="q1", has_active_task=True
+    ) is False
+    # no active task
+    assert should_accept_ui_answer(
+        submitted_question_id="q1", current_question_id="q1", has_active_task=False
+    ) is False
+    # cursor not set yet
+    assert should_accept_ui_answer(
+        submitted_question_id="q1", current_question_id=None, has_active_task=True
+    ) is False
+
+
+def test_format_ui_answer_precedence():
+    from agent.contracts import InterviewAnswerPayload
+    from agent.interview.workflow import format_ui_answer
+
+    def _ans(**kw) -> InterviewAnswerPayload:
+        base = dict(questionId="q1", sectionId="s1", questionType="single_choice", source="ui")
+        base.update(kw)
+        return InterviewAnswerPayload(**base)  # type: ignore[arg-type]
+
+    # free text wins
+    assert format_ui_answer(_ans(text="  hello ", selectedOptions=["A"])) == "hello"
+    # selected options (single/multi)
+    assert format_ui_answer(_ans(selectedOptions=["A", "B"])) == "A, B"
+    # ranking order
+    assert format_ui_answer(_ans(ranking=["A", "B", "C"])) == "A > B > C"
+    # integer score renders without trailing .0
+    assert format_ui_answer(_ans(score=4)) == "4"
+    # fractional score preserved
+    assert format_ui_answer(_ans(score=4.5)) == "4.5"
+    # nothing provided
+    assert format_ui_answer(_ans()) == ""
