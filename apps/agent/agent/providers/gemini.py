@@ -18,11 +18,15 @@ from typing import Any
 from agent.providers.settings import GeminiSettings
 
 
-def build_realtime_llm(settings: GeminiSettings) -> Any:
-    """Construct a Gemini Live ``RealtimeModel`` (TEXT out). Requires the
-    ``realtime`` extra (``uv sync --extra realtime``)."""
+def _realtime_kwargs(settings: GeminiSettings) -> dict[str, Any]:
+    """Build the ``RealtimeModel`` kwargs.
+
+    Kept separate from the model construction so the session-management config
+    is unit-testable: this only needs ``google.genai.types`` (no livekit, no
+    event loop — ``RealtimeModel.__init__`` schedules a task and so requires a
+    running loop).
+    """
     from google.genai import types
-    from livekit.plugins import google
 
     kwargs: dict[str, Any] = {
         "model": settings.model,
@@ -33,6 +37,16 @@ def build_realtime_llm(settings: GeminiSettings) -> Any:
         # transcript (and the whole analysis pipeline) depends on user turns
         # becoming conversation items, so we do not leave it to a default.
         "input_audio_transcription": types.AudioTranscriptionConfig(),
+        # Lift Gemini Live's session duration cap: without compression an
+        # audio session terminates at ~15 min, which a real interview exceeds.
+        # A sliding-window compression extends the session to unlimited length.
+        # Session *resumption* (surviving the ~10-min connection GoAway) is
+        # intentionally NOT set here: the livekit google plugin already captures
+        # the resumption handle from server updates and reuses it on every
+        # reconnect, so within one interview it is auto-managed.
+        "context_window_compression": types.ContextWindowCompressionConfig(
+            sliding_window=types.SlidingWindow(),
+        ),
     }
 
     if settings.base_url:
@@ -43,4 +57,12 @@ def build_realtime_llm(settings: GeminiSettings) -> Any:
         )
         kwargs["http_options"] = types.HttpOptions(base_url=settings.base_url, headers=headers)
 
-    return google.beta.realtime.RealtimeModel(**kwargs)
+    return kwargs
+
+
+def build_realtime_llm(settings: GeminiSettings) -> Any:
+    """Construct a Gemini Live ``RealtimeModel`` (TEXT out). Requires the
+    ``realtime`` extra (``uv sync --extra realtime``)."""
+    from livekit.plugins import google
+
+    return google.beta.realtime.RealtimeModel(**_realtime_kwargs(settings))

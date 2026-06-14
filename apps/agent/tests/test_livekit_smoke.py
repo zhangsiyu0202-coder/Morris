@@ -96,3 +96,27 @@ def test_interview_factories_build_under_installed_livekit():
         section, chat_ctx=None, on_question_enter=lambda qid, task: None
     )
     assert type(task_group).__name__ == "TaskGroup"
+
+
+def test_gemini_realtime_enables_context_window_compression():
+    """Gemini Live caps audio sessions at ~15 min without context compression.
+
+    Our build must enable sliding-window compression so long interviews are not
+    cut off. Session resumption is left to the livekit plugin (auto-managed).
+    """
+    pytest.importorskip("google.genai", reason="realtime extra not installed")
+    from google.genai import types
+
+    from agent.providers.gemini import _realtime_kwargs
+    from agent.providers.settings import GeminiSettings
+
+    kwargs = _realtime_kwargs(
+        GeminiSettings(api_key="test-key", model="gemini-live", language="en-US")
+    )
+
+    assert kwargs["modalities"] == ["TEXT"]
+    cwc = kwargs["context_window_compression"]
+    assert isinstance(cwc, types.ContextWindowCompressionConfig)
+    assert cwc.sliding_window is not None
+    # Resumption is the plugin's job — we must not be passing our own config.
+    assert "session_resumption" not in kwargs
