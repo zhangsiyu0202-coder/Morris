@@ -201,12 +201,14 @@ def create_supervisor_agent_class():
         async def _run_task_group(self, task_group: Any) -> dict[str, QuestionTaskResult]:
             """Run a section TaskGroup and return ``{task_id: QuestionTaskResult}``.
 
-            LiveKit's beta workflow returns results keyed by the task id the
-            group was built with (``question_<questionId>``). The attribute name
-            has shifted across betas, so we read defensively.
+            A ``TaskGroup`` is an awaitable ``AgentTask`` (livekit-agents 1.6
+            removed the old ``.run()`` method — you await the task directly).
+            Awaiting it yields a ``TaskGroupResult`` whose ``task_results`` is
+            keyed by the task id the group was built with (``question_<id>``).
+            The result attribute has shifted across betas, so we read defensively.
             """
-            run_result = await task_group.run()
-            for attr in ("results", "task_results", "output"):
+            run_result = await task_group
+            for attr in ("task_results", "results", "output"):
                 candidate = getattr(run_result, attr, None) if run_result is not None else None
                 if isinstance(candidate, dict):
                     return candidate

@@ -155,7 +155,7 @@ class InterviewEngine:
         STT transcription to the room as LiveKit transcription segments, which
         the web client reads via ``RoomEvent.TranscriptionReceived`` (or the
         ``lk.transcription`` text stream). ``RoomOptions`` is the current API in
-        livekit-agents 1.5.x; ``RoomOutputOptions`` is deprecated. This only
+        livekit-agents 1.5.x–1.6; ``RoomOutputOptions`` is deprecated. This only
         controls in-room realtime output and is independent of the local
         ``TranscriptCollector`` used for Appwrite persistence.
         """
