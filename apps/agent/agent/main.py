@@ -22,9 +22,27 @@ from datetime import UTC, datetime
 
 from agent.contracts import INTERVIEW_STATE_ATTRIBUTE, InterviewAgentState, InterviewRoomMetadata
 from agent.logging import create_logger
-from agent.providers.settings import provider_settings_available, resolve_provider_settings
+from agent.providers.settings import (
+    gemini_live_enabled,
+    provider_settings_available,
+    resolve_provider_settings,
+)
 
 log = create_logger("agent.main")
+
+
+def prewarm(proc) -> None:  # proc: livekit.agents.JobProcess
+    """Load slow model files once per worker process, before any job.
+
+    Only the default cascade mode uses a local silero VAD; the Gemini Live mode
+    relies on server-side turn detection, so when that mode is enabled there is
+    nothing to prewarm (avoids loading the VAD weights for nothing).
+    """
+    if gemini_live_enabled(os.environ):
+        return
+    from livekit.plugins import silero
+
+    proc.userdata["vad"] = silero.VAD.load()
 
 
 def _parse_room_metadata(raw_metadata: str) -> tuple[str, InterviewRoomMetadata | None]:
@@ -70,6 +88,7 @@ async def entrypoint(ctx) -> None:  # ctx: livekit.agents.JobContext
             settings=resolve_provider_settings(os.environ),
             repository=_build_repository(os.environ),
             logger=log,
+            vad=ctx.proc.userdata.get("vad"),
         )
         await engine.start()
         await asyncio.Event().wait()
@@ -96,7 +115,7 @@ def main() -> None:
     # Imported lazily so the package is importable without the realtime extra.
     from livekit.agents import WorkerOptions, cli
 
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
+    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm))
 
 
 if __name__ == "__main__":

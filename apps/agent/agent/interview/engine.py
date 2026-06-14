@@ -50,12 +50,16 @@ class InterviewEngine:
         settings: ProviderSettings,
         repository: Any | None,
         logger: Any,
+        vad: Any | None = None,
     ) -> None:
         self._room = room
         self._metadata = metadata
         self._settings = settings
         self._repo = repository
         self._log = logger
+        # Prewarmed silero VAD from the worker process (ctx.proc.userdata), or
+        # None — _build_session falls back to loading one for the cascade mode.
+        self._vad = vad
         self._transcript = TranscriptCollector()
         self._turn_cursor_ms = 0
 
@@ -140,14 +144,20 @@ class InterviewEngine:
             )
 
         # Default: Qwen STT + DeepSeek LLM + Qwen TTS cascade. The cascade has no
-        # server-side turn detection, so it needs a local silero VAD.
-        from livekit.plugins import silero
+        # server-side turn detection, so it needs a local silero VAD. Reuse the
+        # prewarmed instance (loaded once per worker process) when available;
+        # otherwise load one here (dev mode / no prewarm).
+        vad = self._vad
+        if vad is None:
+            from livekit.plugins import silero
+
+            vad = silero.VAD.load()
 
         return AgentSession(
             stt=build_stt(self._settings.speech),
             tts=tts,
             llm=build_llm(self._settings.llm),
-            vad=silero.VAD.load(),
+            vad=vad,
         )
 
     def _build_room_options(self) -> Any:
