@@ -76,6 +76,24 @@ sets the `cf-aig-authorization` header. A hand-rolled Cloudflare Worker proxy
 also works **only if** it forwards the WebSocket upgrade (the Live API is WSS,
 not REST). Secrets are read in the provider layer, never in pure cores.
 
+### D5: Session-duration cap is lifted via context-window compression; resumption is the plugin's job
+
+Gemini Live caps an audio session at ~15 min (audio+video 2 min) and a single
+WebSocket connection at ~10 min; exceeding either terminates the session unless
+mitigated. A real interview exceeds 15 min, so `build_realtime_llm` sets
+`context_window_compression=ContextWindowCompressionConfig(sliding_window=...)`,
+which extends the session to unlimited duration.
+
+Session **resumption** (surviving the ~10-min connection `GoAway`) is NOT
+configured by us. The livekit google plugin (`realtime_api.py`) already captures
+the `SessionResumptionUpdate` handle from server updates and reuses it on every
+reconnect — including the `GoAway`-triggered reconnect, which re-injects the
+chat context — so within one interview it is auto-managed. Passing our own
+`session_resumption` would only seed an initial handle for resuming a *prior*
+`RealtimeModel` instance, which we never do. Caveat: the plugin's `GoAway`
+reconnect is marked "not seamless yet", so the ~10-min connection boundary may
+produce a brief audio glitch (session continuity is preserved via the handle).
+
 ## Alternatives rejected
 
 - **Gemini Live native audio (speech-to-speech, no external TTS)** — simplest,
@@ -141,3 +159,4 @@ therefore sound, not speculative.
 - `.kiro/steering/errors-and-observability.md` — feature-flag table (`MERISM_GEMINI_LIVE`), provider adapter rules, secret masking.
 - ADR-0001 (interview controller — retained), ADR-0004/0005 (Gemini for visual analysis — separate use).
 - LiveKit Agents `plugins.google.beta.realtime.RealtimeModel`; Cloudflare AI Gateway Realtime WebSockets API (Gemini Live).
+- Gemini Live session management (duration caps, context-window compression, session resumption, `GoAway`): https://ai.google.dev/gemini-api/docs/live-api/session-management
