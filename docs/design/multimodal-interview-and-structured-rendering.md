@@ -65,12 +65,18 @@ MerismV2 是 AI 语音访谈的定性研究平台。当前 agent 已具备：
 
 ### 3.2 待补全
 
-1. **语音 + 渲染融合**：当前 `runtime_bridge` 是纯 RPC 驱动（前端提交即推进），与语音引擎（`engine.py` / `supervisor.py`）是两条并行路径。需要统一：
-   - 对 `voice_only` 题：走语音 `AgentTask`，由模型 `record_answer` 完成。
-   - 对结构化题（`single_select` 等）：agent 用语音读题 + 引导（"你可以直接在屏幕上选择"），**同时**发布渲染状态；答案以 RPC 或语音二者**先到为准**。
-   - 需要一个"答案来源融合"层，把 RPC 答案与语音答案归一成同一个 `QuestionTaskResult`（`answer.source` 已区分来源）。
-2. **options 填充**：`_questions_from_section` 目前 `options=[]`，需要从 study 定义把选项带出来（运行态 `runtimeStudy` 已含完整题目，应优先用它）。
-3. **前端契约**：在 `packages/contracts` 固化 `responseMode` 枚举与 `InterviewAgentState` 渲染所需字段，`apps/web` 据此渲染。
+> **状态（2026-06-14，commit `db9e94a`）**:语音引擎路径(`supervisor.py`)此前 publish `currentQuestion=None` 且工作流丢掉了 `options`/`responseMode`,导致 **live 语音访谈里结构化控件根本不渲染**(只有纯 RPC 的 `runtime_bridge` 旁路会发布)。已修复:
+> - `QuestionTaskConfig` 增 `options`(TS schema + Python 镜像);`buildInterviewWorkflowConfigFromDraft` 透传 options。
+> - `engine.py` 用 `index_runtime_questions(runtimeStudy)` 建 `{questionId: 完整 InterviewRuntimeQuestion}` map 传给 supervisor。
+> - **每题任务 `on_enter` 把完整 `InterviewRuntimeQuestion` 发布到 `INTERVIEW_STATE_ATTRIBUTE`**(经 `build_section_task_group` 的 `on_question_enter` 回调),光标按题(而非按 section)推进 → 前端按 `responseMode` 准确渲染当前题。
+> - `build_question_instructions` 对有选项的题列出 options,语音 AI 可朗读。
+> 下面 **item 2 已完成**;**item 1 仅剩"答案来源融合 + e2e"**。
+
+1. **语音 + 渲染融合**:语音引擎(`engine.py`/`supervisor.py`)与纯 RPC 的 `runtime_bridge` 仍是两条并行路径。**发布渲染状态的半边已在语音路径落地**(supervisor 每题发布 + 语音读题/读选项);**仍待补**:语音 supervisor 路径接收 `SUBMIT_ANSWER_RPC_METHOD`,把 UI 点选答案与语音答案以"先到为准"归一进同一个 `QuestionTaskResult`(`answer.source` 已区分来源)。
+2. ~~**options 填充**~~ **(已完成 `db9e94a`)**:运行态 `runtimeStudy` 的选项已透传到 `QuestionTaskConfig` 并随发布与语音提示带出。
+3. **前端契约**:`responseMode` 枚举与 `InterviewAgentState`(`currentQuestion`/`responseMode`/`options`)渲染字段已在 `packages/contracts` 固化,`apps/web` 据此渲染(`question-card.tsx` 消费 `state.currentQuestion`,无需改动)。
+
+> **端到端待验(NEXT)**:supervisor `on_enter` 真发布 + 前端真渲染的完整链路需 realtime 栈 + 真语音跑一场确认(见 `interviewee-portal/tasks.md` D1)。纯逻辑(选项透传、map 索引、指令、发布查找)已单测覆盖。
 
 ### 3.3 渲染状态时序
 
