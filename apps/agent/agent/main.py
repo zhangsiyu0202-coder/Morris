@@ -9,7 +9,7 @@ set by issueLivekitToken). Routing:
 - metadata has runtimeStudy/workflowConfig AND provider creds present
       -> full voice interview (Supervisor / TaskGroup / AgentTask + Qwen/DeepSeek)
 - metadata has runtimeStudy/workflowConfig but no provider creds
-      -> UI-only RPC bridge (frontend submits answers, agent advances state)
+      -> error (the interview cannot run without the LLM provider) + idle
 - otherwise
       -> idle
 """
@@ -21,7 +21,6 @@ import os
 from datetime import UTC, datetime
 
 from agent.contracts import INTERVIEW_STATE_ATTRIBUTE, InterviewAgentState, InterviewRoomMetadata
-from agent.interview.runtime_bridge import InterviewRuntimeBridge
 from agent.logging import create_logger
 from agent.providers.settings import provider_settings_available, resolve_provider_settings
 
@@ -77,11 +76,10 @@ async def entrypoint(ctx) -> None:  # ctx: livekit.agents.JobContext
         return
 
     if has_config:
-        log.warn("provider creds missing; falling back to UI-only RPC bridge", sessionId=session_id)
-        bridge = InterviewRuntimeBridge(ctx.room, room_metadata, log)
-        await bridge.start()
-        await asyncio.Event().wait()
-        return
+        log.error(
+            "provider settings missing; interview cannot run without the LLM provider",
+            sessionId=session_id,
+        )
 
     ctx.room.local_participant.set_attributes(
         {

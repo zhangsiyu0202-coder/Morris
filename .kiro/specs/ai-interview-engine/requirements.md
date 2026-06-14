@@ -12,7 +12,7 @@
 | Supervisor | `agent/interview/supervisor.py` | 长生命周期 `InterviewSupervisorAgent`(livekit 懒导入):问候 → 逐 section 走 TaskGroup(每题一个 AgentTask)→ 记录结果 → 发布 `InterviewAgentState` → 流式落 Appwrite。`super().__init__(instructions=state.workflowConfig.supervisorInstruction)`。 |
 | 引擎 | `agent/interview/engine.py` | 驱动 livekit,委托所有状态迁移给 workflow.py;`workflow_config_from_metadata`。 |
 | TaskGroup/任务 | `agent/interview/{task_group_builder,tasks/question}.py` | 构建分节 TaskGroup;单题采集 + 追问(每题至少 1 轮,深度由 `maxRounds` 控)。 |
-| 桥接/转写/录制 | `agent/interview/{runtime_bridge,transcript,egress_recorder}.py` | metadata→runtime 桥接;转写聚合;egress 录制。 |
+| 转写/录制 | `agent/interview/{transcript,egress_recorder}.py` | 转写聚合;egress 录制。 |
 | 持久化 | `agent/persistence/{appwrite_repository,serializers}.py` | finalized artifact 单向落 Appwrite(纯序列化 + repo)。 |
 | Provider | `agent/providers/{deepseek,qwen,settings}.py` | DeepSeek=LLM,Qwen=ASR/TTS,窄接口。 |
 | 契约镜像 | `agent/contracts.py` | pydantic 镜像 `packages/contracts` 中 agent 需要的子集(字段名 camelCase 对齐)。 |

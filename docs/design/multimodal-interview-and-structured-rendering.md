@@ -47,7 +47,7 @@ MerismV2 是 AI 语音访谈的定性研究平台。当前 agent 已具备：
 
 ### 3.1 现状
 
-`runtime_bridge.py` 已实现 question type → response mode 的映射：
+question type → response mode 的映射(`QUESTION_TYPE_TO_RESPONSE_MODE`,`packages/contracts`):
 
 | questionType | responseMode | 前端渲染 |
 |---|---|---|
@@ -57,26 +57,24 @@ MerismV2 是 AI 语音访谈的定性研究平台。当前 agent 已具备：
 | `rating` / `nps` | `scale` | 刻度/分值条 |
 | `ranking` | `ranking` | 拖拽排序 |
 
-机制：
-- agent 把当前题目以 `InterviewAgentState`（含 `currentQuestion`、`responseMode`、`options`）写入 `local_participant` 的房间属性（attribute key = `INTERVIEW_STATE_ATTRIBUTE`）。
-- 前端订阅该属性，按 `responseMode` 渲染对应控件。
-- 用户点选后，前端通过 RPC（`SUBMIT_ANSWER_RPC_METHOD`）回传 `SubmitInterviewAnswerRpcRequest`。
-- agent 在 `_handle_submit_answer` 中记录答案、推进 `question_index`、发布下一题状态，返回 `SubmitInterviewAnswerRpcResponse`（含 `nextQuestionId`、`completed`）。
+机制(全部由语音引擎路径 `engine.py` / `supervisor.py` 承载;无 provider key 的纯 UI 降级 `runtime_bridge` 已于 2026-06-14 删除——没有 LLM 时访谈不再以降级模式运行,直接报错 + idle):
+- supervisor 在每题任务 `on_enter` 把当前题以 `InterviewAgentState`(含 `currentQuestion`、`responseMode`、`options`)写入 `local_participant` 的房间属性(attribute key = `INTERVIEW_STATE_ATTRIBUTE`),光标按题推进。
+- 前端订阅该属性,按 `responseMode` 渲染对应控件。
+- 用户点选后,前端通过 RPC(`SUBMIT_ANSWER_RPC_METHOD`)回传 `SubmitInterviewAnswerRpcRequest`。
+- supervisor 在 `_handle_submit_answer` 中:校验 questionId == 当前活跃题(`should_accept_ui_answer`),匹配则用 UI 答案从模型循环外部完成当前 question task(与模型语音作答**先到为准**、`_completed` 幂等),返回 `SubmitInterviewAnswerRpcResponse`(含 `accepted`)。
 
 ### 3.2 待补全
 
-> **状态（2026-06-14，commit `db9e94a`）**:语音引擎路径(`supervisor.py`)此前 publish `currentQuestion=None` 且工作流丢掉了 `options`/`responseMode`,导致 **live 语音访谈里结构化控件根本不渲染**(只有纯 RPC 的 `runtime_bridge` 旁路会发布)。已修复:
-> - `QuestionTaskConfig` 增 `options`(TS schema + Python 镜像);`buildInterviewWorkflowConfigFromDraft` 透传 options。
-> - `engine.py` 用 `index_runtime_questions(runtimeStudy)` 建 `{questionId: 完整 InterviewRuntimeQuestion}` map 传给 supervisor。
-> - **每题任务 `on_enter` 把完整 `InterviewRuntimeQuestion` 发布到 `INTERVIEW_STATE_ATTRIBUTE`**(经 `build_section_task_group` 的 `on_question_enter` 回调),光标按题(而非按 section)推进 → 前端按 `responseMode` 准确渲染当前题。
-> - `build_question_instructions` 对有选项的题列出 options,语音 AI 可朗读。
-> 下面 **item 2 已完成**;**item 1 仅剩"答案来源融合 + e2e"**。
+> **状态(2026-06-14)**:本节原列的两个缺口均已落地。
+> - **结构化渲染**(commit `db9e94a`):`QuestionTaskConfig` 增 `options`(TS + Python 镜像),`buildInterviewWorkflowConfigFromDraft` 透传;`engine.py` 用 `index_runtime_questions(runtimeStudy)` 建 `{questionId: InterviewRuntimeQuestion}` map;supervisor 每题 `on_enter` 发布完整题,光标按题推进;`build_question_instructions` 对有选项的题列出 options 供语音朗读。
+> - **答案来源融合**(commit `a067d5a`):supervisor 进场注册 `SUBMIT_ANSWER_RPC_METHOD` 并持当前活跃 question task 句柄;UI 点选经 `complete_with_ui_answer` 从模型循环外部完成该题,与模型 `complete_question` **先到为准**(`_completed` 守卫,check+complete 无 await,单线程 loop 原子)。游标守卫(`should_accept_ui_answer`)拒绝非当前题的过期/重复/乱序提交。`runtime_bridge` 删除后这是语音模式下唯一的 `submit_answer` 处理者。
+> - **纯 UI 降级路径删除**(commit 见本次):`runtime_bridge.py` 删,`main.py` 不再有无-LLM 降级分支。
 
-1. **语音 + 渲染融合**:语音引擎(`engine.py`/`supervisor.py`)与纯 RPC 的 `runtime_bridge` 仍是两条并行路径。**发布渲染状态的半边已在语音路径落地**(supervisor 每题发布 + 语音读题/读选项);**仍待补**:语音 supervisor 路径接收 `SUBMIT_ANSWER_RPC_METHOD`,把 UI 点选答案与语音答案以"先到为准"归一进同一个 `QuestionTaskResult`(`answer.source` 已区分来源)。
-2. ~~**options 填充**~~ **(已完成 `db9e94a`)**:运行态 `runtimeStudy` 的选项已透传到 `QuestionTaskConfig` 并随发布与语音提示带出。
-3. **前端契约**:`responseMode` 枚举与 `InterviewAgentState`(`currentQuestion`/`responseMode`/`options`)渲染字段已在 `packages/contracts` 固化,`apps/web` 据此渲染(`question-card.tsx` 消费 `state.currentQuestion`,无需改动)。
+权衡:点选作答直接完成该题、**跳过语音追问**(probe 下界只约束模型自己的 tool 路径)。
 
-> **端到端待验(NEXT)**:supervisor `on_enter` 真发布 + 前端真渲染的完整链路需 realtime 栈 + 真语音跑一场确认(见 `interviewee-portal/tasks.md` D1)。纯逻辑(选项透传、map 索引、指令、发布查找)已单测覆盖。
+**端到端待验(NEXT)**:supervisor `on_enter` 真发布 + 真语音作答/点选先到为准 + 前端真渲染的完整链路,需 realtime 栈 + 真语音跑一场确认(见 `interviewee-portal/tasks.md` D1)。livekit task/RPC 接线为集成级,纯逻辑(`should_accept_ui_answer`/`format_ui_answer`/选项透传/map 索引/指令)已单测覆盖。
+
+前端契约:`responseMode` 枚举与 `InterviewAgentState`(`currentQuestion`/`responseMode`/`options`)渲染字段已在 `packages/contracts` 固化,`apps/web` 据此渲染(`question-card.tsx` 消费 `state.currentQuestion`)。
 
 ### 3.3 渲染状态时序
 
@@ -162,8 +160,8 @@ DeepSeek 生成下一句话 / supervisor 决策是否推进
 | 组件 | 位置 | 是否纯逻辑可测 | 说明 |
 |---|---|---|---|
 | `responseMode` 枚举 + 渲染字段 | `packages/contracts` | ✅ | 前后端共享契约 |
-| 答案来源融合层 | `apps/agent/agent/interview/` | ✅ | RPC 答案与语音答案归一 |
-| options 填充修正 | `runtime_bridge.py` | ✅ | 从 runtimeStudy 带出选项 |
+| 答案来源融合层 | `supervisor.py` (`_handle_submit_answer`) + `tasks/question.py` (`complete_with_ui_answer`) | ✅(`should_accept_ui_answer`/`format_ui_answer`) | UI 点选与语音答案先到为准、游标守卫 |
+| options 填充 | `workflow.py` / `packages/contracts` | ✅ | 从 runtimeStudy 带出选项 |
 | `VideoFrameSampler` | `apps/agent/agent/interview/` | ✅（抽帧/帧差逻辑） | 订阅 video track，帧差驱动，维护最新帧 |
 | `build_vision_llm`（Qwen-VL） | `apps/agent/agent/providers/` | 配置解析可测 | 沿用可插拔后端 |
 | supervisor 视觉接入 | `supervisor.py` | 部分 | 触发点抓帧→查询→回灌上下文/决策 |
