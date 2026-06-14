@@ -48,9 +48,13 @@ layer + the `engine.py` `AgentSession` construction; nothing else branches.
 
 ### D2: Gemini Live runs in TEXT modality + Qwen TTS speaks ("Live API + TTS")
 
-In Gemini mode the session is `AgentSession(llm=Gemini RealtimeModel(modalities=["TEXT"]), tts=Qwen, vad=silero)`.
+In Gemini mode the session is `AgentSession(llm=Gemini RealtimeModel(modalities=["TEXT"]), tts=Qwen)`.
 Gemini Live is the **ears + brain** (ASR + understanding + response text); **Qwen
-TTS still produces the voice**. This keeps Chinese voice quality (cosyvoice) and
+TTS still produces the voice**. No local silero VAD runs in this mode — Gemini
+Live does its own server-side turn detection (`server_turn_detection=True`), so a
+client-side VAD would be a redundant/conflicting second detector and an
+unnecessary per-session model load. (The default cascade mode keeps silero VAD;
+it has no server-side detection.) This keeps Chinese voice quality (cosyvoice) and
 leaves the transcript/quality-flag pipeline intact: the engine forwards the
 AgentSession's `conversation_item_added` events (a model-agnostic, session-level
 event) to the transcript buffer, and `build_realtime_llm` explicitly enables the

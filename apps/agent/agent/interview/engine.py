@@ -123,29 +123,31 @@ class InterviewEngine:
 
     def _build_session(self) -> Any:
         from livekit.agents import AgentSession
-        from livekit.plugins import silero
 
         tts = build_tts(self._settings.speech)
-        vad = silero.VAD.load()
 
         # ADR-0007: Gemini Live (ears+brain, TEXT out) + Qwen TTS. The question
         # TaskGroup is model-agnostic (completes via tool calls + self.complete),
-        # so only the session's llm/stt wiring differs between modes.
+        # so only the session's llm/stt wiring differs between modes. Gemini Live
+        # does its own server-side turn detection, so this mode runs WITHOUT a
+        # local silero VAD (no per-session VAD load, no double detection).
         if self._settings.gemini is not None:
             from agent.providers.gemini import build_realtime_llm
 
             return AgentSession(
                 llm=build_realtime_llm(self._settings.gemini),
                 tts=tts,
-                vad=vad,
             )
 
-        # Default: Qwen STT + DeepSeek LLM + Qwen TTS cascade.
+        # Default: Qwen STT + DeepSeek LLM + Qwen TTS cascade. The cascade has no
+        # server-side turn detection, so it needs a local silero VAD.
+        from livekit.plugins import silero
+
         return AgentSession(
             stt=build_stt(self._settings.speech),
             tts=tts,
             llm=build_llm(self._settings.llm),
-            vad=vad,
+            vad=silero.VAD.load(),
         )
 
     def _build_room_options(self) -> Any:
