@@ -313,6 +313,14 @@ export const SubmitInterviewAnswerRpcRequestSchema = z.object({
 
 export const SubmitInterviewAnswerRpcResponseSchema = z.object({
   ok: z.literal(true),
+  // Whether the answer advanced the interview. `false` means the answer's
+  // questionId did not match the agent's authoritative cursor (a stale,
+  // duplicate, or out-of-order submit) — the cursor and recorded answers are
+  // left unchanged, and the client should keep rendering the published
+  // currentQuestion. Borrows Typebot's "a reply only counts for the input the
+  // server is currently on" guarantee, adapted to our targeted (questionId-
+  // carrying) answer payload.
+  accepted: z.boolean(),
   nextQuestionId: z.string().optional(),
   completed: z.boolean(),
 });

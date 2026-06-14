@@ -183,6 +183,7 @@ class SubmitInterviewAnswerRpcRequest(BaseModel):  # zod: SubmitInterviewAnswerR
 
 class SubmitInterviewAnswerRpcResponse(BaseModel):  # zod: SubmitInterviewAnswerRpcResponseSchema
     ok: Literal[True] = True
+    accepted: bool
     nextQuestionId: str | None = None
     completed: bool
 

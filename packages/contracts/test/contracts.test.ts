@@ -22,6 +22,7 @@ import {
   InterviewLinkSchema,
   QuestionTaskResultSchema,
   SurveyAnalysisReportOutputSchema,
+  SubmitInterviewAnswerRpcResponseSchema,
   SurveyDraftSchema,
   SurveyQuestionStatSchema,
   type SurveyAnalysisReportOutput,
@@ -600,6 +601,38 @@ describe("contracts: SurveyAnalysisReportOutput discriminated union", () => {
     expect(stats[0]?.kind).toBe("choice");
     expect(stats[1]?.kind).toBe("rating");
     expect(stats[2]?.kind).toBe("nps");
+  });
+});
+
+describe("contracts: SubmitInterviewAnswerRpcResponse accepted flag", () => {
+  it("round-trips an accepted advance", () => {
+    const res = SubmitInterviewAnswerRpcResponseSchema.parse({
+      ok: true,
+      accepted: true,
+      nextQuestionId: "q2",
+      completed: false,
+    });
+    expect(res.accepted).toBe(true);
+    expect(res.nextQuestionId).toBe("q2");
+  });
+
+  it("round-trips a rejected (stale/duplicate) submit", () => {
+    const res = SubmitInterviewAnswerRpcResponseSchema.parse({
+      ok: true,
+      accepted: false,
+      nextQuestionId: "q1",
+      completed: false,
+    });
+    expect(res.accepted).toBe(false);
+  });
+
+  it("requires the accepted flag", () => {
+    expect(
+      SubmitInterviewAnswerRpcResponseSchema.safeParse({
+        ok: true,
+        completed: true,
+      }).success,
+    ).toBe(false);
   });
 });
 

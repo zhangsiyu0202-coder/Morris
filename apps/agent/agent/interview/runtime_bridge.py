@@ -129,9 +129,34 @@ class InterviewRuntimeBridge:
         async with self._lock:
             current = self.current_question()
             if current is None:
+                # Interview already finished — nothing left to accept.
                 response = SubmitInterviewAnswerRpcResponse(
+                    accepted=False,
                     nextQuestionId=None,
                     completed=True,
+                )
+                return response.model_dump_json()
+
+            # The published currentQuestion is the authoritative cursor: only an
+            # answer for that exact question advances the interview. A mismatch
+            # is a stale / duplicate / out-of-order submit (a late click after
+            # the cursor already moved, or a double-submit whose second copy now
+            # targets the previous question) — reject without touching the
+            # cursor or recorded answers, and without republishing state, so the
+            # client keeps rendering the question still in play. Mirrors
+            # Typebot's "a reply only counts for the input the server is
+            # currently on", adapted to our targeted (questionId-carrying) RPC.
+            if request.answer.questionId != current.questionId:
+                self.logger.warn(
+                    "interview answer rejected: questionId does not match cursor",
+                    submittedQuestionId=request.answer.questionId,
+                    currentQuestionId=current.questionId,
+                    source=request.answer.source,
+                )
+                response = SubmitInterviewAnswerRpcResponse(
+                    accepted=False,
+                    nextQuestionId=current.questionId,
+                    completed=False,
                 )
                 return response.model_dump_json()
 
@@ -147,12 +172,14 @@ class InterviewRuntimeBridge:
             if next_question is None:
                 self._publish_state("completed", None)
                 response = SubmitInterviewAnswerRpcResponse(
+                    accepted=True,
                     nextQuestionId=None,
                     completed=True,
                 )
             else:
                 self._publish_state("ready", next_question)
                 response = SubmitInterviewAnswerRpcResponse(
+                    accepted=True,
                     nextQuestionId=next_question.questionId,
                     completed=False,
                 )
