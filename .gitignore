@@ -13,6 +13,8 @@ storybook-static/
 .env
 .env.*
 !.env.example
+# loose secrets dropped at the repo root (provider/API keys, never committed)
+api-keys.txt
 
 # python
 .venv/
