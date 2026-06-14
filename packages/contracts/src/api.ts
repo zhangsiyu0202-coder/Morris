@@ -335,6 +335,10 @@ export const QuestionTaskConfigSchema = z.object({
   questionId: z.string(),
   questionType: QuestionType,
   questionContent: z.string().min(1),
+  // Choice/ranking options, surfaced to the voice prompt so the AI can read
+  // them out. Empty for open_ended. (Structured UI rendering uses the published
+  // InterviewRuntimeQuestion, not this.)
+  options: z.array(z.string()).default([]),
   probeConfig: ProbeConfigSchema.optional(),
   stimulus: StimulusSchema.optional(),
 });
@@ -778,6 +782,7 @@ export function buildInterviewWorkflowConfigFromDraft(
         questionId: question.questionId,
         questionType: question.questionType,
         questionContent: question.questionText,
+        options: question.options,
         probeConfig: mapProbeLevelToProbeConfig(
           question.probeLevel,
           question.probeInstruction,

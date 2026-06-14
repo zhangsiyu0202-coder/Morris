@@ -29,7 +29,11 @@ from agent.interview.transcript import (
     SPEAKER_INTERVIEWEE,
     TranscriptCollector,
 )
-from agent.interview.workflow import initial_workflow_state, workflow_config_from_metadata
+from agent.interview.workflow import (
+    index_runtime_questions,
+    initial_workflow_state,
+    workflow_config_from_metadata,
+)
 from agent.providers.deepseek import build_llm
 from agent.providers.qwen import build_stt, build_tts
 from agent.providers.settings import ProviderSettings
@@ -68,6 +72,11 @@ class InterviewEngine:
         egress_recorder = await self._start_egress_recording()
 
         supervisor_class = create_supervisor_agent_class()
+        runtime_questions = (
+            index_runtime_questions(self._metadata.runtimeStudy)
+            if self._metadata.runtimeStudy is not None
+            else {}
+        )
         supervisor = supervisor_class(
             room=self._room,
             state=state,
@@ -75,6 +84,7 @@ class InterviewEngine:
             repository=self._repo,
             logger=self._log,
             egress_recorder=egress_recorder,
+            runtime_questions=runtime_questions,
         )
 
         self._log.info(

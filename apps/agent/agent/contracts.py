@@ -93,6 +93,7 @@ class QuestionTaskConfig(BaseModel):  # zod: QuestionTaskConfigSchema
     questionId: str
     questionType: QuestionType
     questionContent: str
+    options: list[str] = Field(default_factory=list)
     probeConfig: ProbeConfig | None = None
     stimulus: Stimulus | None = None
 

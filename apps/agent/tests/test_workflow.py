@@ -13,6 +13,7 @@ from agent.contracts import (
 from agent.interview.workflow import (
     collected_answers_map,
     completed_question_count,
+    index_runtime_questions,
     initial_workflow_state,
     is_complete,
     record_question_result,
@@ -20,6 +21,22 @@ from agent.interview.workflow import (
     workflow_config_from_metadata,
     workflow_config_from_study,
 )
+from agent.interview.tasks.question import build_question_instructions
+
+
+def _choice_question(qid: str, options: list[str]) -> InterviewRuntimeQuestion:
+    return InterviewRuntimeQuestion(
+        questionId=qid,
+        sectionId="sec1",
+        sectionTitle="Background",
+        orderInSection=0,
+        questionText=f"Which for {qid}?",
+        questionType="single_choice",
+        probeLevel="standard",
+        probeInstruction="",
+        options=options,
+        responseMode="single_select",
+    )
 
 
 def _question(qid: str, *, probe: str = "standard") -> InterviewRuntimeQuestion:
@@ -144,3 +161,37 @@ def test_recording_results_drives_completion_and_answers_map():
     assert answers["q1"]["source"] == "voice"
     assert len(answers["q2"]["probe"]["rounds"]) == 2
     assert answers["q2"]["probe"]["rounds"][0]["probeQuestion"] == "Why two?"
+
+
+def test_choice_options_preserved_into_task_config():
+    # Structured-question fix: options must survive runtime -> QuestionTaskConfig
+    # so the voice prompt can read them out.
+    study = _study(_choice_question("q1", ["A", "B", "C"]))
+    config = workflow_config_from_study(study, session_id="s1")
+    task = config.sections[0].questions[0]
+    assert task.questionId == "q1"
+    assert task.options == ["A", "B", "C"]
+
+
+def test_index_runtime_questions_maps_by_id():
+    study = _study(_question("q1"), _choice_question("q2", ["X", "Y"]))
+    index = index_runtime_questions(study)
+    assert set(index) == {"q1", "q2"}
+    # The full runtime question is preserved verbatim for publishing to the room.
+    assert index["q2"].responseMode == "single_select"
+    assert index["q2"].options == ["X", "Y"]
+
+
+def test_build_question_instructions_lists_choice_options():
+    study = _study(_choice_question("q1", ["Espresso", "Latte"]))
+    task = workflow_config_from_study(study, session_id="s1").sections[0].questions[0]
+    text = build_question_instructions(task)
+    assert "Espresso" in text and "Latte" in text
+    assert "options" in text.lower()
+
+
+def test_build_question_instructions_open_ended_has_no_options_block():
+    study = _study(_question("q1"))
+    task = workflow_config_from_study(study, session_id="s1").sections[0].questions[0]
+    text = build_question_instructions(task)
+    assert "preset options" not in text

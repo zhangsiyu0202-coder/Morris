@@ -51,6 +51,7 @@ def _section_config_from_runtime(section: InterviewRuntimeSection) -> SectionTas
             questionId=question.questionId,
             questionType=cast(QuestionType, question.questionType),
             questionContent=question.questionText,
+            options=list(question.options),
             probeConfig=_probe_config_from_study(question.probeLevel, question.probeInstruction),
             stimulus=None,
         )
@@ -63,6 +64,24 @@ def _section_config_from_runtime(section: InterviewRuntimeSection) -> SectionTas
         sectionInstruction=section.objective or None,
         questions=questions,
     )
+
+
+def index_runtime_questions(
+    study: InterviewRuntimeStudy,
+) -> dict[str, InterviewRuntimeQuestion]:
+    """Map every runtime question by its ``questionId`` (pure).
+
+    The Supervisor publishes the current question to the room so the interviewee
+    portal can render the structured control (single/multi/scale/ranking). The
+    full ``InterviewRuntimeQuestion`` (text + type + options + responseMode +
+    stimulus) is exactly the shape the renderer consumes, so it is published
+    verbatim rather than reconstructed.
+    """
+    return {
+        question.questionId: question
+        for section in study.sections
+        for question in section.questions
+    }
 
 
 def _supervisor_instruction_from_study(study: InterviewRuntimeStudy) -> str:

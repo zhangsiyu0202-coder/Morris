@@ -343,6 +343,13 @@ describe("contracts: survey draft shape", () => {
                 probeLevel: "deep",
                 probeInstruction: "Ask what surprised them and what blocked them.",
               },
+              {
+                questionText: "Which onboarding step was hardest?",
+                questionType: "single_choice",
+                probeLevel: "standard",
+                probeInstruction: "",
+                options: ["Signup", "Setup", "First task"],
+              },
             ],
           },
         ],
@@ -351,6 +358,10 @@ describe("contracts: survey draft shape", () => {
 
     expect(workflow.sections[0]?.questions[0]?.probeConfig?.level).toBe("deep");
     expect(workflow.sections[0]?.questions[0]?.questionContent).toContain("first week");
+    // Structured-rendering fix: choice options propagate into the workflow's
+    // QuestionTaskConfig (so the voice prompt can read them out).
+    expect(workflow.sections[0]?.questions[1]?.options).toEqual(["Signup", "Setup", "First task"]);
+    expect(workflow.sections[0]?.questions[0]?.options).toEqual([]);
   });
 
   it("builds room metadata that bundles runtime and workflow state", () => {

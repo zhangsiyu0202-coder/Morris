@@ -12,12 +12,14 @@ delegated to ``agent.interview.workflow`` (pure, tested).
 from __future__ import annotations
 
 import time
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
 from agent.contracts import (
     INTERVIEW_STATE_ATTRIBUTE,
     InterviewAgentState,
+    InterviewRuntimeQuestion,
     InterviewWorkflowState,
     QuestionTaskResult,
     SectionTaskGroupConfig,
@@ -49,6 +51,7 @@ def create_supervisor_agent_class():
             repository: Any | None,
             logger: Any,
             egress_recorder: Any | None = None,
+            runtime_questions: Mapping[str, InterviewRuntimeQuestion] | None = None,
         ) -> None:
             self._room = room
             self._state = state
@@ -56,6 +59,9 @@ def create_supervisor_agent_class():
             self._repo = repository
             self._log = logger
             self._egress = egress_recorder
+            # questionId -> full runtime question, published to the room so the
+            # interviewee portal renders the structured control for this question.
+            self._runtime_questions = dict(runtime_questions or {})
             super().__init__(instructions=state.workflowConfig.supervisorInstruction)
 
         # -- lifecycle ----------------------------------------------------
@@ -110,11 +116,22 @@ def create_supervisor_agent_class():
                 sectionId=section.sectionId,
                 questionCount=len(section.questions),
             )
-            task_group = build_section_task_group(section, chat_ctx=self.chat_ctx)
+            task_group = build_section_task_group(
+                section, chat_ctx=self.chat_ctx, on_question_enter=self._on_question_enter
+            )
             results = await self._run_task_group(task_group)
             self._record_section_results(section, results)
             if self._repo is not None:
                 self._persist_transcript()
+
+        def _on_question_enter(self, question_id: str) -> None:
+            """Publish the current question to the room when its task starts, so
+            the interviewee portal renders the structured control for it."""
+            self._state.currentQuestionTaskId = question_id
+            runtime_question = self._runtime_questions.get(question_id)
+            if runtime_question is not None:
+                self._state.currentSectionId = runtime_question.sectionId
+            self._publish_state("collecting")
 
         async def _run_task_group(self, task_group: Any) -> dict[str, QuestionTaskResult]:
             """Run a section TaskGroup and return ``{task_id: QuestionTaskResult}``.
@@ -192,11 +209,12 @@ def create_supervisor_agent_class():
             )
 
         def _publish_state(self, status: str) -> None:
+            current_question = self._runtime_questions.get(self._state.currentQuestionTaskId or "")
             payload = InterviewAgentState(
                 status=status,
                 currentSectionId=self._state.currentSectionId,
                 currentQuestionId=self._state.currentQuestionTaskId,
-                currentQuestion=None,
+                currentQuestion=current_question,
                 updatedAt=_now_iso(),
             )
             try:

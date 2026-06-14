@@ -1,6 +1,8 @@
 """Generic question task for a configured interview question."""
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from agent.contracts import (
     ProbeResult,
     ProbeRound,
@@ -32,6 +34,17 @@ Probing (this question is always probed):
   main question.
 """
 
+    options_text = ""
+    if question.options:
+        rendered = "\n".join(f"  - {option}" for option in question.options)
+        options_text = f"""
+
+This is a {question.questionType} question with preset options. Read the options
+aloud naturally as part of asking, and let the respondent choose by speaking (the
+interviewee may also pick on screen). The options are:
+{rendered}
+"""
+
     stimulus_text = ""
     if question.stimulus is not None:
         stimulus_text = """
@@ -44,7 +57,7 @@ You are conducting one configured question inside a qualitative voice interview.
 
 Question type: {question.questionType}
 Question content: {question.questionContent}
-{stimulus_text}
+{options_text}{stimulus_text}
 Ask the question naturally and keep the interview conversational.
 {probe_text}
 Do not invent fields outside the tool arguments. Do not expose internal task names.
@@ -55,8 +68,14 @@ def create_question_task_class():
     from livekit.agents import AgentTask, function_tool
 
     class LiveKitQuestionTask(AgentTask[QuestionTaskResult]):
-        def __init__(self, question: QuestionTaskConfig, chat_ctx=None) -> None:
+        def __init__(
+            self,
+            question: QuestionTaskConfig,
+            chat_ctx=None,
+            on_enter_publish: Callable[[], None] | None = None,
+        ) -> None:
             self.question = question
+            self._on_enter_publish = on_enter_publish
             # Accumulates each probe exchange so we can enforce the round ceiling
             # deterministically rather than trusting the LLM to count.
             self._rounds: list[ProbeRound] = []
@@ -71,6 +90,10 @@ def create_question_task_class():
             return probe.maxRounds if probe is not None else 0
 
         async def on_enter(self) -> None:
+            # Publish the current question to the room first, so the interviewee
+            # portal can render its structured control before the AI speaks.
+            if self._on_enter_publish is not None:
+                self._on_enter_publish()
             await self.session.generate_reply(
                 instructions=f"Ask this interview question naturally: {self.question.questionContent}"
             )
