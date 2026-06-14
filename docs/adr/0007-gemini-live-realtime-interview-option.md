@@ -103,6 +103,38 @@ not REST). Secrets are read in the provider layer, never in pure cores.
   the default; Gemini Live is permitted **only** as the ADR-0007 opt-in realtime
   mode. Any further provider change still requires a new ADR.
 
+## Review notes (2026-06-14)
+
+Code review of the implementing commits (`a44061a..eac99c2`). Verdict: pass.
+
+**Verified (was the load-bearing risk):** `RealtimeModel(modalities=["TEXT"])` +
+an external `tts=` is a documented, supported LiveKit `AgentSession` pattern
+(official community example uses `RealtimeModel(modalities=["text"])` with a
+separate Cartesia TTS). The "Live API (TEXT) + external Qwen TTS" design is
+therefore sound, not speculative.
+
+**Follow-ups (not yet implemented — optional hardenings):**
+
+- *[low] Modality literal.* `build_realtime_llm` passes the string `"TEXT"`,
+  which matches the google plugin's `types.Modality` enum value (the openai
+  plugin's lowercase `"text"` would NOT). Correct as-is; passing
+  `types.Modality.TEXT` would be unambiguous and case-change-proof.
+- *[low] `ProviderSettings` invariant is convention-only.* `llm` is now optional;
+  the default branch calls `build_llm(self._settings.llm)`. Only
+  `resolve_provider_settings` constructs the dataclass and guarantees
+  "gemini None ⟺ llm set". A guard in `engine._build_session` (raise a clear
+  error if both `llm` and `gemini` are None) would make the invariant explicit.
+
+**Known (not defects):**
+
+- The `gemini.py` build path has no unit coverage (SDK wrappers are
+  integration-only per `testing.md`); the actual `RealtimeModel(...)`
+  construction + end-to-end audio remain unexercised until a live run with the
+  `realtime` extra + a Gemini key/Cloudflare gateway.
+- Gemini mode drops DeepSeek from the **agent realtime** availability gate, but
+  `analyzeSession` / `analyzeSurvey` still use DeepSeek for post-session
+  analysis — a Gemini-mode deployment still needs a DeepSeek key for analysis.
+
 ## References
 
 - `.kiro/steering/architecture.md` — provider rules (the gate this ADR opens).
