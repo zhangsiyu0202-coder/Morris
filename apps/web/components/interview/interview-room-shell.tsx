@@ -13,11 +13,12 @@ import {
   VideoOff,
 } from "lucide-react"
 import type { InterviewAnswerPayload, LinkKind } from "@merism/contracts"
+import { RoomContext } from "@livekit/components-react"
 import type { LiveInterviewSession } from "@/lib/hooks/use-live-interview"
 import { Brand } from "./pre-interview-flow"
-import { ConversationPanel } from "./conversation-panel"
 import { QuestionStage } from "./question-stage"
 import { SelfCam } from "./self-cam"
+import { VoiceVisualizer } from "./voice-visualizer"
 
 interface InterviewRoomShellProps {
   session: LiveInterviewSession
@@ -48,7 +49,8 @@ export function InterviewRoomShell({ session, linkKind }: InterviewRoomShellProp
   }
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-ink-900">
+    <RoomContext.Provider value={session.room ?? undefined}>
+      <div className="flex h-dvh flex-col overflow-hidden bg-ink-900">
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-ink-0/10 bg-ink-900 px-6">
         <div className="flex items-center gap-4">
           <Brand tone="dark" />
@@ -86,8 +88,8 @@ export function InterviewRoomShell({ session, linkKind }: InterviewRoomShellProp
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside className="flex w-[380px] shrink-0 flex-col border-r border-ink-0/10">
-          <div className="flex min-h-0 basis-2/3 flex-col">
-            <ConversationPanel transcript={session.transcript} />
+          <div className="flex min-h-0 basis-2/3 flex-col items-center justify-center">
+            {session.room ? <VoiceVisualizer /> : null}
           </div>
           <div className="min-h-0 basis-1/3">
             <SelfCam
@@ -137,7 +139,8 @@ export function InterviewRoomShell({ session, linkKind }: InterviewRoomShellProp
           />
         </div>
       </footer>
-    </div>
+      </div>
+    </RoomContext.Provider>
   )
 }
 

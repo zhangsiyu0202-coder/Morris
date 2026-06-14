@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { LocalVideoTrack } from "livekit-client"
+import type { LocalVideoTrack, Room } from "livekit-client"
 import type {
   InterviewAgentState,
   InterviewAnswerPayload,
@@ -56,6 +56,9 @@ export interface LiveInterviewSession {
   setCameraEnabled: (enabled: boolean) => Promise<void>
   /** Toggle local screen-share publishing (consent-gated by the caller). */
   setScreenShareEnabled: (enabled: boolean) => Promise<void>
+  /** Underlying LiveKit room, for `@livekit/components-react` RoomContext
+   * (voice visualizer). `null` until the transport is created. */
+  room: Room | null
 }
 
 interface ConnectArgs {
@@ -85,6 +88,7 @@ export function useLiveInterview(args: ConnectArgs | null): LiveInterviewSession
   const [media, setMedia] = useState<LocalMediaState>(INITIAL_MEDIA)
   const [localVideoTrack, setLocalVideoTrack] = useState<LocalVideoTrack | null>(null)
   const [runtimeStudy, setRuntimeStudy] = useState<InterviewRuntimeStudy | null>(null)
+  const [room, setRoom] = useState<Room | null>(null)
   const transportRef = useRef<InterviewTransport | null>(null)
 
   useEffect(() => {
@@ -100,6 +104,7 @@ export function useLiveInterview(args: ConnectArgs | null): LiveInterviewSession
       onLocalVideoTrack: setLocalVideoTrack,
     })
     transportRef.current = transport
+    setRoom(transport.getRoom())
 
     transport.connect(args.serverUrl, args.token).catch(() => {
       // Phase/error already surfaced via callbacks.
@@ -112,6 +117,7 @@ export function useLiveInterview(args: ConnectArgs | null): LiveInterviewSession
       setTranscript([])
       setMedia(INITIAL_MEDIA)
       setLocalVideoTrack(null)
+      setRoom(null)
     }
   }, [args])
 
@@ -153,6 +159,7 @@ export function useLiveInterview(args: ConnectArgs | null): LiveInterviewSession
       setMicrophoneEnabled,
       setCameraEnabled,
       setScreenShareEnabled,
+      room,
     }),
     [
       phase,
@@ -168,6 +175,7 @@ export function useLiveInterview(args: ConnectArgs | null): LiveInterviewSession
       setMicrophoneEnabled,
       setCameraEnabled,
       setScreenShareEnabled,
+      room,
     ],
   )
 }

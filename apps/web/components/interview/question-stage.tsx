@@ -18,7 +18,7 @@ interface QuestionStageProps {
 export function QuestionStage({ question, onSubmit }: QuestionStageProps) {
   if (!question.stimulus) {
     return (
-      <div className="mx-auto w-full max-w-2xl">
+      <div className="mx-auto w-full max-w-4xl">
         <QuestionCard question={question} onSubmit={onSubmit} />
       </div>
     )

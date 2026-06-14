@@ -146,6 +146,12 @@ export class InterviewTransport {
     this.wireRoomEvents()
   }
 
+  /** The underlying LiveKit room, for `@livekit/components-react` RoomContext
+   * (e.g. the voice visualizer). Stable for the transport's lifetime. */
+  getRoom(): Room {
+    return this.room
+  }
+
   async connect(serverUrl: string, token: string): Promise<void> {
     this.callbacks.onPhase?.("connecting")
     try {
