@@ -7,6 +7,7 @@ dependencies = [
     "pydantic>=2.9",
     "httpx>=0.27",
     "appwrite>=6.0",
+    "opencc-python-reimplemented>=0.1.7",
 ]
 
 # Heavy realtime deps are an extra so the foundation/tests stay fast to install.
