@@ -154,7 +154,28 @@ class EgressRecorder:
                 api_key=self._settings.api_key,
                 api_secret=self._settings.api_secret,
             ) as lk:
-                await lk.egress.stop_egress(StopEgressRequest(egress_id=self._egress_id))
+                # Tolerate the "already complete" race: when the source
+                # closes (browser disconnects mid-interview), egress
+                # auto-completes before the supervisor can call StopEgress.
+                # The Twirp call then raises ``failed_precondition`` 412.
+                # We treat that as a successful no-op and proceed to
+                # collect the artifact, since the file is already on disk.
+                try:
+                    await lk.egress.stop_egress(StopEgressRequest(egress_id=self._egress_id))
+                except Exception as stop_error:  # noqa: BLE001 - error inspected below
+                    msg = str(stop_error).lower()
+                    already_done = (
+                        "egress_complete cannot be stopped" in msg
+                        or "egress_aborted cannot be stopped" in msg
+                        or "egress_failed cannot be stopped" in msg
+                    )
+                    if not already_done:
+                        raise
+                    self._log.info(
+                        "egress already finished before stop request; collecting artifact",
+                        sessionId=session_id,
+                        egressId=self._egress_id,
+                    )
                 info = await self._wait_for_complete(lk, self._egress_id, timeout_s=timeout_s)
                 if info is None:
                     self._log.warn("egress did not complete in time", sessionId=session_id)
@@ -203,7 +224,12 @@ class EgressRecorder:
             return None
         file_info = info.file_results[0]
         filename = file_info.filename or "interview.mp4"
-        duration_ms = int(file_info.duration * 1000) if file_info.duration else 0
+        # LiveKit egress reports ``duration`` as a nanosecond integer
+        # (per livekit-protocol/proto/livekit_egress.proto), not as
+        # seconds. Convert ns -> ms; older builds returning ``0`` (no
+        # duration available) flow through the existing fallback.
+        raw_duration = getattr(file_info, "duration", 0) or 0
+        duration_ms = int(raw_duration / 1_000_000)
         recording_format = _format_from_filename(filename)
         location = file_info.location or ""
 
@@ -238,10 +264,24 @@ class EgressRecorder:
 
     def _resolve_local_path(self, location: str, filename: str) -> str | None:
         if self._settings.local_mount:
-            if location.startswith("/"):
-                relative = location.lstrip("/")
-                return os.path.join(self._settings.local_mount, relative)
-            return os.path.join(self._settings.local_mount, os.path.basename(location or filename))
+            # The container writes to ``output_dir`` (e.g. ``/out``) which is
+            # bind-mounted from ``local_mount`` on the host. The container
+            # absolute path is therefore <output_dir>/<filename>; on the host
+            # the file lives directly under <local_mount>, NOT under
+            # <local_mount>/<output_dir>. Strip the output_dir prefix so the
+            # join produces a real host path.
+            output_dir = (self._settings.output_dir or "").rstrip("/")
+            normalized = location
+            if output_dir and normalized.startswith(output_dir + "/"):
+                normalized = normalized[len(output_dir) + 1:]
+            elif normalized.startswith("/"):
+                normalized = normalized.lstrip("/")
+            # When normalized still has a path separator (e.g. nested
+            # subdirs under output_dir), preserve it; otherwise just join
+            # the basename for safety.
+            if "/" in normalized:
+                return os.path.join(self._settings.local_mount, normalized)
+            return os.path.join(self._settings.local_mount, os.path.basename(normalized or filename))
         if location and os.path.isabs(location):
             return location
         return None

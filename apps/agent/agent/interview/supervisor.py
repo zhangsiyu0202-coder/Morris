@@ -11,6 +11,7 @@ delegated to ``agent.interview.workflow`` (pure, tested).
 """
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -103,6 +104,21 @@ def create_supervisor_agent_class():
                     self._repo.trigger_post_session_analysis(
                         self._state.sessionId, self._state.surveyId
                     )
+            except asyncio.CancelledError:
+                # Browser disconnect / worker shutdown. Persist what we already
+                # collected, but do NOT mark the session as ``failed`` — the
+                # link may still allow a reconnect, and a researcher reading
+                # the report later should see this as ``abandoned``, not
+                # ``failed``. CancelledError must be re-raised so asyncio can
+                # complete cancellation cleanly.
+                self._log.warn(
+                    "interview cancelled mid-run",
+                    sessionId=self._state.sessionId,
+                )
+                if self._repo is not None:
+                    self._persist_transcript()
+                    await self._persist_recording()
+                raise
             except Exception as error:  # noqa: BLE001 - surface + persist failure
                 self._log.error("interview failed", sessionId=self._state.sessionId, error=str(error))
                 if self._repo is not None:
@@ -284,11 +300,37 @@ def create_supervisor_agent_class():
                 currentQuestion=current_question,
                 updatedAt=_now_iso(),
             )
+            # set_attributes is async; _publish_state is called from both
+            # sync callback (on_question_enter) and async paths (on_enter,
+            # _record_section_results). Use the running loop to schedule the
+            # coroutine — this works in both contexts since LiveKit always
+            # invokes our callbacks from inside its event loop.
+            import asyncio as _asyncio
+            coro = self._room.local_participant.set_attributes(
+                {INTERVIEW_STATE_ATTRIBUTE: payload.model_dump_json()}
+            )
             try:
-                self._room.local_participant.set_attributes(
-                    {INTERVIEW_STATE_ATTRIBUTE: payload.model_dump_json()}
+                loop = _asyncio.get_running_loop()
+            except RuntimeError:
+                # Not in a running loop — coroutine would never be awaited.
+                # Close it explicitly to suppress the warning, then log once.
+                coro.close()
+                self._log.warn(
+                    "publish agent state skipped: no running loop",
+                    status=status,
                 )
-            except Exception as error:  # noqa: BLE001 - attribute publish is best-effort
-                self._log.warn("failed to publish agent state", error=str(error))
+                return
+            task = loop.create_task(coro)
+            # Surface any actual publish failure (network / livekit error)
+            # without blocking the caller — best-effort logging.
+            def _on_done(t: "_asyncio.Task[Any]", *, status_=status) -> None:
+                exc = t.exception()
+                if exc is not None:
+                    self._log.warn(
+                        "failed to publish agent state",
+                        status=status_,
+                        error=str(exc),
+                    )
+            task.add_done_callback(_on_done)
 
     return InterviewSupervisorAgent

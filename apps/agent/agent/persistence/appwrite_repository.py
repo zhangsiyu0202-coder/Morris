@@ -409,6 +409,21 @@ class InterviewRepository:
         try:
             self._db.update_document(DATABASE_ID, SESSIONS_COLLECTION_ID, session_id, fields)
         except Exception as error:  # noqa: BLE001 - never let persistence kill the call
+            if _is_sdk_skew_error(error):
+                # Self-hosted Appwrite Server 1.6.0 (the latest stable that
+                # talks to MariaDB) returns documents without ``$sequence``
+                # and files without ``sizeActual / encryption / compression``;
+                # the Python SDK 20.x is already built for the (unreleased)
+                # 1.9.5 response shape and rejects the body via pydantic.
+                # The wire write itself succeeded; we surface a warn rather
+                # than masking the operation entirely.
+                self._log.warn(
+                    "persistence sdk-response-validation skew (state still updated)",
+                    action=action,
+                    sessionId=session_id,
+                    note="server v1.6.0 lacks $sequence in update response; SDK 20.x requires it",
+                )
+                return
             self._log.error("persistence failed", action=action, sessionId=session_id, error=str(error))
 
 
@@ -417,6 +432,33 @@ import json as _stdlib_json
 
 def _json_body(payload: Mapping[str, Any]) -> str:
     return _stdlib_json.dumps(payload)
+
+
+def _is_sdk_skew_error(error: BaseException) -> bool:
+    """True when the Appwrite Python SDK rejected a successful HTTP
+    response because the server (1.6.0 stable) returns a payload that
+    omits fields the SDK 20.x pydantic models expect (``$sequence`` on
+    Document; ``sizeActual / encryption / compression`` on File).
+
+    The SDK either raises ``pydantic.ValidationError`` directly or wraps
+    it in an ``AppwriteException`` whose message starts with
+    ``"Unable to parse response into <Model>"``. Both forms indicate
+    the wire write succeeded; only the response *parsing* failed.
+
+    Genuine errors (404, 5xx, network) never match either form and
+    re-raise from the call site. This helper exists because Appwrite
+    ships SDK 20.x against a server release (1.9.5) that has not been
+    cut yet, and 1.6.0 is the latest stable on Docker Hub that runs on
+    MariaDB. Once Appwrite 1.9.x ships and we upgrade, every call site
+    using this helper can drop back to the plain SDK call.
+    """
+    try:
+        from pydantic import ValidationError  # local: keep import surface tight
+    except ImportError:
+        ValidationError = None  # type: ignore[assignment]
+    if ValidationError is not None and isinstance(error, ValidationError):
+        return True
+    return "Unable to parse response into" in str(error)
 
 
 class _FunctionsAdapter:
@@ -461,24 +503,49 @@ class _DatabasesAdapter:
         }
         if permissions is not None:
             kwargs["permissions"] = list(permissions)
-        return self._databases.create_document(**kwargs)
+        try:
+            return self._databases.create_document(**kwargs)
+        except Exception as error:  # noqa: BLE001 - inspect for SDK skew
+            if _is_sdk_skew_error(error):
+                return {"$id": document_id, **dict(data)}
+            raise
 
     def update_document(
         self, database_id: str, collection_id: str, document_id: str, data: Mapping[str, Any]
     ) -> Any:
-        return self._databases.update_document(
-            database_id=database_id,
-            collection_id=collection_id,
-            document_id=document_id,
-            data=dict(data),
-        )
+        try:
+            return self._databases.update_document(
+                database_id=database_id,
+                collection_id=collection_id,
+                document_id=document_id,
+                data=dict(data),
+            )
+        except Exception as error:  # noqa: BLE001 - inspect for SDK skew
+            if _is_sdk_skew_error(error):
+                return {"$id": document_id, **dict(data)}
+            raise
 
     def get_document(self, database_id: str, collection_id: str, document_id: str) -> Mapping[str, Any]:
-        return self._databases.get_document(
-            database_id=database_id,
-            collection_id=collection_id,
-            document_id=document_id,
-        )
+        try:
+            return self._databases.get_document(
+                database_id=database_id,
+                collection_id=collection_id,
+                document_id=document_id,
+            )
+        except Exception as error:  # noqa: BLE001 - inspect for SDK skew
+            if _is_sdk_skew_error(error):
+                client = getattr(self._databases, "client", None)
+                if client is None:
+                    raise
+                api_path = (
+                    f"/databases/{database_id}/collections/{collection_id}/documents/{document_id}"
+                )
+                return client.call(
+                    "get",
+                    api_path,
+                    {"X-Appwrite-Project": client.get_config("project")},
+                )
+            raise
 
 
 class _StorageAdapter:
@@ -501,7 +568,27 @@ class _StorageAdapter:
         }
         if permissions is not None:
             kwargs["permissions"] = list(permissions)
-        return self._storage.create_file(**kwargs)
+        try:
+            return self._storage.create_file(**kwargs)
+        except Exception as error:  # noqa: BLE001 - inspect for SDK skew
+            if _is_sdk_skew_error(error):
+                # Upload succeeded server-side; only the response model
+                # rejected the body. Re-fetch metadata via raw HTTP if
+                # we can; otherwise return a minimal stub so callers can
+                # still wire up the recording document with the file id.
+                client = getattr(self._storage, "client", None)
+                if client is not None:
+                    api_path = f"/storage/buckets/{bucket_id}/files/{file_id}"
+                    try:
+                        return client.call(
+                            "get",
+                            api_path,
+                            {"X-Appwrite-Project": client.get_config("project")},
+                        )
+                    except Exception:  # noqa: BLE001 - synthesise as last resort
+                        pass
+                return {"$id": file_id, "bucketId": bucket_id}
+            raise
 
     def delete_file(self, bucket_id: str, file_id: str) -> Any:
         return self._storage.delete_file(bucket_id=bucket_id, file_id=file_id)
