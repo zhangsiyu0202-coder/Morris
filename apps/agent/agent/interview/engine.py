@@ -109,7 +109,7 @@ class InterviewEngine:
         settings = EgressSettings.from_env(os.environ)
         if settings is None:
             self._log.warn(
-                "room composite egress skipped: LiveKit credentials missing",
+                "participant egress skipped: LiveKit credentials missing",
                 sessionId=self._metadata.sessionId,
             )
             return None
@@ -117,7 +117,7 @@ class InterviewEngine:
         room_name = getattr(self._room, "name", None)
         if not room_name:
             self._log.warn(
-                "room composite egress skipped: room name unavailable",
+                "participant egress skipped: room name unavailable",
                 sessionId=self._metadata.sessionId,
             )
             return None

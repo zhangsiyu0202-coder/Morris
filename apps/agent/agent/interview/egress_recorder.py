@@ -1,8 +1,16 @@
-"""LiveKit room-composite egress for interview video recordings.
+"""LiveKit participant egress for interview video recordings.
 
-Starts a room-composite MP4 egress when the interview begins, stops it on
-completion, polls for the finalized artifact, and returns the bytes for upload
-to Appwrite. Missing egress infrastructure or API failures degrade gracefully
+Records the interviewee participant's tracks (camera + mic + screen
+share) for the duration of the session, polls for the finalized mp4
+when the session ends, and returns the bytes for upload to Appwrite.
+
+Per LiveKit's egress overview, ``ParticipantEgressRequest`` is the
+canonical mode for "record one participant in a realtime session" —
+it runs server-side without a Chromium compositor (unlike
+``RoomCompositeEgressRequest``), starts in <1s, and auto-stops when
+the participant leaves the room.
+
+Missing egress infrastructure or API failures degrade gracefully
 (the caller logs and continues without blocking session completion).
 """
 from __future__ import annotations
@@ -71,7 +79,20 @@ def _format_from_filename(name: str) -> RecordingFormat:
 
 
 class EgressRecorder:
-    """Manages one room-composite egress for a single interview session."""
+    """Records the interviewee participant's tracks for a single session.
+
+    Uses LiveKit's ``ParticipantEgressRequest`` rather than the heavier
+    ``RoomCompositeEgressRequest``: per the official egress overview, the
+    participant variant is "designed to simplify the workflow of
+    recording participants in a realtime session, and handles the
+    changes in track state, such as when a track is muted." It records
+    server-side without spinning up a second Chromium instance, starts
+    in <1s instead of 5-10s, and stops automatically when the
+    interviewee leaves the room.
+
+    Identity convention: ``interviewee:<sessionId>`` (set by the
+    ``issueLivekitToken`` Function on the LiveKit access token).
+    """
 
     def __init__(self, settings: EgressSettings, logger: Any) -> None:
         self._settings = settings
@@ -83,9 +104,18 @@ class EgressRecorder:
         return self._egress_id
 
     async def start(self, *, room_name: str, session_id: str) -> bool:
-        """Begin room-composite video egress. Returns False on failure."""
+        """Begin participant egress for ``interviewee:<sessionId>``.
+
+        ``screen_share=True`` so the recording captures camera + mic +
+        any screen share the interviewee opts into. Returns False on
+        failure; egress is optional and must never block the session.
+        """
         from livekit import api
-        from livekit.protocol.egress import EncodedFileOutput, EncodedFileType, RoomCompositeEgressRequest
+        from livekit.protocol.egress import (
+            EncodedFileOutput,
+            EncodedFileType,
+            ParticipantEgressRequest,
+        )
 
         output_dir = (self._settings.output_dir or "recordings").rstrip("/")
         filepath = f"{output_dir}/{session_id}.mp4"
@@ -108,9 +138,10 @@ class EgressRecorder:
                 ),
             )
 
-        request = RoomCompositeEgressRequest(
+        request = ParticipantEgressRequest(
             room_name=room_name,
-            layout="grid",
+            identity=f"interviewee:{session_id}",
+            screen_share=True,
             file_outputs=[file_output],
         )
         http_url = _http_livekit_url(self._settings.livekit_url)
@@ -120,18 +151,19 @@ class EgressRecorder:
                 api_key=self._settings.api_key,
                 api_secret=self._settings.api_secret,
             ) as lk:
-                info = await lk.egress.start_room_composite_egress(request)
+                info = await lk.egress.start_participant_egress(request)
                 self._egress_id = info.egress_id
                 self._log.info(
-                    "room composite egress started",
+                    "participant egress started",
                     sessionId=session_id,
                     egressId=self._egress_id,
                     room=room_name,
+                    identity=f"interviewee:{session_id}",
                 )
                 return True
         except Exception as error:  # noqa: BLE001 - egress is optional
             self._log.warn(
-                "failed to start room composite egress",
+                "failed to start participant egress",
                 sessionId=session_id,
                 room=room_name,
                 error=str(error),
@@ -194,7 +226,7 @@ class EgressRecorder:
                 return artifact
         except Exception as error:  # noqa: BLE001 - recording must not block completion
             self._log.warn(
-                "failed to finalize room composite egress",
+                "failed to finalize participant egress",
                 sessionId=session_id,
                 egressId=self._egress_id,
                 error=str(error),
