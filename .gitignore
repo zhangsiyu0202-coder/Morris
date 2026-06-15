@@ -51,3 +51,10 @@ handoff.md
 .kiro/skills/
 .opencode/
 .vscode/
+
+# Local egress recording artifacts (mp4 + sidecar json from dev sessions).
+infra/docker/egress/*.mp4
+infra/docker/egress/EG_*.json
+
+# Local Playwright pressure test artifacts.
+tmp/

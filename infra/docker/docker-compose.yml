@@ -40,6 +40,15 @@ services:
     depends_on:
       - mariadb
       - redis
+    networks:
+      # default = host-side network we already use; runtimes = where
+      # OpenRuntimes spawns function containers. Appwrite must be on
+      # both so the deployed Function code can call back via
+      # ``http://appwrite/v1``.
+      default:
+      runtimes:
+        aliases:
+          - appwrite
     volumes:
       - appwrite_uploads:/storage/uploads
       - appwrite_config:/storage/config
@@ -55,6 +64,7 @@ services:
       _APP_OPTIONS_FORCE_HTTPS: ${_APP_OPTIONS_FORCE_HTTPS:-disabled}
       _APP_REDIS_HOST: redis
       _APP_REDIS_PORT: 6379
+      _APP_DB_ADAPTER: mariadb
       _APP_DB_HOST: mariadb
       _APP_DB_PORT: 3306
       _APP_DB_SCHEMA: ${_APP_DB_SCHEMA:-appwrite}
@@ -62,6 +72,15 @@ services:
       _APP_DB_PASS: ${_APP_DB_PASS:-appwrite}
       _APP_EXECUTOR_SECRET: ${_APP_EXECUTOR_SECRET:-dev-executor-secret}
       _APP_EXECUTOR_HOST: http://appwrite-executor/v1
+      # Local dev: lift storage caps so interview recordings fit. The
+      # default Appwrite Cloud SaaS-tier injection caps maximumFileSize
+      # at 0 (the value surfaces in the Bucket update response trace as
+      # ``Maximum allowed value is 0B``); these envs raise the per-file
+      # ceiling and the request body cap so the agent can persist mp4 +
+      # webm artifacts (currently ~5\u201310MB per minute of room composite).
+      _APP_STORAGE_LIMIT: ${_APP_STORAGE_LIMIT:-524288000}
+      _APP_STORAGE_PREVIEW_LIMIT: ${_APP_STORAGE_PREVIEW_LIMIT:-20000000}
+      _APP_LIMIT_USERS: ${_APP_LIMIT_USERS:-10000}
     # No container healthcheck: Appwrite's /v1/health endpoints require an API
     # key (return 401 unauthenticated), so a naive wget check reads as
     # "unhealthy" even when the API serves fine. scripts/stack-up.sh polls
@@ -108,23 +127,28 @@ services:
   # docker-compose 1.6.0 for the canonical service definitions.
 
   livekit:
-    image: livekit/livekit-server:v1.8
+    image: livekit/livekit-server:v1.10
     restart: unless-stopped
-    command: --dev --bind 0.0.0.0
+    # NOTE: --dev disables redis so room-composite egress dispatch fails with
+    # 503. We keep the dev keys via the mounted livekit.yaml and use --config
+    # so egress + livekit talk through the shared redis instance.
+    command: --config /etc/livekit.yaml --bind 0.0.0.0
     ports:
       - "7880:7880"
       - "7881:7881"
       - "7882:7882/udp"
+    depends_on: [redis]
     environment:
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-devsecret-change-me-min-32-chars-long}"
     volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
       - livekit_data:/data
 
   # Optional: room-composite video egress for interview recordings.
   # Mount ./egress on the host; set EGRESS_OUTPUT_DIR=/out and
   # EGRESS_LOCAL_MOUNT=<repo>/infra/docker/egress on the agent worker.
   livekit-egress:
-    image: livekit/egress:v1.8
+    image: livekit/egress:v1.10
     restart: unless-stopped
     cap_add:
       - SYS_ADMIN
@@ -139,10 +163,113 @@ services:
       redis:
         condition: service_healthy
 
+  # OpenRuntimes executor + proxy: required for Appwrite Functions to actually
+  # execute. The "appwrite/appwrite" image only handles API + workers; without
+  # these two services every create_execution() returns "function not found".
+  # Service definitions follow appwrite/appwrite v1.6.0 docker-compose verbatim.
+  #
+  # Status (infra-2 round): all 4 Functions (issueLivekitToken,
+  # analyzeSession, analyzeSurvey, analyzeSessionVisual) build + deploy
+  # successfully against this stack via scripts/deploy-function.sh.
+  # Stateless executions (e.g. invalid_input rejection) return cleanly.
+  # However, sync executions that touch Appwrite collections trip an
+  # upstream bug in Appwrite 1.6.0 + openruntimes/proxy 0.5.5: the
+  # execution result row fails validation on the ``errors`` field with
+  # "Attribute 'errors' has invalid type. Value must be a valid string".
+  # The Function code runs to completion in the runtime container, but
+  # Appwrite cannot persist the execution record, so the caller sees
+  # status=processing indefinitely (async) or a 400 error (sync).
+  # Workaround until Appwrite 1.7+/1.9 (with mariadb adapter): use the
+  # local invocation harnesses in scripts/run-analyze-*.mts which call
+  # handler() + createRealDeps() directly, bypassing the executions
+  # collection write.
+  openruntimes-executor:
+    container_name: openruntimes-executor
+    hostname: exc1
+    image: openruntimes/executor:0.6.11
+    restart: unless-stopped
+    stop_signal: SIGINT
+    networks:
+      - default
+      - runtimes
+    volumes:
+      # Required so the executor can spawn runtime containers (one per
+      # function). Mounting the host docker socket is the canonical pattern;
+      # local dev only.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - appwrite_builds:/storage/builds:rw
+      - appwrite_functions:/storage/functions:rw
+      # Shared host-side dir so executor and runtime containers can pass
+      # files (no copy across container boundaries). Local dev only.
+      - /tmp:/tmp:rw
+    environment:
+      OPR_EXECUTOR_INACTIVE_TRESHOLD: ${_APP_FUNCTIONS_INACTIVE_THRESHOLD:-60}
+      OPR_EXECUTOR_MAINTENANCE_INTERVAL: ${_APP_FUNCTIONS_MAINTENANCE_INTERVAL:-3600}
+      OPR_EXECUTOR_NETWORK: ${_APP_FUNCTIONS_RUNTIMES_NETWORK:-runtimes}
+      OPR_EXECUTOR_DOCKER_HUB_USERNAME: ${_APP_DOCKER_HUB_USERNAME:-}
+      OPR_EXECUTOR_DOCKER_HUB_PASSWORD: ${_APP_DOCKER_HUB_PASSWORD:-}
+      OPR_EXECUTOR_ENV: ${_APP_ENV:-development}
+      OPR_EXECUTOR_RUNTIMES: ${_APP_FUNCTIONS_RUNTIMES:-node-22.0,python-3.12}
+      OPR_EXECUTOR_SECRET: ${_APP_EXECUTOR_SECRET:-dev-executor-secret}
+      OPR_EXECUTOR_RUNTIME_VERSIONS: v2,v4
+      OPR_EXECUTOR_STORAGE_DEVICE: local
+
+  openruntimes-proxy:
+    container_name: openruntimes-proxy
+    hostname: appwrite-executor
+    image: openruntimes/proxy:0.5.5
+    restart: unless-stopped
+    stop_signal: SIGINT
+    networks:
+      - default
+      - runtimes
+    environment:
+      OPR_PROXY_WORKER_PER_CORE: ${_APP_WORKER_PER_CORE:-6}
+      OPR_PROXY_ENV: ${_APP_ENV:-development}
+      OPR_PROXY_EXECUTOR_SECRET: ${_APP_EXECUTOR_SECRET:-dev-executor-secret}
+      OPR_PROXY_SECRET: ${_APP_EXECUTOR_SECRET:-dev-executor-secret}
+      OPR_PROXY_ALGORITHM: random
+      OPR_PROXY_EXECUTORS: exc1
+      OPR_PROXY_HEALTHCHECK_INTERVAL: 10000
+      OPR_PROXY_MAX_TIMEOUT: 600
+      OPR_PROXY_HEALTHCHECK: enabled
+    depends_on:
+      - openruntimes-executor
+
+  # Schedulers required so triggered/scheduled functions actually execute.
+  appwrite-task-scheduler-functions:
+    image: appwrite/appwrite:1.6.0
+    entrypoint: schedule-functions
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+      - redis
+    environment: *appwrite-env
+
+  appwrite-task-scheduler-executions:
+    image: appwrite/appwrite:1.6.0
+    entrypoint: schedule-executions
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+      - redis
+    environment: *appwrite-env
+
+networks:
+  default:
+  runtimes:
+    # Pin to a literal name (not compose-prefixed merism_runtimes) so
+    # OpenRuntimes executor's OPR_EXECUTOR_NETWORK=runtimes lands on the
+    # SAME network the proxy + spawned runtime containers join. Without
+    # this, the proxy is on merism_runtimes and the runtime container is
+    # on `runtimes`, so executions hang as "Runtime not ready".
+    name: runtimes
+
 volumes:
   appwrite_mariadb:
   appwrite_redis:
   appwrite_uploads:
   appwrite_config:
   appwrite_functions:
+  appwrite_builds:
   livekit_data:
