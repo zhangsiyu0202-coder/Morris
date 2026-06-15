@@ -1,7 +1,42 @@
 import { z } from "zod";
 
 // Reusable json field (Appwrite stores as stringified json / object attr)
-const json = z.record(z.string(), z.unknown());
+// JSON-shaped fields are temporary buckets pending a typed schema (see
+// contracts.md "JSON-shaped fields are temporary"). Appwrite stores them as
+// stringified JSON in mediumtext columns; the preprocess step lets the
+// schema accept both the parsed object (in tests / TS callers) and the
+// raw string we get back from REST.
+const json = z.preprocess((val) => {
+  if (typeof val === "string") {
+    try {
+      return JSON.parse(val);
+    } catch {
+      return val;
+    }
+  }
+  return val;
+}, z.record(z.string(), z.unknown()));
+
+// Same as `json` but for fields stored as JSON ARRAYS on the wire
+// (themes / insights / citations on AnalysisReport). Appwrite stores
+// these as stringified arrays in mediumtext; tests + TS callers see
+// real arrays. The preprocess step bridges both.
+const jsonArray = z.preprocess((val) => {
+  if (typeof val === "string") {
+    try {
+      return JSON.parse(val);
+    } catch {
+      return val;
+    }
+  }
+  return val;
+}, z.array(z.unknown()));
+
+// Appwrite returns datetimes as ISO 8601 with `+HH:MM` offset
+// (e.g. `2026-06-15T10:05:10.156+00:00`); zod 3 `datetime()`
+// without options requires `Z`. The `offset: true` flag also accepts
+// the +/-HH:MM form.
+const datetime = () => z.string().datetime({ offset: true });
 
 // --- ADR 0006 (workspaces-billing) tenancy fields ---------------------------
 // `workspaceId` is the tenant key (an Appwrite Team id); `authorId` is the
@@ -60,7 +95,7 @@ export const UserSchema = z.object({
   $id: z.string(),
   email: z.string().email(),
   name: z.string(),
-  createdAt: z.string().datetime(),
+  createdAt: datetime(),
 });
 
 /**
@@ -94,18 +129,18 @@ export const CurrentResearcherSchema = z.object({
 export const ProjectSchema = z.object({
   $id: z.string(),
   ownerUserId: z.string(),
-  workspaceId: z.string().optional(),
-  authorId: z.string().optional(),
+  workspaceId: z.string().nullish(),
+  authorId: z.string().nullish(),
   name: z.string(),
   description: z.string().default(""),
-  createdAt: z.string().datetime(),
+  createdAt: datetime(),
 });
 
 export const SurveySchema = z.object({
   $id: z.string(),
   projectId: z.string(),
-  workspaceId: z.string().optional(),
-  authorId: z.string().optional(),
+  workspaceId: z.string().nullish(),
+  authorId: z.string().nullish(),
   title: z.string(),
   status: SurveyStatus.default("draft"),
   flowConfig: json.default({}),
@@ -114,7 +149,7 @@ export const SurveySchema = z.object({
   // (tone/pacing-as-behavior/style). Default "" so existing surveys stay valid.
   moderatorInstruction: z.string().default(""),
   version: z.number().int().nonnegative().default(1),
-  updatedAt: z.string().datetime(),
+  updatedAt: datetime(),
 });
 
 export const SurveySectionSchema = z.object({
@@ -167,13 +202,13 @@ export const QuestionBlockSchema = z.object({
 export const InterviewLinkSchema = z.object({
   $id: z.string(),
   surveyId: z.string(),
-  workspaceId: z.string().optional(),
+  workspaceId: z.string().nullish(),
   token: z.string(),
   mode: LinkMode,
   kind: LinkKind.default("production"),
   maxUses: z.number().int().positive(),
   usedCount: z.number().int().nonnegative().default(0),
-  expiresAt: z.string().datetime(),
+  expiresAt: datetime(),
   isRevoked: z.boolean().default(false),
   label: z.string().optional(),
 });
@@ -227,14 +262,14 @@ export const InterviewSessionSchema = z
     $id: z.string(),
     surveyId: z.string(),
     linkId: z.string(),
-    workspaceId: z.string().optional(),
+    workspaceId: z.string().nullish(),
     intervieweeAlias: z.string().optional(),
     state: SessionState.default("created"),
     livekitRoom: z.string(),
     collectedAnswers: json.default({}),
     errorContext: json.optional(),
-    startedAt: z.string().datetime().optional(),
-    endedAt: z.string().datetime().optional(),
+    startedAt: datetime().optional(),
+    endedAt: datetime().optional(),
     qualityFlags: z.array(SessionQualityFlagSchema).default([]),
   })
   .superRefine((session, ctx) => {
@@ -255,15 +290,15 @@ export const TranscriptSchema = z.object({
   sessionId: z.string(),
   segments: z.array(TranscriptSegmentSchema),
   language: z.string(),
-  finalizedAt: z.string().datetime(),
+  finalizedAt: datetime(),
 });
 
 export const RecordingSchema = z.object({
   $id: z.string(),
   sessionId: z.string(),
   ownerUserId: z.string(),
-  workspaceId: z.string().optional(),
-  authorId: z.string().optional(),
+  workspaceId: z.string().nullish(),
+  authorId: z.string().nullish(),
   storageFileId: z.string(),
   durationMs: z.number().int().nonnegative(),
   format: RecordingFormat,
@@ -272,29 +307,29 @@ export const RecordingSchema = z.object({
 export const DashboardSchema = z.object({
   $id: z.string(),
   ownerUserId: z.string(),
-  workspaceId: z.string().optional(),
-  authorId: z.string().optional(),
+  workspaceId: z.string().nullish(),
+  authorId: z.string().nullish(),
   surveyId: z.string(),
   scope: DashboardScope.default("study"),
   name: z.string(),
   presetId: z.string().optional(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: datetime(),
+  updatedAt: datetime(),
 });
 
 export const DashboardWidgetSchema = z.object({
   $id: z.string(),
   ownerUserId: z.string(),
-  workspaceId: z.string().optional(),
-  authorId: z.string().optional(),
+  workspaceId: z.string().nullish(),
+  authorId: z.string().nullish(),
   dashboardId: z.string(),
   surveyId: z.string(),
   widgetType: DashboardWidgetType,
   name: z.string().optional(),
   description: z.string().optional(),
   config: json.default({}),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: datetime(),
+  updatedAt: datetime(),
 });
 
 export const DashboardTileLayoutSchema = z.object({
@@ -309,23 +344,23 @@ export const DashboardTileLayoutSchema = z.object({
 export const DashboardTileSchema = z.object({
   $id: z.string(),
   ownerUserId: z.string(),
-  workspaceId: z.string().optional(),
-  authorId: z.string().optional(),
+  workspaceId: z.string().nullish(),
+  authorId: z.string().nullish(),
   dashboardId: z.string(),
   surveyId: z.string(),
   widgetId: z.string(),
   layout: DashboardTileLayoutSchema,
   order: z.number().int().nonnegative(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: datetime(),
+  updatedAt: datetime(),
 });
 
 /** Researcher-saved quote bookmark from an interview transcript turn. */
 export const BookmarkSchema = z.object({
   $id: z.string(),
   ownerUserId: z.string(),
-  workspaceId: z.string().optional(),
-  authorId: z.string().optional(),
+  workspaceId: z.string().nullish(),
+  authorId: z.string().nullish(),
   surveyId: z.string(),
   sessionId: z.string(),
   quote: z.string(),
@@ -338,7 +373,7 @@ export const BookmarkSchema = z.object({
   note: z.string().default(""),
   /** Researcher-assigned tags for grouping/filtering bookmarks. Deduped, no empties. */
   tags: z.array(z.string()).default([]),
-  createdAt: z.string().datetime(),
+  createdAt: datetime(),
 });
 
 /**
@@ -354,17 +389,17 @@ export const BookmarkSchema = z.object({
 export const AnalysisReportSchema = z
   .object({
     $id: z.string(),
-    sessionId: z.string().optional(),
-    surveyId: z.string().optional(),
+    sessionId: z.string().nullish(),
+    surveyId: z.string().nullish(),
     scope: ReportScope,
     ownerUserId: z.string(),
-    workspaceId: z.string().optional(),
-    authorId: z.string().optional(),
-    themes: z.array(z.unknown()).default([]),
-    insights: z.array(z.unknown()).default([]),
-    citations: z.array(z.unknown()).default([]),
+    workspaceId: z.string().nullish(),
+    authorId: z.string().nullish(),
+    themes: jsonArray.default([]),
+    insights: jsonArray.default([]),
+    citations: jsonArray.default([]),
     storageFileId: z.string().optional(),
-    generatedAt: z.string().datetime(),
+    generatedAt: datetime(),
   })
   .superRefine((report, ctx) => {
     if (report.scope === "session") {
@@ -473,18 +508,18 @@ export const VisualAnalysisJobSchema = z.object({
   sessionId: z.string(),
   surveyId: z.string(),
   ownerUserId: z.string(),
-  workspaceId: z.string().optional(),
-  authorId: z.string().optional(),
+  workspaceId: z.string().nullish(),
+  authorId: z.string().nullish(),
   status: VisualAnalysisJobStatus.default("queued"),
   // Gemini Files API resource name (e.g. "files/abc123"). Null until the upload
   // returns a name; cleared once the file is deleted. The sweep's delete target.
   geminiFileName: z.string().nullable().default(null),
   // ISO 8601 of upload time; drives the sweep age threshold.
-  geminiUploadedAt: z.string().datetime().nullable().default(null),
+  geminiUploadedAt: datetime().nullable().default(null),
   attemptCount: z.number().int().nonnegative().default(0),
   errorContext: json.nullable().default(null),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: datetime(),
+  updatedAt: datetime(),
 });
 
 /** Deterministic job id — the 409-CAS dedup gate (ADR 0005 D3). */

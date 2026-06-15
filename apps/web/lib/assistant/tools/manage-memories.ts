@@ -1,4 +1,5 @@
 import { tool } from "ai";
+import { z } from "zod";
 
 import {
   ManageMemoriesActionSchema,
@@ -86,16 +87,42 @@ export function buildManageMemoriesTool(ctx: AssistantToolContext) {
     enabled: true,
   };
 
+  // DeepSeek (and OpenAI-compatible APIs) reject JSON Schemas whose
+  // top-level `type` is not "object" — and zod 3's z.discriminatedUnion
+  // serialises to a plain `oneOf` with `type: null`. We therefore expose
+  // a flat union-shaped object to the LLM, then re-parse the input
+  // through the strict discriminated union at the start of execute().
+  // This keeps the over-the-wire contract identical (per-action fields
+  // remain validated) while giving the API a schema it accepts.
+  const InputSchema = z.object({
+    action: z.enum(["create", "query", "update", "delete", "list"]),
+    content: z.string().optional(),
+    metadata: z.record(z.string(), z.string()).optional(),
+    queryText: z.string().optional(),
+    metadataFilter: z.record(z.string(), z.string()).optional(),
+    limit: z.number().int().positive().optional(),
+    memoryId: z.string().optional(),
+  });
+  type InputShape = z.infer<typeof InputSchema>;
+
   return {
     contextPromptTemplate: undefined as string | undefined,
     metadata,
     spec: tool({
       description: TOOL_DESCRIPTION,
-      inputSchema: ManageMemoriesActionSchema,
+      inputSchema: InputSchema,
       execute: async (
-        input: ManageMemoriesAction,
+        rawInput: InputShape,
       ): Promise<ToolResultEnvelope<ManageMemoriesArtifact | ToolErrorArtifact>> => {
         if (!ownerUserId) return NOT_SIGNED_IN;
+        const parsed = ManageMemoriesActionSchema.safeParse(rawInput);
+        if (!parsed.success) {
+          const detail = parsed.error.issues
+            .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
+            .join("; ");
+          return toToolError("manageMemories 输入校验", new Error(detail));
+        }
+        const input = parsed.data;
         try {
           switch (input.action) {
             case "create": {
