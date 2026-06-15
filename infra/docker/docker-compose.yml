@@ -59,6 +59,14 @@ services:
       _APP_OPENSSL_KEY_V1: ${_APP_OPENSSL_KEY_V1:-dev-secret-key-change-me}
       _APP_DOMAIN: ${_APP_DOMAIN:-localhost}
       _APP_DOMAIN_TARGET: ${_APP_DOMAIN_TARGET:-localhost}
+      # Pin _APP_DOMAIN_FUNCTIONS to a sentinel value so the router's
+      # `str_ends_with($host, _APP_DOMAIN_FUNCTIONS)` check in
+      # /usr/src/code/app/controllers/general.php:66 doesn't false-match
+      # every hostname when this env is empty (str_ends_with(x, "") is
+      # always true). Without it, deployed Functions calling back via
+      # http://appwrite/v1 hit "This domain is not connected to any
+      # Appwrite resource yet" 401 HTML.
+      _APP_DOMAIN_FUNCTIONS: ${_APP_DOMAIN_FUNCTIONS:-functions.localhost}
       # Local dev: accept requests to localhost without registering a domain rule.
       _APP_OPTIONS_ROUTER_PROTECTION: ${_APP_OPTIONS_ROUTER_PROTECTION:-disabled}
       _APP_OPTIONS_FORCE_HTTPS: ${_APP_OPTIONS_FORCE_HTTPS:-disabled}
@@ -168,21 +176,26 @@ services:
   # these two services every create_execution() returns "function not found".
   # Service definitions follow appwrite/appwrite v1.6.0 docker-compose verbatim.
   #
-  # Status (infra-2 round): all 4 Functions (issueLivekitToken,
-  # analyzeSession, analyzeSurvey, analyzeSessionVisual) build + deploy
-  # successfully against this stack via scripts/deploy-function.sh.
-  # Stateless executions (e.g. invalid_input rejection) return cleanly.
-  # However, sync executions that touch Appwrite collections trip an
-  # upstream bug in Appwrite 1.6.0 + openruntimes/proxy 0.5.5: the
-  # execution result row fails validation on the ``errors`` field with
-  # "Attribute 'errors' has invalid type. Value must be a valid string".
-  # The Function code runs to completion in the runtime container, but
-  # Appwrite cannot persist the execution record, so the caller sees
-  # status=processing indefinitely (async) or a 400 error (sync).
-  # Workaround until Appwrite 1.7+/1.9 (with mariadb adapter): use the
-  # local invocation harnesses in scripts/run-analyze-*.mts which call
-  # handler() + createRealDeps() directly, bypassing the executions
-  # collection write.
+  # Status: all 4 deployed Functions execute end-to-end against the local
+  # 1.6.0 stack via scripts/deploy-function.sh:
+  #   issueLivekitToken     sync   → 400 invalid_input on bad input
+  #   analyzeSession        sync   → 200 reportId in 8-12s
+  #   analyzeSurvey         sync   → 200 reportId in 12s
+  #   analyzeSessionVisual  async  → 200 in 22s (Gemini upload exceeds
+  #                                  Appwrite's 30s sync cap)
+  #
+  # Diagnostic note: the earlier "Attribute 'errors' has invalid type"
+  # was misdiagnosed as a recording bug. Real cause: the Function got a
+  # 20KB 401 HTML page (the Appwrite Console UI) when it called
+  # http://appwrite/v1/* from the runtimes network, and stuffed the
+  # whole page into the execution's `errors` field. Why HTML: the
+  # router at /usr/src/code/app/controllers/general.php:66 runs
+  # ``str_ends_with($host, _APP_DOMAIN_FUNCTIONS)`` to detect function
+  # subdomains; with that env empty (default), the check fires for
+  # every hostname (PHP: any string ends with ""), routing API calls
+  # to the "domain not connected" SPA fallback. Fixed by setting
+  # ``_APP_DOMAIN_FUNCTIONS=functions.localhost`` on the appwrite
+  # service.
   openruntimes-executor:
     container_name: openruntimes-executor
     hostname: exc1
