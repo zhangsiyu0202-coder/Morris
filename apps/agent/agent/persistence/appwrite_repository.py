@@ -157,12 +157,19 @@ class InterviewRepository:
     def update_state(self, session_id: str, state: SessionState) -> None:
         self._safe_update(session_id, session_progress_fields(state=state), f"update session state {state}")
 
-    def complete_session(self, session_id: str, collected_answers: Mapping[str, Any]) -> None:
+    def complete_session(
+        self,
+        session_id: str,
+        collected_answers: Mapping[str, Any],
+        *,
+        state: SessionState = "completed",
+    ) -> None:
         fields = session_completion_fields(
             collected_answers=dict(collected_answers),
             ended_at=_now_iso(),
+            state=state,
         )
-        self._safe_update(session_id, fields, "complete session")
+        self._safe_update(session_id, fields, f"set session {state}")
 
     def fail_session(self, session_id: str, error_context: Mapping[str, Any]) -> None:
         fields = session_failure_fields(error_context=dict(error_context), ended_at=_now_iso())

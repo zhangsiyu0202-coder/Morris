@@ -105,26 +105,69 @@ def create_supervisor_agent_class():
                         self._state.sessionId, self._state.surveyId
                     )
             except asyncio.CancelledError:
-                # Browser disconnect / worker shutdown. Persist what we already
-                # collected, but do NOT mark the session as ``failed`` — the
-                # link may still allow a reconnect, and a researcher reading
-                # the report later should see this as ``abandoned``, not
-                # ``failed``. CancelledError must be re-raised so asyncio can
-                # complete cancellation cleanly.
+                # Browser disconnect / worker shutdown. Persist what we
+                # already collected, mark the session as ``abandoned``,
+                # and still trigger post-session analysis so the
+                # researcher gets a partial report. The Function-side
+                # hallucination gate (analyzeSession R3.4) rejects
+                # transcripts too thin to analyze, so we don't risk
+                # generating garbage reports for trivially short
+                # cancellations. CancelledError must be re-raised so
+                # asyncio can complete cancellation cleanly.
                 self._log.warn(
                     "interview cancelled mid-run",
                     sessionId=self._state.sessionId,
                 )
                 if self._repo is not None:
+                    self._publish_state("abandoned")
                     self._persist_transcript()
                     await self._persist_recording()
+                    answers = collected_answers_map(self._state)
+                    self._repo.complete_session(
+                        self._state.sessionId, answers, state="abandoned"
+                    )
+                    self._repo.trigger_post_session_analysis(
+                        self._state.sessionId, self._state.surveyId
+                    )
                 raise
             except Exception as error:  # noqa: BLE001 - surface + persist failure
-                self._log.error("interview failed", sessionId=self._state.sessionId, error=str(error))
+                # LiveKit Agents 1.6 wraps room-disconnect cancellation
+                # in ``ToolError("AgentTask <id> is cancelled")`` instead
+                # of CancelledError. Detect that string + treat as
+                # abandonment so the chain still runs; otherwise it's a
+                # genuine failure (LLM down, bad section, ...) and we
+                # mark the session failed without dispatching analysis
+                # on potentially-broken data.
+                error_msg = str(error)
+                wrapped_cancellation = "cancelled" in error_msg.lower()
+                if wrapped_cancellation:
+                    self._log.warn(
+                        "interview cancelled mid-run (wrapped)",
+                        sessionId=self._state.sessionId,
+                        error=error_msg,
+                    )
+                else:
+                    self._log.error(
+                        "interview failed",
+                        sessionId=self._state.sessionId,
+                        error=error_msg,
+                    )
                 if self._repo is not None:
                     self._persist_transcript()
                     await self._persist_recording()
-                    self._repo.fail_session(self._state.sessionId, {"message": str(error)})
+                    if wrapped_cancellation:
+                        self._publish_state("abandoned")
+                        answers = collected_answers_map(self._state)
+                        self._repo.complete_session(
+                            self._state.sessionId, answers, state="abandoned"
+                        )
+                        self._repo.trigger_post_session_analysis(
+                            self._state.sessionId, self._state.surveyId
+                        )
+                    else:
+                        self._repo.fail_session(
+                            self._state.sessionId, {"message": error_msg}
+                        )
                 raise
 
         # -- section / question loop -------------------------------------

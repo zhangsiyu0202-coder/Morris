@@ -54,10 +54,12 @@ export async function issueLivekitToken(
     // Local dev fallback: when the Appwrite Function isn't deployed (the
     // project's docker-compose omits appwrite-executor for foundation-setup),
     // functions.createExecution throws AppwriteException with code 404 from
-    // the SDK. Fall through to the in-process Next.js API route. Production
-    // builds 404 that route, so the safe-by-default contract holds.
-    const errCode = (err as { code?: number } | null)?.code
-    if (errCode === 404 && typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
+    // the SDK. After we DO deploy the Function, the SDK may also throw on
+    // response parsing because Appwrite 1.6 returns Execution rows without
+    // ``deploymentId`` while the SDK 20.x pydantic-equivalent model
+    // requires it. Both cases want the same fallback. Production builds
+    // 404 the route, so the safe-by-default contract still holds.
+    if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
       const resp = await fetch("/api/dev-issue-token", {
         method: "POST",
         headers: { "content-type": "application/json" },
