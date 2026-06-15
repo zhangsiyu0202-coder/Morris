@@ -15,7 +15,13 @@ sub-specs (see [Sub-spec roadmap](#sub-spec-roadmap)).
   Storage, Realtime, Functions.
 - **Realtime media:** self-hosted **LiveKit** + a Python **LiveKit Agent Worker**
   hosting a LiveKit **Supervisor / TaskGroup / AgentTask** interview workflow.
-  Media/turn state never routes through Appwrite.
+  Media/turn state never routes through Appwrite. Per-session recording
+  uses LiveKit `ParticipantEgressRequest` (server-side ffmpeg, no Chromium
+  re-render); see `docs/adr/0008-participant-egress-for-interview-recording.md`.
+- **Functions:** four Appwrite Functions deployed via OpenRuntimes
+  (`issueLivekitToken`, `analyzeSession`, `analyzeSurvey`,
+  `analyzeSessionVisual`). Local-stack deploy steps in
+  `docs/dev/deploy-functions.md`.
 - **Web:** Next.js 15 (App Router) + TypeScript + Tailwind + shadcn/ui, with a
   **Vercel AI SDK 6 `ToolLoopAgent`** ("Morris") page assistant — sidebar dock
   + standalone `/assistant` page, model = DeepSeek. See
