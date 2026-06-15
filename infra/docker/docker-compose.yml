@@ -146,6 +146,17 @@ services:
       - "7881:7881"
       - "7882:7882/udp"
     depends_on: [redis]
+    networks:
+      # Same dual-attach pattern as the appwrite service: deployed
+      # Functions running in OpenRuntimes containers (on the
+      # ``runtimes`` network) need to reach LiveKit at hostname
+      # ``livekit`` to call ``RoomService.createRoom`` etc. Without
+      # the alias, the Function gets DNS resolution failures and the
+      # handler returns 500 on the createRoom step.
+      default:
+      runtimes:
+        aliases:
+          - livekit
     environment:
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-devsecret-change-me-min-32-chars-long}"
     volumes:

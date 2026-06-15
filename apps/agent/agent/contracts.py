@@ -40,7 +40,7 @@ InterviewResponseMode = Literal[
     "scale",
     "ranking",
 ]
-InterviewAgentStatus = Literal["idle", "ready", "collecting", "processing", "completed"]
+InterviewAgentStatus = Literal["idle", "ready", "collecting", "processing", "completed", "abandoned"]
 
 INTERVIEW_STATE_ATTRIBUTE = "merism.interviewState"
 SUBMIT_ANSWER_RPC_METHOD = "merism.submit_answer"

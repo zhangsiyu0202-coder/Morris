@@ -141,7 +141,7 @@ export async function issueLivekitToken(
       status: 200,
       body: { sessionId, livekitUrl: deps.livekitUrl, token, surveyMeta, linkKind: link.kind },
     };
-  } catch {
+  } catch (rollbackTrigger) {
     // Rollback in reverse order of side effects, all best-effort:
     //   1. drop the LiveKit room (createRoom may have succeeded);
     //   2. delete the session document we just persisted;
@@ -162,6 +162,17 @@ export async function issueLivekitToken(
     if (claimedSlotIndex >= 0) {
       await deps.setUsedCount(link.$id, previousUsedCount).catch(() => {});
     }
-    return { status: 500, body: { error: "internal_error" } };
+    // Surface the original error message in the response body so the
+    // executions log row carries something diagnosable; the actual stack
+    // is logged by main.ts withErrorBoundary at error level. Rolling
+    // back is best-effort and must not throw past this boundary.
+    const reason =
+      rollbackTrigger instanceof Error
+        ? rollbackTrigger.message
+        : String(rollbackTrigger);
+    return {
+      status: 500,
+      body: { error: `internal_error: ${reason}`.slice(0, 200) },
+    };
   }
 }

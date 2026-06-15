@@ -13,6 +13,7 @@ interface Env {
   APPWRITE_PROJECT_ID: string;
   APPWRITE_API_KEY: string;
   LIVEKIT_URL: string;
+  LIVEKIT_INTERNAL_URL?: string;
   LIVEKIT_API_KEY: string;
   LIVEKIT_API_SECRET: string;
 }
@@ -29,6 +30,7 @@ function requireEnv(): Env {
     APPWRITE_PROJECT_ID: req("APPWRITE_PROJECT_ID"),
     APPWRITE_API_KEY: req("APPWRITE_API_KEY"),
     LIVEKIT_URL: req("LIVEKIT_URL"),
+    LIVEKIT_INTERNAL_URL: process.env.LIVEKIT_INTERNAL_URL,
     LIVEKIT_API_KEY: req("LIVEKIT_API_KEY"),
     LIVEKIT_API_SECRET: req("LIVEKIT_API_SECRET"),
   };
@@ -52,8 +54,15 @@ export function createRealDeps(): IssueDeps {
     .setProject(env.APPWRITE_PROJECT_ID)
     .setKey(env.APPWRITE_API_KEY);
   const db = new Databases(client);
-  const httpUrl = env.LIVEKIT_URL.replace(/^ws/, "http");
-  const rooms = new RoomServiceClient(httpUrl, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET);
+  // RoomServiceClient runs server-to-server (this Function -> LiveKit).
+  // From the OpenRuntimes runtime container, "ws://localhost:7880" doesn't
+  // resolve to LiveKit (it points at the runtime itself). Use
+  // LIVEKIT_INTERNAL_URL when set; that env var carries the in-network
+  // address (e.g. "ws://livekit:7880"), while LIVEKIT_URL stays as the
+  // browser-facing public address. Falls back to LIVEKIT_URL if no
+  // separate internal URL is configured.
+  const serverSideUrl = (env.LIVEKIT_INTERNAL_URL ?? env.LIVEKIT_URL).replace(/^ws/, "http");
+  const rooms = new RoomServiceClient(serverSideUrl, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET);
 
   return {
     livekitUrl: env.LIVEKIT_URL,

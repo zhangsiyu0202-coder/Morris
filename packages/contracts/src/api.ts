@@ -294,6 +294,7 @@ export const InterviewAgentStatusSchema = z.enum([
   "collecting",
   "processing",
   "completed",
+  "abandoned",
 ]);
 
 export const InterviewAgentStateSchema = z.object({
