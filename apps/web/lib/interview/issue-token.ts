@@ -37,17 +37,40 @@ export async function issueLivekitToken(
   const client = new Client().setEndpoint(ENDPOINT).setProject(PROJECT_ID)
   const functions = new Functions(client)
 
-  const execution = await withTimeout(
-    functions.createExecution(
-      FUNCTION_ID,
-      JSON.stringify({ linkToken, alias }),
-      false,
-      undefined,
-      "POST" as never,
-      { "content-type": "application/json" },
-    ),
-    TOKEN_TIMEOUT_MS,
-  )
+  let execution
+  try {
+    execution = await withTimeout(
+      functions.createExecution(
+        FUNCTION_ID,
+        JSON.stringify({ linkToken, alias }),
+        false,
+        undefined,
+        "POST" as never,
+        { "content-type": "application/json" },
+      ),
+      TOKEN_TIMEOUT_MS,
+    )
+  } catch (err: unknown) {
+    // Local dev fallback: when the Appwrite Function isn't deployed (the
+    // project's docker-compose omits appwrite-executor for foundation-setup),
+    // functions.createExecution throws AppwriteException with code 404 from
+    // the SDK. Fall through to the in-process Next.js API route. Production
+    // builds 404 that route, so the safe-by-default contract holds.
+    const errCode = (err as { code?: number } | null)?.code
+    if (errCode === 404 && typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
+      const resp = await fetch("/api/dev-issue-token", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ linkToken, alias }),
+      })
+      const json = await resp.json()
+      if (!resp.ok) throw new Error(json?.error ?? "token_request_failed")
+      const parsed = IssueLivekitTokenResponseSchema.safeParse(json)
+      if (!parsed.success) throw new Error("invalid_token_response")
+      return parsed.data
+    }
+    throw err
+  }
 
   if (execution.responseStatusCode >= 400) {
     throw new Error(parseError(execution.responseBody))

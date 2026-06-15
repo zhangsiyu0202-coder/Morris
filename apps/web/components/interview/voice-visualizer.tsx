@@ -3,12 +3,18 @@
 import { BarVisualizer, useVoiceAssistant } from "@livekit/components-react"
 
 /** Voice-assistant state → a short Chinese status line. */
+// Mirrors the canonical AgentState union in @livekit/components-react.
+// See https://docs.livekit.io/frontends/build/agent-state/ for the full table.
 const STATE_LABEL: Record<string, string> = {
   connecting: "连接中…",
+  "pre-connect-buffering": "连接中…",
   initializing: "准备中…",
+  idle: "已就绪",
   listening: "在听你说…",
   thinking: "思考中…",
   speaking: "访谈员正在说…",
+  disconnected: "访谈结束",
+  failed: "连接失败",
 }
 
 /**

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react"
 import {
   Clock,
   FlaskConical,
-  Loader2,
   Mic,
   MicOff,
   Monitor,
@@ -16,6 +15,8 @@ import type { InterviewAnswerPayload, LinkKind } from "@merism/contracts"
 import { RoomContext } from "@livekit/components-react"
 import type { LiveInterviewSession } from "@/lib/hooks/use-live-interview"
 import { Brand } from "./pre-interview-flow"
+import { AgentIdleState } from "./agent-idle-state"
+import { LiveTranscript } from "./live-transcript"
 import { QuestionStage } from "./question-stage"
 import { SelfCam } from "./self-cam"
 import { VoiceVisualizer } from "./voice-visualizer"
@@ -102,14 +103,12 @@ export function InterviewRoomShell({ session, linkKind }: InterviewRoomShellProp
 
         <main className="flex-1 overflow-y-auto bg-mauve-50 px-6 py-8 sm:px-10">
           {session.question ? (
-            <QuestionStage question={session.question} onSubmit={handleSubmit} />
-          ) : (
-            <div className="flex h-full flex-col items-center justify-center text-center">
-              <span className="mb-4 flex size-16 items-center justify-center rounded-full bg-ink-100 text-ink-400">
-                <Loader2 className="size-6 animate-spin" aria-hidden="true" />
-              </span>
-              <p className="font-ui text-body-sm text-ink-400">访谈员正在准备问题…</p>
+            <div className="mx-auto w-full max-w-4xl">
+              <QuestionStage question={session.question} onSubmit={handleSubmit} />
+              <LiveTranscript transcript={session.transcript} />
             </div>
+          ) : (
+            <AgentIdleState transcript={session.transcript} />
           )}
         </main>
       </div>
