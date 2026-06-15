@@ -1,10 +1,13 @@
 """Gemini Live realtime adapter (ADR-0007).
 
 Builds a ``livekit.plugins.google`` realtime model used as the AgentSession
-``llm`` when ``MERISM_GEMINI_LIVE=1``. It runs in TEXT modality — Gemini Live is
-the ears + brain (ASR + understanding + response text) and an external TTS
-(Qwen) speaks — so the existing transcript/quality pipeline and the question
-TaskGroup are unchanged.
+``llm`` when ``MERISM_GEMINI_LIVE=1``. It runs in **AUDIO modality** — Gemini
+Live is the full pipeline (ASR + understanding + audio response), so no
+external TTS is wired into the AgentSession. Both speakers' transcripts are
+still captured via Live's ``input_audio_transcription`` (interviewee speech)
+and ``output_audio_transcription`` (model speech), which keeps the
+``conversation_item_added`` events flowing into the transcript collector
+unchanged.
 
 When ``base_url`` is set the google genai client is pointed at a proxy (e.g. a
 Cloudflare AI Gateway, which supports the Gemini Live WebSocket API); the Live
@@ -30,13 +33,30 @@ def _realtime_kwargs(settings: GeminiSettings) -> dict[str, Any]:
 
     kwargs: dict[str, Any] = {
         "model": settings.model,
-        "modalities": ["TEXT"],
-        "language": settings.language,
+        # AUDIO modality: Gemini Live emits speech directly. No external TTS
+        # in the AgentSession (see engine._build_session).
+        "modalities": ["AUDIO"],
+        # NOTE: native-audio Live models reject explicit language codes (1007
+        # "Unsupported language code 'cmn-CN'"); per Google's live-guide,
+        # "Native audio output models automatically choose the appropriate
+        # language and don't support explicitly setting the language code."
+        # The supervisor system_instruction already pins the conversation to
+        # Mandarin via the researchGoal / introScript / per-question prompt,
+        # so the model will speak Chinese without this kwarg.
         "api_key": settings.api_key,
-        # Explicitly enable interviewee speech->text. It defaults on, but the
-        # transcript (and the whole analysis pipeline) depends on user turns
-        # becoming conversation items, so we do not leave it to a default.
+        # Capture both sides of the conversation as text. Without these the
+        # transcript collector would never see ``conversation_item_added``
+        # events with text payloads and the analysis pipeline (transcript
+        # persistence + AnalysisReport citations) would have nothing to anchor.
+        # NOTE: AudioTranscriptionConfig.language_codes IS the right knob to
+        # pin Simplified Chinese, but the Live API rejects it in AI Studio
+        # mode with "language_codes parameter is only supported in Gemini
+        # Enterprise Agent Platform mode" (Vertex AI). For now we accept that
+        # zh defaults to Traditional output here and normalize downstream
+        # (see TranscriptCollector / OpenCC). Switching to Vertex AI auth
+        # would unblock this kwarg but is a larger infra change.
         "input_audio_transcription": types.AudioTranscriptionConfig(),
+        "output_audio_transcription": types.AudioTranscriptionConfig(),
         # Lift Gemini Live's session duration cap: without compression an
         # audio session terminates at ~15 min, which a real interview exceeds.
         # A sliding-window compression extends the session to unlimited length.
@@ -61,7 +81,7 @@ def _realtime_kwargs(settings: GeminiSettings) -> dict[str, Any]:
 
 
 def build_realtime_llm(settings: GeminiSettings) -> Any:
-    """Construct a Gemini Live ``RealtimeModel`` (TEXT out). Requires the
+    """Construct a Gemini Live ``RealtimeModel`` (AUDIO out). Requires the
     ``realtime`` extra (``uv sync --extra realtime``)."""
     from livekit.plugins import google
 

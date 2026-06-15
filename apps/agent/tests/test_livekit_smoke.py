@@ -103,6 +103,8 @@ def test_gemini_realtime_enables_context_window_compression():
 
     Our build must enable sliding-window compression so long interviews are not
     cut off. Session resumption is left to the livekit plugin (auto-managed).
+    AUDIO modality ⇒ Gemini speaks directly; both transcription configs must be
+    set so the transcript collector still gets text per turn.
     """
     pytest.importorskip("google.genai", reason="realtime extra not installed")
     from google.genai import types
@@ -114,7 +116,12 @@ def test_gemini_realtime_enables_context_window_compression():
         GeminiSettings(api_key="test-key", model="gemini-live", language="en-US")
     )
 
-    assert kwargs["modalities"] == ["TEXT"]
+    assert kwargs["modalities"] == ["AUDIO"]
+    assert isinstance(kwargs["input_audio_transcription"], types.AudioTranscriptionConfig)
+    assert isinstance(kwargs["output_audio_transcription"], types.AudioTranscriptionConfig)
+    # NOTE: language_codes intentionally NOT set — AI Studio mode rejects it
+    # with "supported only in Gemini Enterprise Agent Platform mode" (Vertex
+    # AI). Script normalization happens downstream in the transcript layer.
     cwc = kwargs["context_window_compression"]
     assert isinstance(cwc, types.ContextWindowCompressionConfig)
     assert cwc.sliding_window is not None

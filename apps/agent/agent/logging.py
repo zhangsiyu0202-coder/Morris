@@ -34,6 +34,7 @@ class Logger:
             **fields,
         }
         sys.stdout.write(json.dumps(record, default=str) + "\n")
+        sys.stdout.flush()
 
     def info(self, message: str, **fields: Any) -> None:
         self._emit("info", message, **fields)

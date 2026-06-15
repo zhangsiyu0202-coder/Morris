@@ -7,6 +7,11 @@ lazily imports ``livekit.plugins``.
 Providers (per design.md §AI 服务):
 - DeepSeek  ->全站 LLM（访谈推进与 task result 归纳），OpenAI 兼容协议。
 - Qwen      -> 实时 ASR / TTS，走 DashScope 的 OpenAI 兼容端点。
+- Gemini    -> ADR-0007 opt-in realtime mode (MERISM_GEMINI_LIVE=1). AUDIO
+              modality: Live API does ASR + LLM + TTS in one model, no external
+              speech provider is wired into the realtime AgentSession. Qwen
+              speech credentials are still resolved (used for embeddings on the
+              TS side and as a fallback if the cascade mode is re-enabled).
 """
 from __future__ import annotations
 
@@ -28,9 +33,12 @@ DEFAULT_QWEN_TTS_VOICE = "longxiaochun"
 DEFAULT_LANGUAGE = "zh"
 
 # Gemini Live realtime option (ADR-0007). Opt-in via MERISM_GEMINI_LIVE=1; when
-# off the agent keeps the DeepSeek (LLM) + Qwen (ASR/TTS) cascade. The 2.x Live
-# models keep mutable_chat_context=True (only "3.1" models disable it), so the
-# existing question-task on_enter generate_reply works unchanged.
+# off the agent keeps the DeepSeek (LLM) + Qwen (ASR/TTS) cascade. The 2.5
+# native-audio Live model keeps mutable_chat_context=True (unlike the 3.1
+# Live preview, which disables it and would force question-task changes), so
+# the existing question-task on_enter generate_reply works unchanged. Per
+# Google docs (last verified 2026-06-15) the 12-2025 preview is the latest
+# 2.5 Live drop; 09-2025 was deprecated 2026-03-19.
 DEFAULT_GEMINI_REALTIME_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
 DEFAULT_GEMINI_LANGUAGE = "cmn-CN"  # BCP-47 (Gemini Live), distinct from Qwen's "zh"
 

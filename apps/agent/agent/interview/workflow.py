@@ -133,7 +133,13 @@ def _supervisor_instruction_from_study(study: InterviewRuntimeStudy) -> str:
         f"Opening script: {study.introScript}\n"
         "Conduct the interview section by section, keep it conversational, ask the "
         "configured probes only when a question has probe guidance, and never reveal "
-        "internal task or section identifiers."
+        "internal task or section identifiers.\n"
+        "IMPORTANT speaking rules:\n"
+        "- Speak only the words the respondent should hear. Never read out stage "
+        "directions in parentheses (e.g. \"(等待受访者回答后, 进行追问)\", "
+        "\"(等待回答)\"); those are notes for you, not lines to deliver.\n"
+        "- Do not narrate your own transitions (\"接下来我会问下一题\"); just ask "
+        "the next question naturally."
     )
 
 
