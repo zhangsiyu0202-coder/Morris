@@ -254,7 +254,11 @@ export const InterviewRuntimeQuestionSchema = z.object({
   probeInstruction: z.string(),
   options: z.array(z.string().min(1)).default([]),
   responseMode: InterviewResponseModeSchema,
-  stimulus: StimulusSchema.optional(),
+  // .nullish() = optional() + nullable(): the Python pydantic mirror serializes
+  // an absent stimulus as JSON `null`, not `undefined`. Without this the
+  // browser's parseAgentState rejects every interviewState payload — the UI
+  // then perpetually shows "访谈员正在准备问题…".
+  stimulus: StimulusSchema.nullish(),
 });
 
 export const InterviewRuntimeSectionSchema = z.object({

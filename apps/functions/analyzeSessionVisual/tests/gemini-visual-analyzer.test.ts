@@ -158,13 +158,13 @@ describe("analyzeVideoSegment", () => {
       client,
       fileUri: "https://gem/files/abc",
       mimeType: "video/mp4",
-      model: "gemini-2.5-flash-lite",
+      model: "gemini-3.1-flash-lite",
       segment: baseSegment,
       prompt: "analyze this segment",
     });
 
     const call = client.generateSpy.mock.calls[0][0];
-    expect(call.model).toBe("gemini-2.5-flash-lite");
+    expect(call.model).toBe("gemini-3.1-flash-lite");
     expect(call.config).toMatchObject({ responseMimeType: "application/json" });
     const parts = call.contents[0].parts;
     expect(parts[0].fileData).toEqual({ fileUri: "https://gem/files/abc", mimeType: "video/mp4" });
@@ -221,7 +221,7 @@ describe("createGeminiVisualAnalyzer (orchestrator)", () => {
   const config: GeminiVisualConfig = {
     baseUrl: "https://worker.example/",
     apiKey: "test-key",
-    model: "gemini-2.5-flash-lite",
+    model: "gemini-3.1-flash-lite",
     maxBytes: 10 * 1024 * 1024,
     uploadMaxWaitSec: 5,
     segmentParallelism: 2,
@@ -292,7 +292,7 @@ describe("createGeminiVisualAnalyzer (orchestrator)", () => {
     });
     expect(result.segments).toHaveLength(2);
     expect(result.segments[0]?.id).toBe("vseg_1");
-    expect(result.modelId).toBe("gemini-2.5-flash-lite");
+    expect(result.modelId).toBe("gemini-3.1-flash-lite");
   });
 
   it("returns partial result with failed_segments tag when one segment fails but ratio is met", async () => {

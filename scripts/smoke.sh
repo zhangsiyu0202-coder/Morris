@@ -10,7 +10,7 @@ if [ "${SMOKE_SKIP_STACK:-0}" != "1" ]; then
 fi
 
 pnpm schema:apply
-tsx scripts/smoke.ts
+tsx scripts/smoke.mts
 
 if [ "${SMOKE_RESET:-0}" = "1" ]; then
   bash scripts/stack-reset.sh

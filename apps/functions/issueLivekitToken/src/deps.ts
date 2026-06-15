@@ -2,12 +2,9 @@
 // only here from env and never returned or logged (Req 3.7).
 import { Client, Databases, Permission, Query, Role } from "node-appwrite";
 import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
-import {
-  buildInterviewRoomMetadataFromDraft,
-  SurveyDraftSchema,
-  type SurveyDraft,
-} from "@merism/contracts";
+import { buildInterviewRoomMetadataFromDraft } from "@merism/contracts";
 import type { IssueDeps, LinkRecord, SessionInit } from "./handler.js";
+import { buildSurveyDraftFromDocs } from "./survey-draft-mapper.js";
 
 const DB = "merism";
 
@@ -151,38 +148,32 @@ export function createRealDeps(): IssueDeps {
         const questionsRes = await db.listDocuments(DB, "question_blocks", [
           Query.equal("surveyId", baseMetadata.surveyId),
         ]);
-        const draft = SurveyDraftSchema.parse({
-          title: survey.title,
-          researchGoal: parseJson<{ researchGoal?: string }>(survey.flowConfig, {}).researchGoal ?? "",
-          targetAudience:
-            parseJson<{ targetAudience?: string }>(survey.flowConfig, {}).targetAudience ?? "",
-          introScript: parseJson<{ introScript?: string }>(survey.flowConfig, {}).introScript ?? "",
-          sections: sectionsRes.documents
-            .sort((a: any, b: any) => a.order - b.order)
-            .map((section: any) => ({
-              title: section.title,
-              objective: section.description || section.sectionInstruction || "",
-              questions: questionsRes.documents
-                .filter((question: any) => question.sectionId === section.$id)
-                .sort((a: any, b: any) => a.orderInSection - b.orderInSection)
-                .map((question: any) => {
-                  const config = parseJson<{ options?: string[] }>(question.config, {});
-                  const probeConfig = parseJson<{ level?: string; instruction?: string }>(
-                    question.probeConfig,
-                    {},
-                  );
-                  return {
-                    questionText: question.prompt,
-                    questionType: question.type,
-                    probeLevel:
-                      probeConfig.level === "deep" || probeConfig.level === "follow_up"
-                        ? probeConfig.level
-                        : "none",
-                    probeInstruction: probeConfig.instruction ?? "",
-                    options: config.options ?? [],
-                  };
-                }),
-            })),
+        const draft = buildSurveyDraftFromDocs({
+          survey: {
+            $id: survey.$id,
+            title: survey.title,
+            flowConfig: parseJson<{
+              researchGoal?: string;
+              targetAudience?: string;
+              introScript?: string;
+            }>(survey.flowConfig, {}),
+          },
+          sections: sectionsRes.documents.map((s: any) => ({
+            $id: s.$id,
+            title: s.title,
+            description: s.description,
+            sectionInstruction: s.sectionInstruction,
+            order: s.order,
+          })),
+          questions: questionsRes.documents.map((q: any) => ({
+            $id: q.$id,
+            sectionId: q.sectionId,
+            prompt: q.prompt,
+            type: q.type,
+            orderInSection: q.orderInSection,
+            config: parseJson<{ options?: string[] }>(q.config, {}),
+            probeConfig: parseJson<{ level?: string; instruction?: string }>(q.probeConfig, {}),
+          })),
         });
 
         finalMetadata = JSON.stringify(

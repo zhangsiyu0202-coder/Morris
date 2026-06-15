@@ -401,6 +401,9 @@ importers:
       jsdom:
         specifier: ^29.1.1
         version: 29.1.1
+      livekit-server-sdk:
+        specifier: ^2.9.0
+        version: 2.15.4
       tailwindcss:
         specifier: ^4.0.0
         version: 4.3.0

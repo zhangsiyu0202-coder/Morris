@@ -46,6 +46,7 @@ const EXEMPT_PREFIXES = [
   "apps/functions/stripeWebhook/",
   "apps/functions/aggregateWorkspaceUsage/",
   "apps/functions/issueLivekitToken/",
+  "apps/web/app/api/dev-issue-token/", // dev-only mirror of issueLivekitToken function (NODE_ENV !== production)
   // ADR-0006 (B) native tenancy: these server-write paths grant
   // Permission.read(Role.team(workspaceId)) on the docs they create so
   // workspace members can read them via the session client. The schema

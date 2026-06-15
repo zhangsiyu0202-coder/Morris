@@ -12,6 +12,7 @@
     "test:properties": "vitest run tests/properties",
     "test:py": "bash scripts/test-py.sh",
     "smoke": "bash scripts/smoke.sh",
+    "smoke:stress": "tsx scripts/smoke-stress.mts",
     "e2e": "pnpm -F @merism/web e2e",
     "schema:apply": "pnpm -F @merism/appwrite-schema apply",
     "schema:verify": "pnpm -F @merism/appwrite-schema verify",

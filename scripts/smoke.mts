@@ -24,15 +24,26 @@ async function main(): Promise<void> {
   }, ownerPerms);
 
   const survey = await db.createDocument(DB, "surveys", ID.unique(), {
+    ownerUserId: owner.$id,
     projectId: project.$id,
     title: "Smoke Survey",
     status: "published",
+    // SurveyDraftSchema enforces researchGoal/targetAudience/introScript non-empty
+    // (validated inside issueLivekitToken.deps.createRoom). Provide minimal text.
+    flowConfig: JSON.stringify({
+      researchGoal: "smoke test research goal",
+      targetAudience: "smoke test audience",
+      introScript: "smoke test intro",
+    }),
     updatedAt: new Date().toISOString(),
   }, ownerPerms);
 
   const section = await db.createDocument(DB, "survey_sections", ID.unique(), {
     surveyId: survey.$id,
     title: "Smoke Section",
+    // SurveyDraftSectionSchema.objective requires non-empty (mapped from
+    // section.description || section.sectionInstruction in createRoom deps).
+    description: "smoke test section objective",
     order: 0,
   }, ownerPerms);
 

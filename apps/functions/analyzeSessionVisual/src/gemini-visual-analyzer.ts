@@ -39,7 +39,7 @@ export interface GeminiVisualConfig {
   minSuccessRatio: number;
 }
 
-const DEFAULT_MODEL = "gemini-2.5-flash-lite";
+const DEFAULT_MODEL = "gemini-3.1-flash-lite";
 const DEFAULT_MAX_BYTES = 2 * 1024 * 1024 * 1024; // 2 GB (Gemini Files API limit)
 const DEFAULT_UPLOAD_MAX_WAIT_SEC = 300;
 const DEFAULT_SEGMENT_PARALLELISM = 4;
