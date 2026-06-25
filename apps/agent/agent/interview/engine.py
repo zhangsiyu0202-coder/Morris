@@ -4,7 +4,7 @@ This is the realtime entry point used by ``agent.main`` when provider
 credentials are present. It:
 
 1. resolves the workflow config from room metadata (pure),
-2. builds an ``AgentSession`` — Qwen STT + DeepSeek LLM + Qwen TTS by default,
+2. builds an ``AgentSession`` — Qwen STT + Qwen-VL LLM + Qwen TTS by default,
    or (ADR-0007, ``MERISM_GEMINI_LIVE=1``) Gemini Live in AUDIO modality
    (Gemini does ASR + LLM + TTS in one model, no external TTS),
 3. forwards finalized conversation turns into the ``TranscriptCollector``,
@@ -35,7 +35,7 @@ from agent.interview.workflow import (
     initial_workflow_state,
     workflow_config_from_metadata,
 )
-from agent.providers.deepseek import build_llm
+from agent.providers.qwen_llm import build_llm
 from agent.providers.qwen import build_stt, build_tts
 from agent.providers.settings import ProviderSettings
 
@@ -143,10 +143,16 @@ class InterviewEngine:
                 llm=build_realtime_llm(self._settings.gemini),
             )
 
-        # Default: Qwen STT + DeepSeek LLM + Qwen TTS cascade. The cascade has no
+        # Default: Qwen STT + Qwen-VL LLM + Qwen TTS cascade. The cascade has no
         # server-side turn detection, so it needs a local silero VAD. Reuse the
         # prewarmed instance (loaded once per worker process) when available;
         # otherwise load one here (dev mode / no prewarm).
+        # ProviderSettings contract (settings.py): when gemini is None, both
+        # llm and speech are non-None. Assert here to turn an upstream
+        # regression into a clear AssertionError instead of a cryptic
+        # AttributeError deep in the livekit plugin.
+        assert self._settings.llm is not None, "cascade mode requires LLM settings"
+        assert self._settings.speech is not None, "cascade mode requires speech settings"
         tts = build_tts(self._settings.speech)
         vad = self._vad
         if vad is None:

@@ -9,6 +9,7 @@ from agent.contracts import (
     ProbeResult,
     ProbeRound,
     QuestionTaskResult,
+    Stimulus,
 )
 from agent.interview.workflow import (
     collected_answers_map,
@@ -239,3 +240,194 @@ def test_format_ui_answer_precedence():
     assert format_ui_answer(_ans(score=4.5)) == "4.5"
     # nothing provided
     assert format_ui_answer(_ans()) == ""
+
+
+# -- Stimulus ---------------------------------------------------------------
+
+
+def _stimulus_question(
+    qid: str, *, stim_type: str = "text", text: str | None = None, url: str | None = None
+) -> InterviewRuntimeQuestion:
+    return InterviewRuntimeQuestion(
+        questionId=qid,
+        sectionId="sec1",
+        sectionTitle="Background",
+        orderInSection=0,
+        questionText=f"Q about {qid}",
+        questionType="open_ended",
+        probeLevel="standard",
+        probeInstruction="",
+        options=[],
+        responseMode="voice_only",
+        stimulus=Stimulus(id=f"stim-{qid}", type=stim_type, text=text, url=url),  # type: ignore[arg-type]
+    )
+
+
+def test_stimulus_passthrough_into_question_config():
+    study = _study(_stimulus_question("q1", stim_type="text", text="Read this passage"))
+    config = workflow_config_from_study(study, session_id="s1")
+    task = config.sections[0].questions[0]
+    assert task.stimulus is not None
+    assert task.stimulus.type == "text"
+    assert task.stimulus.text == "Read this passage"
+    assert task.stimulus.id == "stim-q1"
+
+
+def test_stimulus_none_stays_none():
+    study = _study(_question("q1"))
+    config = workflow_config_from_study(study, session_id="s1")
+    task = config.sections[0].questions[0]
+    assert task.stimulus is None
+
+
+def test_build_question_instructions_text_stimulus_inlines_content():
+    study = _study(_stimulus_question("q1", stim_type="text", text="Read this passage"))
+    task = workflow_config_from_study(study, session_id="s1").sections[0].questions[0]
+    text = build_question_instructions(task)
+    assert "TEXT stimulus" in text
+    assert "Read this passage" in text
+
+
+def test_build_question_instructions_image_stimulus_attached_frame():
+    study = _study(_stimulus_question("q1", stim_type="image", url="https://example.com/img.png"))
+    task = workflow_config_from_study(study, session_id="s1").sections[0].questions[0]
+    text = build_question_instructions(task)
+    assert "IMAGE stimulus" in text
+    assert "attached" in text
+    assert "what they notice" in text.lower()
+
+
+def test_build_question_instructions_video_stimulus_not_attached():
+    study = _study(_stimulus_question("q1", stim_type="video", url="https://example.com/vid.mp4"))
+    task = workflow_config_from_study(study, session_id="s1").sections[0].questions[0]
+    text = build_question_instructions(task)
+    assert "VIDEO stimulus" in text
+    assert "NOT attached" in text
+
+
+def test_build_question_instructions_no_stimulus_block_when_none():
+    study = _study(_question("q1"))
+    task = workflow_config_from_study(study, session_id="s1").sections[0].questions[0]
+    text = build_question_instructions(task)
+    assert "stimulus" not in text.lower()
+
+
+# -- CAP-4: image stimulus runtime injection ---------------------------------
+
+
+def test_inject_visual_stimulus_into_chat_ctx_image_writes_imagecontent(monkeypatch):
+    """CAP-4 runtime path: image stimulus must reach chat_ctx as ImageContent
+    on user role, with stage-context label."""
+    import asyncio
+    import sys
+    import types
+
+    captured: list[dict] = []
+
+    class FakeChatCtx:
+        def add_message(self, *, role, content):
+            captured.append({"role": role, "content": content})
+
+    class FakeImageContent:
+        def __init__(self, image):
+            self.image = image
+
+    fake_mod = types.ModuleType("livekit.agents.llm")
+    fake_mod.ImageContent = FakeImageContent
+    monkeypatch.setitem(sys.modules, "livekit.agents.llm", fake_mod)
+
+    from agent.interview.tasks.question import inject_visual_stimulus_into_chat_ctx
+
+    async def _noop_apply(_ctx):
+        return
+
+    async def _run():
+        await inject_visual_stimulus_into_chat_ctx(
+            chat_ctx=FakeChatCtx(),
+            stimulus=Stimulus(id="s1", type="image", url="https://example.com/x.jpg"),
+            update_chat_ctx=_noop_apply,
+        )
+
+    asyncio.run(_run())
+
+    assert len(captured) == 1
+    msg = captured[0]
+    assert msg["role"] == "user"
+    content = msg["content"]
+    assert isinstance(content, list)
+    assert len(content) == 2
+    assert isinstance(content[0], str)
+    assert "Stage context" in content[0]
+    assert "NOT respondent speech" in content[0]
+    assert isinstance(content[1], FakeImageContent)
+    assert content[1].image == "https://example.com/x.jpg"
+
+
+def test_inject_visual_stimulus_noops_when_stimulus_none():
+    """No-op when stimulus is None — no chat_ctx mutation."""
+    import asyncio
+
+    called = False
+
+    class SpyCtx:
+        def add_message(self, *, role, content):
+            nonlocal called
+            called = True
+
+    from agent.interview.tasks.question import inject_visual_stimulus_into_chat_ctx
+
+    async def _run():
+        await inject_visual_stimulus_into_chat_ctx(
+            chat_ctx=SpyCtx(),
+            stimulus=None,
+            update_chat_ctx=lambda ctx: None,
+        )
+
+    asyncio.run(_run())
+    assert not called
+
+
+def test_inject_visual_stimulus_noops_for_video_stimulus():
+    import asyncio
+
+    called = False
+
+    class SpyCtx:
+        def add_message(self, *, role, content):
+            nonlocal called
+            called = True
+
+    from agent.interview.tasks.question import inject_visual_stimulus_into_chat_ctx
+
+    async def _run():
+        await inject_visual_stimulus_into_chat_ctx(
+            chat_ctx=SpyCtx(),
+            stimulus=Stimulus(id="s1", type="video", url="https://example.com/v.mp4"),
+            update_chat_ctx=lambda ctx: None,
+        )
+
+    asyncio.run(_run())
+    assert not called
+
+
+def test_inject_visual_stimulus_noops_for_image_without_url():
+    import asyncio
+
+    called = False
+
+    class SpyCtx:
+        def add_message(self, *, role, content):
+            nonlocal called
+            called = True
+
+    from agent.interview.tasks.question import inject_visual_stimulus_into_chat_ctx
+
+    async def _run():
+        await inject_visual_stimulus_into_chat_ctx(
+            chat_ctx=SpyCtx(),
+            stimulus=Stimulus(id="s1", type="image", url=""),
+            update_chat_ctx=lambda ctx: None,
+        )
+
+    asyncio.run(_run())
+    assert not called

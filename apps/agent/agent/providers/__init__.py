@@ -1,12 +1,13 @@
-"""External AI provider adapters: DeepSeek (LLM) + Qwen (ASR/TTS), with an
-opt-in Gemini Live realtime mode (ADR-0007).
+"""External AI provider adapters: Qwen-VL (LLM) + Qwen (ASR/TTS), with an
+opt-in Gemini Live realtime mode (ADR-0007). DeepSeek is kept dormant in
+``deepseek.py`` for easy revert (see ADR-0011 TODO).
 
 Pure configuration resolution lives in ``settings`` and is import-safe without
 the ``realtime`` extra. The ``build_*`` factories lazily import livekit plugins
 and select a pluggable speech backend, so the engine and its tests only depend
 on stable interfaces.
 """
-from agent.providers.deepseek import build_llm
+from agent.providers.qwen_llm import build_llm
 from agent.providers.gemini import build_realtime_llm
 from agent.providers.qwen import (
     DEFAULT_SPEECH_BACKEND,

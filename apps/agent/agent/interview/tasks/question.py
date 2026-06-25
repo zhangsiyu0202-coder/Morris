@@ -50,9 +50,31 @@ interviewee may also pick on screen). The options are:
 
     stimulus_text = ""
     if question.stimulus is not None:
-        stimulus_text = """
+        stim = question.stimulus
+        if stim.type == "text" and stim.text:
+            stimulus_text = f"""
 
-This question has a stimulus. Wait for the supervisor/frontend to show it before asking.
+This question has a TEXT stimulus — the respondent can see the following content.
+Reference it directly when you ask the question:
+```
+{stim.text}
+```
+"""
+        elif stim.type == "image":
+            stimulus_text = """
+
+This question has an IMAGE stimulus. The respondent can see the image (attached
+frame in this conversation). When you ask the question, weave in a reference to
+what is shown — ask the respondent what they notice, think, or feel about the
+image they are looking at.
+"""
+        elif stim.type == "video":
+            stimulus_text = """
+
+This question has a VIDEO stimulus. The video frame is NOT attached to this
+conversation — you cannot see it. Wait for the respondent to react or describe
+what they saw, then probe based on their description. Do not claim or pretend to
+see the video.
 """
 
     return f"""
@@ -65,6 +87,35 @@ Ask the question naturally and keep the interview conversational.
 {probe_text}
 Do not invent fields outside the tool arguments. Do not expose internal task names.
 """
+
+
+async def inject_visual_stimulus_into_chat_ctx(
+    *, chat_ctx: Any, stimulus: Any, update_chat_ctx: Any
+) -> None:
+    """Attach an image stimulus to a LiveKit ChatContext so the multimodal LLM
+    sees what the respondent is looking at (CAP-4).
+
+    Image-type only (video frames are not extracted).  The content is sent on a
+    ``user`` role (Qwen-VL vision API requirement) but explicitly labeled as
+    stage context so the LLM does not mistake it for the respondent's speech.
+
+    This is a pure-ish helper so tests can call it directly with a fake
+    chat_ctx + a no-op ``update_chat_ctx`` coroutine — no AgentTask construction
+    needed.
+    """
+    if stimulus is None or stimulus.type != "image" or not stimulus.url:
+        return
+    from livekit.agents.llm import ImageContent
+
+    chat_ctx.add_message(
+        role="user",
+        content=[
+            "[Stage context — NOT respondent speech: this is the "
+            "on-screen image stimulus for the upcoming question.]",
+            ImageContent(image=stimulus.url),
+        ],
+    )
+    await update_chat_ctx(chat_ctx)
 
 
 def create_question_task_class():
@@ -108,8 +159,16 @@ def create_question_task_class():
             # UI click).
             if self._on_enter_publish is not None:
                 self._on_enter_publish(self)
+            await self._maybe_inject_visual_stimulus()
             await self.session.generate_reply(
                 instructions=f"Ask this interview question naturally: {self.question.questionContent}"
+            )
+
+        async def _maybe_inject_visual_stimulus(self) -> None:
+            await inject_visual_stimulus_into_chat_ctx(
+                chat_ctx=self.chat_ctx,
+                stimulus=self.question.stimulus,
+                update_chat_ctx=self.update_chat_ctx,
             )
 
         def complete_with_ui_answer(self, answer: InterviewAnswerPayload) -> bool:
