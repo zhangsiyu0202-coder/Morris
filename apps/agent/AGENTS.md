@@ -67,7 +67,7 @@ NEVER:
 - Adding a field the agent does not use yet: skip mirror, leave a `# NOTE: mirror when agent needs it` comment.
 
 ### Provider adapter rules
-- DeepSeek is the only LLM. Qwen is reserved for ASR/TTS. Adding another requires a new ADR.
+- Qwen-VL is the primary cascade LLM (per ADR-0011). DeepSeek is a dormant secondary (``deepseek.py``, retained for revert). Qwen is reserved for ASR/TTS. Adding another requires a new ADR.
 - Adapters classify failures into `TransientProviderError` (retried by `with_retry`) and `PermanentProviderError` (never retried).
 - Adapters MUST NOT log raw prompts / completions / audio at info. Debug only, gated by `MERISM_DEBUG_PROVIDERS=1`.
 

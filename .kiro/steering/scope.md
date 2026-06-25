@@ -63,7 +63,7 @@ The following requests look reasonable but conflict with the scope rules above. 
 - Collapsing `AnalysisReport.insights[]` (auto-generated insight items inside a survey-scope report) with the `Notebook` collection (researcher-authored). Per ADR-0003 D2 they are intentionally separate.
 - Morris tools that are conversational chat features rather than actions on Merism data (Morris is a `ToolLoopAgent`, not a chat playground).
 - Direct Appwrite collection writes from anonymous (interviewee) clients. The only path is a Function (`issueLivekitToken` is the canonical example).
-- A second LLM provider beyond DeepSeek, or a second ASR/TTS provider beyond Qwen, without an ADR.
+- A second LLM provider beyond the primary cascade LLM (Qwen-VL, per ADR-0011; DeepSeek is a dormant secondary), or a second ASR/TTS provider beyond Qwen, without an ADR.
 
 ## Scope-drift signals (binding)
 

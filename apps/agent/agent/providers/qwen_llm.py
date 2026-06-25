@@ -8,7 +8,7 @@ OpenAI-compatible base URL. This is the active LLM in the cascade today
 remains in this package as a dormant alternative for easy revert.
 
 Switching the LLM provider violates the default ``DeepSeek is the only LLM``
-rule (``architecture.md``); see ADR-0011 (TODO) for reconciliation.
+rule (``architecture.md``); see ADR-0011 for the authorising decision.
 
 Plugin import is lazy so the package stays importable without the ``realtime``
 extra (``uv sync --extra realtime``).

@@ -99,7 +99,7 @@ NEVER:
 
 ## Globally forbidden
 
-- A second LLM provider beyond DeepSeek (without ADR).
+- A second LLM provider beyond the primary cascade LLM (Qwen-VL, per ADR-0011; DeepSeek is a dormant secondary) without ADR.
 - A second ASR/TTS provider beyond Qwen (without ADR).
 - LangGraph as the realtime interview controller.
 - Direct Appwrite collection writes from anonymous (interviewee) clients — Functions only.

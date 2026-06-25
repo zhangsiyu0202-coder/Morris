@@ -137,7 +137,7 @@ Python mirror: `agent.retry.with_retry` follows the same shape (`TransientProvid
 
 ## Provider adapter rules (binding)
 
-- DeepSeek is the only LLM. Qwen is reserved for ASR/TTS. Adding a second provider for either role requires a new ADR in `docs/adr/`.
+- Qwen-VL is the primary cascade LLM (per ADR-0011; DeepSeek is a dormant secondary). Qwen is reserved for ASR/TTS. Adding a different provider for either role requires a new ADR in `docs/adr/`.
 - Adapters live in `apps/agent/agent/providers/<vendor>.py` (Python) or `apps/web/lib/assistant/providers/<vendor>.ts` (page-assistant TS).
 - An adapter implements one provider behind a narrow interface. Swapping providers means writing a new adapter, not editing call sites.
 - Adapters MUST classify failures into `TransientProviderError` vs `PermanentProviderError` so `withRetry` can act.
