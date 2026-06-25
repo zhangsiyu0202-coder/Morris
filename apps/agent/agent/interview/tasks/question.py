@@ -107,6 +107,7 @@ async def inject_visual_stimulus_into_chat_ctx(
         return
     from livekit.agents.llm import ImageContent
 
+    chat_ctx = chat_ctx.copy()
     chat_ctx.add_message(
         role="user",
         content=[

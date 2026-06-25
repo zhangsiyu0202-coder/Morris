@@ -325,6 +325,13 @@ def test_inject_visual_stimulus_into_chat_ctx_image_writes_imagecontent(monkeypa
     captured: list[dict] = []
 
     class FakeChatCtx:
+        def __init__(self):
+            self.copies = 0
+
+        def copy(self):
+            self.copies += 1
+            return self
+
         def add_message(self, *, role, content):
             captured.append({"role": role, "content": content})
 
@@ -342,14 +349,17 @@ def test_inject_visual_stimulus_into_chat_ctx_image_writes_imagecontent(monkeypa
         return
 
     async def _run():
+        fake = FakeChatCtx()
         await inject_visual_stimulus_into_chat_ctx(
-            chat_ctx=FakeChatCtx(),
+            chat_ctx=fake,
             stimulus=Stimulus(id="s1", type="image", url="https://example.com/x.jpg"),
             update_chat_ctx=_noop_apply,
         )
+        return fake
 
-    asyncio.run(_run())
+    fake = asyncio.run(_run())
 
+    assert fake.copies == 1, "must copy chat_ctx before mutating it"
     assert len(captured) == 1
     msg = captured[0]
     assert msg["role"] == "user"
