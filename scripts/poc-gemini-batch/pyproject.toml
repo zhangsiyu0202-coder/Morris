@@ -1,0 +1,14 @@
+[project]
+name = "poc-gemini-batch"
+version = "0.0.0"
+description = "Throw-away PoC verifying Gemini Batch API works with file_uri + video_metadata for analyzeSessionVisual cost optimization (50% off)"
+requires-python = ">=3.12"
+dependencies = [
+    "google-genai>=1.0.0",
+    "python-dotenv>=1.2.0",
+    "imageio[ffmpeg]>=2.34.0",
+    "numpy>=2.0",
+]
+[tool.uv]
+managed = true
+package = false

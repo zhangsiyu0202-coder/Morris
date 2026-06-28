@@ -58,3 +58,10 @@ infra/docker/egress/EG_*.json
 
 # Local Playwright pressure test artifacts.
 tmp/
+
+# POC scripts' generated outputs (binary recordings/audio/metrics).
+# The .py scripts themselves are committed; their outputs/ subfolder is not.
+scripts/poc-*/outputs/
+
+# External agent CLI runtime state (antigravity tools, etc).
+.antigravitycli/
