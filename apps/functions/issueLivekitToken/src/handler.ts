@@ -162,17 +162,16 @@ export async function issueLivekitToken(
     if (claimedSlotIndex >= 0) {
       await deps.setUsedCount(link.$id, previousUsedCount).catch(() => {});
     }
-    // Surface the original error message in the response body so the
-    // executions log row carries something diagnosable; the actual stack
-    // is logged by main.ts withErrorBoundary at error level. Rolling
-    // back is best-effort and must not throw past this boundary.
-    const reason =
-      rollbackTrigger instanceof Error
-        ? rollbackTrigger.message
-        : String(rollbackTrigger);
-    return {
-      status: 500,
-      body: { error: `internal_error: ${reason}`.slice(0, 200) },
-    };
+    // Per errors-and-observability.md: client-facing response bodies MUST
+    // NOT include raw error messages. Return the canonical `internal_error`
+    // code only, matching the other functions in apps/functions/* (each of
+    // their handler catch paths returns this exact shape). The cause is
+    // already best-effort-rolled-back above; diagnostic context is reachable
+    // via main.ts's `logger.warn("issue rejected", { status, error })`
+    // entry, indexed by traceId — there is no need to also leak the
+    // exception text through the response body, where a livekit error
+    // message could carry the URL or other secret-shaped substrings.
+    void rollbackTrigger;
+    return { status: 500, body: { error: "internal_error" } };
   }
 }
