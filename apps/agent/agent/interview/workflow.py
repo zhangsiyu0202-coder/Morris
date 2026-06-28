@@ -55,7 +55,7 @@ def _section_config_from_runtime(section: InterviewRuntimeSection) -> SectionTas
             questionContent=question.questionText,
             options=list(question.options),
             probeConfig=_probe_config_from_study(question.probeLevel, question.probeInstruction),
-            stimulus=None,
+            stimulus=question.stimulus,
         )
         for question in section.questions
     ]

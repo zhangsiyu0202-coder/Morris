@@ -6,9 +6,14 @@ TaskGroup / AgentTask workflows, not a LangGraph controller.
 """
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+
+def now_iso() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 SessionState = Literal["created", "in_progress", "completed", "abandoned", "failed"]
 RecordingFormat = Literal["mp3", "opus", "wav", "mp4", "webm"]
@@ -272,7 +277,6 @@ class Notebook(BaseModel):  # zod: NotebookSchema
     studyTitle: str
     question: str
     ownerUserId: str
-    # Wave B 字段 (旧数据 default ""; 后端 lazy 补 shortId 见 P-NB-01b)
     shortId: str = ""
     content: str = ""
     textContent: str = ""
@@ -283,12 +287,7 @@ class Notebook(BaseModel):  # zod: NotebookSchema
     visibility: Literal["internal", "published"] = "internal"
     embedding: str = ""
     embeddingModel: str = ""
-    # Wave F (T48): legacy `report` field removed.
     createdAt: str
-
-
-# Wave F (T46): legacy alias removed (was Insight ↦ Notebook). All
-# consumers must use Notebook / NotebookReport.
 
 
 # ADR-0006 (workspaces-billing): the billable unit is a completed interview.

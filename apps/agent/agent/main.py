@@ -7,7 +7,7 @@ On join it reads the room metadata (carrying sessionId + the interview config,
 set by issueLivekitToken). Routing:
 
 - metadata has runtimeStudy/workflowConfig AND provider creds present
-      -> full voice interview (Supervisor / TaskGroup / AgentTask + Qwen/DeepSeek)
+      -> full voice interview (Supervisor / TaskGroup / AgentTask + Qwen-VL cascade)
 - metadata has runtimeStudy/workflowConfig but no provider creds
       -> error (the interview cannot run without the LLM provider) + idle
 - otherwise
