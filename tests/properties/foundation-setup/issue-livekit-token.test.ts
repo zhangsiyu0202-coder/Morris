@@ -131,6 +131,101 @@ describe("issueLivekitToken status routing", () => {
     expect(link.usedCount).toBe(1);
   });
 
+  // P-DATA-06: abandoned-but-charged slot reclaim. The pre-existing product
+  // gap: handler increments usedCount the moment a token is issued, not when
+  // the interviewee actually joins the room. If the interviewee takes a
+  // token and never connects (closed the tab, denied mic permission, etc.),
+  // the slot is consumed forever on a single_use link. The supervisor never
+  // gets dispatched (LiveKit only dispatches a worker after first
+  // participant connect), so session.state stays "created" — a reliable
+  // orphan signal once the token TTL has expired.
+  //
+  // RECLAIM_GRACE_SECONDS = TOKEN_TTL_SECONDS + 60 ensures we only reclaim
+  // sessions whose original token can no longer connect. This makes the
+  // reclaim race-free without needing caller identification.
+  it("reclaims orphan slot on next click after grace period (single_use link)", async () => {
+    const { deps, sessions, link } = makeFake({ mode: "single_use", maxUses: 1 });
+
+    // First click: token issued, slot 0 claimed
+    const r1 = await issueLivekitToken({ linkToken: "valid" }, deps);
+    expect(r1.status).toBe(200);
+    expect(link.usedCount).toBe(1);
+    expect(sessions.size).toBe(1);
+
+    // Interviewee never joins. Simulate time passing past the grace cutoff
+    // by backdating the orphan session's createdAt.
+    const orphan = sessions.get("s_link1_0")!;
+    orphan.createdAtMs = Date.now() - (31 * 60 + 1) * 1000; // 31min + 1s ago
+    // state stays "created" — agent worker never dispatched
+
+    // Second click: handler should reclaim slot 0 and re-issue
+    const r2 = await issueLivekitToken({ linkToken: "valid" }, deps);
+    expect(r2.status).toBe(200);
+    expect(link.usedCount).toBe(1);     // still 1, not 2 (slot 0 reclaimed)
+    expect(sessions.size).toBe(1);      // old session deleted, new one created
+    if (r2.status === 200) {
+      expect(r2.body.sessionId).toBe("s_link1_0"); // same slot id reused
+    }
+  });
+
+  it("does NOT reclaim recent orphan within grace period (single_use link)", async () => {
+    const { deps, link } = makeFake({ mode: "single_use", maxUses: 1 });
+
+    const r1 = await issueLivekitToken({ linkToken: "valid" }, deps);
+    expect(r1.status).toBe(200);
+    expect(link.usedCount).toBe(1);
+
+    // No backdating — orphan is fresh (token still potentially valid).
+    // Second click within grace period MUST NOT reclaim — the original
+    // interviewee could still connect with their valid token.
+    const r2 = await issueLivekitToken({ linkToken: "valid" }, deps);
+    expect(r2.status).toBe(410);
+    if (r2.status === 410) expect(r2.body.error).toBe("link_exhausted");
+  });
+
+  it("does NOT reclaim session whose state advanced to in_progress", async () => {
+    const { deps, sessions, link } = makeFake({ mode: "single_use", maxUses: 1 });
+
+    const r1 = await issueLivekitToken({ linkToken: "valid" }, deps);
+    expect(r1.status).toBe(200);
+
+    // Interviewee joined; agent worker promoted state. Backdate to past
+    // grace — even an old session must NOT be reclaimed once it has moved
+    // off "created" because the interview may still be running or already
+    // produced data.
+    const active = sessions.get("s_link1_0")!;
+    active.state = "in_progress";
+    active.createdAtMs = Date.now() - (60 * 60) * 1000; // 1h ago
+
+    const r2 = await issueLivekitToken({ linkToken: "valid" }, deps);
+    expect(r2.status).toBe(410);
+    if (r2.status === 410) expect(r2.body.error).toBe("link_exhausted");
+    expect(link.usedCount).toBe(1);
+  });
+
+  it("reclaims multiple orphan slots on reusable link, link.usedCount decrements once per orphan", async () => {
+    const { deps, sessions, link } = makeFake({ mode: "reusable", maxUses: 3 });
+
+    // Claim 3 slots; all become orphans (none ever joined)
+    for (let i = 0; i < 3; i++) {
+      const r = await issueLivekitToken({ linkToken: "valid" }, deps);
+      expect(r.status).toBe(200);
+    }
+    expect(link.usedCount).toBe(3);
+    expect(sessions.size).toBe(3);
+
+    // Backdate all 3 past grace
+    const stale = Date.now() - (31 * 60 + 1) * 1000;
+    for (const row of sessions.values()) row.createdAtMs = stale;
+
+    // 4th click: handler should reclaim all 3 orphans, then issue a fresh
+    // slot 0 (back to the start of the loop after reclaim resets state).
+    const r4 = await issueLivekitToken({ linkToken: "valid" }, deps);
+    expect(r4.status).toBe(200);
+    expect(link.usedCount).toBe(1); // 3 reclaimed, 1 newly claimed -> 1
+    expect(sessions.size).toBe(1);  // 3 orphans deleted + 1 new -> 1
+  });
+
   // P-SEC-04 (companion to P-SEC-03): error responses MUST NOT leak raw
   // exception text through the body. Per errors-and-observability.md the
   // client-facing error field is restricted to the registered code set.

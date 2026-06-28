@@ -122,6 +122,21 @@ function makeDeps(): IssueDeps {
     async deleteSession(sessionId) {
       await db.deleteDocument(DB, "interview_sessions", sessionId);
     },
+    async listOrphanSessions(linkId, olderThanMs) {
+      // Keep in sync with apps/functions/issueLivekitToken/src/deps.ts.
+      const cutoffIso = new Date(Date.now() - olderThanMs).toISOString();
+      try {
+        const res = await db.listDocuments(DB, "interview_sessions", [
+          Query.equal("linkId", linkId),
+          Query.equal("state", "created"),
+          Query.lessThan("$createdAt", cutoffIso),
+          Query.limit(25),
+        ]);
+        return res.documents.map((d) => (d as { $id: string }).$id);
+      } catch {
+        return [];
+      }
+    },
     async setUsedCount(linkId, count) {
       await db.updateDocument(DB, "interview_links", linkId, { usedCount: count });
     },

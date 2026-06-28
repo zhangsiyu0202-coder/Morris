@@ -22,6 +22,7 @@ function deps(over: Partial<IssueDeps> = {}): IssueDeps {
     findLink: vi.fn(async () => link),
     createSession: vi.fn(async () => true),
     deleteSession: vi.fn(async () => {}),
+    listOrphanSessions: vi.fn(async () => []),
     setUsedCount: vi.fn(async () => {}),
     getSurveyMeta: vi.fn(async () => ({ surveyId: "sv1", title: "T" })),
     createRoom: vi.fn(async () => {}),

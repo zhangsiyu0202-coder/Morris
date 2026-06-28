@@ -136,6 +136,31 @@ export function createRealDeps(): IssueDeps {
       await db.deleteDocument(DB, "interview_sessions", sessionId);
     },
 
+    async listOrphanSessions(linkId: string, olderThanMs: number): Promise<string[]> {
+      // An orphan: state="created" AND $createdAt older than (now - grace).
+      // Appwrite stores $createdAt as ISO 8601, so compare via lessThan with
+      // the ISO cutoff. We don't paginate — single_use links have at most 1
+      // session per link, reusable links bound at maxUses (small). If a
+      // pathological link accumulates more than 25 orphans we cap there and
+      // sweep the rest on the next click; correctness is maintained
+      // (idempotent reclaim).
+      const cutoffIso = new Date(Date.now() - olderThanMs).toISOString();
+      try {
+        const res = await db.listDocuments(DB, "interview_sessions", [
+          Query.equal("linkId", linkId),
+          Query.equal("state", "created"),
+          Query.lessThan("$createdAt", cutoffIso),
+          Query.limit(25),
+        ]);
+        return res.documents.map((d: any) => d.$id);
+      } catch {
+        // listDocuments failure is recoverable — skip reclaim this round and
+        // let normal slot allocation proceed. The orphans remain in the
+        // table; the next click can sweep them.
+        return [];
+      }
+    },
+
     async setUsedCount(linkId: string, count: number): Promise<void> {
       await db.updateDocument(DB, "interview_links", linkId, { usedCount: count });
     },

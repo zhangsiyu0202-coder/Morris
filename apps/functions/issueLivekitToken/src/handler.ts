@@ -9,6 +9,16 @@ import {
 
 export const TOKEN_TTL_SECONDS = 30 * 60; // Req 3.6: <= 30 min
 
+// Orphan-session reclaim window. A session is reclaimable when:
+//   1. state === "created" (agent worker never dispatched it past "created",
+//      meaning no participant ever joined the room), AND
+//   2. session age > RECLAIM_GRACE_SECONDS.
+// The grace MUST exceed TOKEN_TTL_SECONDS so the original token has already
+// expired before we reclaim — eliminates the race where the original
+// interviewee is still mid-connect when a second click reclaims their slot.
+// 60 s buffer covers clock skew between issueLivekitToken and Appwrite.
+export const RECLAIM_GRACE_SECONDS = TOKEN_TTL_SECONDS + 60;
+
 export interface LinkRecord {
   $id: string;
   surveyId: string;
@@ -42,6 +52,12 @@ export interface IssueDeps {
   /** Create session with the given $id; return false on id collision (409). */
   createSession(sessionId: string, data: SessionInit): Promise<boolean>;
   deleteSession(sessionId: string): Promise<void>;
+  /** List sessions on this link that are confirmed orphans: state stuck at
+   *  "created" (agent worker never marked in_progress => no participant ever
+   *  joined) AND older than `olderThanMs` (token TTL already expired so the
+   *  original token can no longer reach LiveKit). Returns the session $ids
+   *  the handler may delete + decrement usedCount against. */
+  listOrphanSessions(linkId: string, olderThanMs: number): Promise<string[]>;
   setUsedCount(linkId: string, count: number): Promise<void>;
   getSurveyMeta(surveyId: string): Promise<{ surveyId: string; title: string }>;
   createRoom(room: string, metadata: string): Promise<void>;
@@ -87,6 +103,30 @@ export async function issueLivekitToken(
   }
 
   const effectiveMax = link.mode === "single_use" ? 1 : link.maxUses;
+
+  // Reclaim orphan slots BEFORE the link_exhausted check. An "orphan" is a
+  // session this handler created (so usedCount was incremented) that never
+  // saw an interviewee actually join — the agent worker is dispatched by
+  // LiveKit only on first participant connect, so a session whose state
+  // stayed "created" past RECLAIM_GRACE_SECONDS is confirmed orphan (its
+  // token can no longer reach LiveKit either). Without this step a single
+  // accidental token issuance (closed tab, denied mic permission) would
+  // permanently exhaust a single_use link. This is local-state mutation:
+  // the orphan rows are deleted and `link.usedCount` is rebased so the
+  // slot allocation loop below sees the freed slots.
+  const orphans = await deps.listOrphanSessions(
+    link.$id,
+    RECLAIM_GRACE_SECONDS * 1000,
+  );
+  if (orphans.length > 0) {
+    for (const orphanId of orphans) {
+      await deps.deleteSession(orphanId).catch(() => {});
+    }
+    const reclaimedCount = Math.min(orphans.length, link.usedCount);
+    link.usedCount = link.usedCount - reclaimedCount;
+    await deps.setUsedCount(link.$id, link.usedCount).catch(() => {});
+  }
+
   if (link.usedCount >= effectiveMax)
     return { status: 410, body: { error: "link_exhausted" } };
 
