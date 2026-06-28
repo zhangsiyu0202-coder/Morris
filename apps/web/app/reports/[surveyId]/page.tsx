@@ -12,6 +12,7 @@ import { SummarySection } from "@/components/report/summary-section";
 import { HighlightsSection } from "@/components/report/highlights-section";
 import { FindingsSection } from "@/components/report/findings-section";
 import { AnalysisSection } from "@/components/report/analysis-section";
+import { EvidenceList } from "@/components/report/evidence-list";
 import { RegenerateButton } from "./regenerate-button";
 
 export const dynamic = "force-dynamic";
@@ -57,6 +58,7 @@ export default async function ReportDetailPage({
         <HighlightsSection insights={body.insights} />
         <FindingsSection stats={body.questionStats} />
         <AnalysisSection sentiment={body.sentimentBreakdown} themes={body.themes} />
+        <EvidenceList citations={body.citations} themes={body.themes} />
         <RegenerateButton surveyId={surveyId} />
       </div>
     </main>
