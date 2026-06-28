@@ -1,5 +1,5 @@
 // Appwrite Function entrypoint (Node 20 runtime).
-import { createLogger } from "@merism/observability";
+import { withErrorBoundary } from "@merism/observability";
 import { analyzeSession } from "./handler.js";
 import { createRealDeps } from "./deps.js";
 
@@ -11,7 +11,6 @@ type Ctx = {
 };
 
 export default async function main({ req, res, log, error }: Ctx) {
-  const logger = createLogger("analyzeSession");
   let input: unknown = req.bodyJson;
   if (input === undefined && req.bodyRaw) {
     try {
@@ -21,7 +20,7 @@ export default async function main({ req, res, log, error }: Ctx) {
     }
   }
 
-  try {
+  const boundary = await withErrorBoundary("analyzeSession", async (logger) => {
     const result = await analyzeSession(input, createRealDeps());
     if (result.status === 200) {
       logger.info("session report generated", { reportId: result.body.reportId });
@@ -29,10 +28,12 @@ export default async function main({ req, res, log, error }: Ctx) {
       logger.warn("analyze rejected", { status: result.status, error: result.body.error });
     }
     log(`analyzeSession -> ${result.status}`);
-    return res.json(result.body, result.status);
-  } catch (e) {
-    error(`analyzeSession failed: ${e instanceof Error ? e.message : String(e)}`);
-    logger.error("unhandled error");
-    return res.json({ error: "internal_error", traceId: logger.traceId }, 500);
+    return result;
+  });
+
+  if (boundary.ok) {
+    return res.json(boundary.data.body, boundary.data.status);
   }
+  error(`analyzeSession unhandled (traceId=${boundary.traceId})`);
+  return res.json({ error: boundary.error, traceId: boundary.traceId }, boundary.status);
 }
