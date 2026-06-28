@@ -47,11 +47,32 @@ export async function listSessions(
  * Count completed sessions for a survey. Used by the report viewer's empty /
  * loading / rendered triptych (D5) and by the survey-level rollup invariant
  * P-ANL-03 (completedRespondents == count of completed sessions).
+ *
+ * Reads the count via Appwrite's `total` field (returned regardless of limit),
+ * with the state filter pushed down to the DB so we do not fetch + zod-parse
+ * every session doc just to filter `state` in JS. The survey-existence read
+ * via the session client still gates access (caller may not read the survey →
+ * count is 0).
  */
 export async function countCompletedSessions(
   surveyId: string,
   databases?: Databases,
 ): Promise<number> {
-  const sessions = await listSessions(surveyId, databases);
-  return sessions.filter((s) => s.state === "completed").length;
+  const dbx = databases ?? (await getSessionDb());
+  const surveyCheck = await dbx.listDocuments(DATABASE_ID, SURVEYS, [
+    Query.equal("$id", surveyId),
+    Query.limit(1),
+  ]);
+  if (surveyCheck.documents.length === 0) return 0;
+
+  // Sessions have no per-row read perms (the agent writes them with the API
+  // key), so the count read uses the API-key client. limit(1) means we
+  // transfer at most one doc body; the `total` field is the real payload.
+  const childDb = databases ?? db();
+  const result = await childDb.listDocuments(DATABASE_ID, SESSIONS, [
+    Query.equal("surveyId", surveyId),
+    Query.equal("state", "completed"),
+    Query.limit(1),
+  ]);
+  return result.total;
 }
