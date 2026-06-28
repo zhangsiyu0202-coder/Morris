@@ -5,10 +5,21 @@ on:
     branches: [main]
   pull_request:
 
+# Cancel stale runs on PR branches; never cancel main (avoids hiding regressions
+# from a hurried push).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# Minimum read-only by default; jobs that need write opt in explicitly.
+permissions:
+  contents: read
+
 jobs:
   js:
-    name: lint / typecheck / build / test
+    name: lint / typecheck / test / build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -16,22 +27,28 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm typecheck
+      # Fail-fast order: cheapest checks first. Build is slowest, runs last.
       - run: pnpm lint
+      - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm build
 
   python:
     name: pytest
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "apps/agent/uv.lock"
       - run: bash scripts/test-py.sh
 
   scope-guard:
     name: scope guard
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -41,9 +58,25 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm scope-guard
 
+  audit:
+    name: pnpm audit (high+, prod)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      # --audit-level=high: only high/critical advisories block the build.
+      # --prod: ignore devDependency noise (test/build tooling).
+      - run: pnpm audit --audit-level=high --prod
+
   e2e:
     name: playwright
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -54,10 +87,17 @@ jobs:
       - run: pnpm -F @merism/web exec playwright install --with-deps chromium
       - run: pnpm -F @merism/web build
       - run: pnpm e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 14
 
   integration:
     name: stack / schema:verify / smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     env:
       APPWRITE_ENDPOINT: http://localhost:8080/v1
       APPWRITE_PROJECT_ID: ${{ secrets.APPWRITE_PROJECT_ID }}
