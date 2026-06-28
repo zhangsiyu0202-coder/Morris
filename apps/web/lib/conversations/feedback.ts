@@ -16,11 +16,9 @@ import { z } from "zod";
 import { createLogger } from "@merism/observability";
 import { getCurrentUserId } from "@/lib/queries/auth";
 import { loadConversationDoc } from "./server";
+import { FeedbackRatingSchema, type FeedbackRating } from "./feedback-types";
 
 const log = createLogger("action.conversations.feedback");
-
-export const FeedbackRatingSchema = z.enum(["up", "down"]);
-export type FeedbackRating = z.infer<typeof FeedbackRatingSchema>;
 
 const SubmitFeedbackInputSchema = z.object({
   conversationId: z.string().min(1).max(64),
@@ -29,7 +27,7 @@ const SubmitFeedbackInputSchema = z.object({
   feedbackText: z.string().max(2000).optional(),
 });
 
-export interface SubmitFeedbackResult {
+interface SubmitFeedbackResult {
   ok: true;
 }
 

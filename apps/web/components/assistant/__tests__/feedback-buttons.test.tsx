@@ -10,7 +10,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@/lib/conversations/feedback", async () => ({
   submitFeedback: vi.fn(async () => ({ ok: true as const })),
-  FeedbackRatingSchema: { _def: {} },
 }));
 
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";

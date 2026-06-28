@@ -21,7 +21,8 @@
 import { useState } from "react";
 import { ThumbsUp, ThumbsDown, Loader2, Check, X } from "lucide-react";
 
-import { submitFeedback, type FeedbackRating } from "@/lib/conversations/feedback";
+import { submitFeedback } from "@/lib/conversations/feedback";
+import type { FeedbackRating } from "@/lib/conversations/feedback-types";
 
 interface FeedbackButtonsProps {
   conversationId: string | null;
