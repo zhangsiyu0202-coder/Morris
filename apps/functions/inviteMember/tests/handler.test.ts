@@ -73,6 +73,11 @@ describe("inviteMember (ADR 0006 M3) — seat-cap CAS", () => {
       }),
     );
     expect(r.status).toBe(500);
+    // P-SEC-04: response body MUST be a flat { error: <registered code> }
+    // shape with no raw message text. This guards against future
+    // regressions where a catch handler appends err.message to the code
+    // (the issueLivekitToken bug that motivated this assertion).
+    expect(r.body).toEqual({ error: "internal_error" });
     expect(releaseSeat).toHaveBeenCalledWith("ws_1", 0);
   });
 });

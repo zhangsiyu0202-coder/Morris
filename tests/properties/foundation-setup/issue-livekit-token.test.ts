@@ -121,8 +121,80 @@ describe("issueLivekitToken status routing", () => {
 
     const r = await issueLivekitToken({ linkToken: "valid" }, deps);
     expect(r.status).toBe(500);
+    // P-SEC-04: response body is the flat registered code, no raw
+    // exception text leaked from the catch block (symmetric with the
+    // createRoom-failure case above; without this assertion the
+    // `internal_error: ${err.message}` bug could regress on the
+    // signToken path specifically).
+    if (r.status === 500) expect(r.body.error).toBe("internal_error");
     expect(sessions.size).toBe(0);
     expect(link.usedCount).toBe(1);
+  });
+
+  // P-SEC-04 (companion to P-SEC-03): error responses MUST NOT leak raw
+  // exception text through the body. Per errors-and-observability.md the
+  // client-facing error field is restricted to the registered code set.
+  // Without this guard a future catch handler could `error: \`internal_error:
+  // \${err.message}\`` and ship a livekit URL / token / db path to the
+  // interviewee's browser. The bug this prevents shipped once
+  // (commit prior to this test) — keep the assertion so it cannot recur.
+  it("all error responses carry a registered code, never a raw message", async () => {
+    const REGISTERED_CODES = new Set([
+      "invalid_input",
+      "link_not_found",
+      "link_expired",
+      "link_revoked",
+      "link_exhausted",
+      "survey_not_published",
+      "quota_exceeded",
+      "internal_error",
+    ]);
+
+    // 1. invalid input
+    {
+      const { deps } = makeFake();
+      const r = await issueLivekitToken({ linkToken: "" }, deps);
+      if (r.status !== 200) {
+        expect(REGISTERED_CODES.has(r.body.error)).toBe(true);
+        expect(r.body.error).not.toMatch(/[:\s]/);
+      }
+    }
+    // 2. unknown link
+    {
+      const { deps } = makeFake();
+      const r = await issueLivekitToken({ linkToken: "missing" }, deps);
+      if (r.status !== 200) {
+        expect(REGISTERED_CODES.has(r.body.error)).toBe(true);
+        expect(r.body.error).not.toMatch(/[:\s]/);
+      }
+    }
+    // 3. createRoom failure (the historical bug site)
+    {
+      const { deps } = makeFake({ mode: "single_use", maxUses: 1 });
+      deps.createRoom = async () => {
+        throw new Error("livekit_unreachable: rest endpoint 503 (key=sk_live_abc)");
+      };
+      const r = await issueLivekitToken({ linkToken: "valid" }, deps);
+      if (r.status !== 200) {
+        expect(REGISTERED_CODES.has(r.body.error)).toBe(true);
+        expect(r.body.error).not.toMatch(/[:\s]/);
+        expect(r.body.error).not.toContain("livekit_unreachable");
+        expect(r.body.error).not.toContain("sk_live_");
+      }
+    }
+    // 4. signToken failure
+    {
+      const { deps } = makeFake({ mode: "reusable", maxUses: 3 });
+      deps.signToken = async () => {
+        throw new Error("jwt sign failed: secret=hunter2");
+      };
+      const r = await issueLivekitToken({ linkToken: "valid" }, deps);
+      if (r.status !== 200) {
+        expect(REGISTERED_CODES.has(r.body.error)).toBe(true);
+        expect(r.body.error).not.toMatch(/[:\s]/);
+        expect(r.body.error).not.toContain("hunter2");
+      }
+    }
   });
 });
 

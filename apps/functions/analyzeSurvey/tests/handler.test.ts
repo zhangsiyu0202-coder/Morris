@@ -171,7 +171,9 @@ describe("analyzeSurvey handler", () => {
     });
     const result = await analyzeSurvey({ surveyId: "sv1" }, deps);
     expect(result.status).toBe(500);
-    expect(result.body).toMatchObject({ error: "llm_unavailable" });
+    // P-SEC-04: body is exactly { error: <code> } — guards against future
+    // catch handlers that would append err.message into the body.
+    expect(result.body).toEqual({ error: "llm_unavailable" });
     expect(deps.upsertSpy).not.toHaveBeenCalled();
   });
 
@@ -183,6 +185,8 @@ describe("analyzeSurvey handler", () => {
     });
     const result = await analyzeSurvey({ surveyId: "sv1" }, deps);
     expect(result.status).toBe(500);
+    // P-SEC-04: body is exactly { error: <code> }.
+    expect(result.body).toEqual({ error: "llm_unavailable" });
     expect(deps.upsertSpy).not.toHaveBeenCalled();
   });
 
@@ -194,6 +198,8 @@ describe("analyzeSurvey handler", () => {
     });
     const result = await analyzeSurvey({ surveyId: "sv1" }, deps);
     expect(result.status).toBe(500);
+    // P-SEC-04: body is exactly { error: <code> }.
+    expect(result.body).toEqual({ error: "llm_unavailable" });
     expect(deps.upsertSpy).not.toHaveBeenCalled();
   });
 
@@ -205,7 +211,8 @@ describe("analyzeSurvey handler", () => {
     });
     const result = await analyzeSurvey({ surveyId: "sv1" }, deps);
     expect(result.status).toBe(500);
-    expect(result.body).toMatchObject({ error: "persist_failed" });
+    // P-SEC-04: body is exactly { error: <code> }.
+    expect(result.body).toEqual({ error: "persist_failed" });
   });
 
   it("happy path: 200, completedRespondents matches session count, summaries merged", async () => {
@@ -439,6 +446,8 @@ describe("analyzeSurvey Wave F: chunked extract + combine + chunked assign", () 
     });
     const r = await analyzeSurvey({ surveyId: "sv1" }, deps);
     expect(r.status).toBe(500);
+    // P-SEC-04: body is exactly { error: <code> } (no raw "combine LLM down").
+    expect(r.body).toEqual({ error: "llm_unavailable" });
     expect(deps.upsertSpy).not.toHaveBeenCalled();
     // assign 不应被调到 (combine 失败短路)
     expect(deps.assignSpy).not.toHaveBeenCalled();

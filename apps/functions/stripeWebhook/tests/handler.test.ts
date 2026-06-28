@@ -55,6 +55,8 @@ describe("stripeWebhook (ADR 0006 M5) — verify + idempotency", () => {
     const d = makeDeps({ syncSubscription: vi.fn(async () => { throw new Error("db down"); }) });
     const r = await stripeWebhook("raw", "sig", d);
     expect(r.status).toBe(500);
+    // P-SEC-04: response body is a flat { error: <code> } (no raw message).
+    expect(r.body).toEqual({ error: "internal_error" });
     expect(d.markProcessed).not.toHaveBeenCalled();
   });
 });

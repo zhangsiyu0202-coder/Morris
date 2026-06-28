@@ -159,7 +159,10 @@ describe("analyzeSession handler", () => {
     });
     const result = await analyzeSession({ sessionId: "sess1" }, deps);
     expect(result.status).toBe(500);
-    expect(result.body).toMatchObject({ error: "llm_unavailable" });
+    // P-SEC-04: response body is exactly { error: <code> } (toEqual, not
+    // toMatchObject — guards against future regressions that append a raw
+    // err.message detail field alongside the registered code).
+    expect(result.body).toEqual({ error: "llm_unavailable" });
     expect(deps.upsertSpy).not.toHaveBeenCalled();
   });
 
@@ -171,7 +174,8 @@ describe("analyzeSession handler", () => {
     });
     const result = await analyzeSession({ sessionId: "sess1" }, deps);
     expect(result.status).toBe(500);
-    expect(result.body).toMatchObject({ error: "persist_failed" });
+    // P-SEC-04: response body is exactly { error: <code> } (toEqual).
+    expect(result.body).toEqual({ error: "persist_failed" });
   });
 
   it("returns 200 with reportId on the happy path and forwards owner+survey", async () => {

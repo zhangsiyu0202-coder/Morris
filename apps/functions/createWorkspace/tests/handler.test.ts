@@ -50,6 +50,8 @@ describe("createWorkspace (ADR 0006 M3)", () => {
     });
     const r = await createWorkspace({ name: "Acme" }, deps);
     expect(r.status).toBe(500);
+    // P-SEC-04: response body is a flat { error: <code> } (no raw message).
+    expect(r.body).toEqual({ error: "internal_error" });
     expect(deps.deleteTeam).toHaveBeenCalledWith("ws_fixed");
   });
 
@@ -61,6 +63,8 @@ describe("createWorkspace (ADR 0006 M3)", () => {
     });
     const r = await createWorkspace({ name: "Acme" }, deps);
     expect(r.status).toBe(500);
+    // P-SEC-04: response body is a flat { error: <code> } (no raw message).
+    expect(r.body).toEqual({ error: "internal_error" });
     expect(deps.createTeam).toHaveBeenCalledOnce();
     expect(deps.deleteTeam).toHaveBeenCalledWith("ws_fixed");
   });
