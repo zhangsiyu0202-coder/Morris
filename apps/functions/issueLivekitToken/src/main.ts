@@ -35,7 +35,10 @@ export default async function main({ req, res, log, error }: Ctx) {
     return res.json(result.body, result.status);
   } catch (e) {
     error(`issueLivekitToken failed: ${e instanceof Error ? e.message : String(e)}`);
-    logger.error("unhandled error");
+    logger.error("unhandled error", {
+      stack: e instanceof Error ? e.stack : undefined,
+      message: e instanceof Error ? e.message : String(e),
+    });
     return res.json({ error: "internal_error", traceId: logger.traceId }, 500);
   }
 }
