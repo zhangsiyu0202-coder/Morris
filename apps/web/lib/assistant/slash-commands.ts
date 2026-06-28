@@ -8,9 +8,9 @@
  * Five built-ins are listed in `SLASH_COMMANDS`. The dispatch verbs are encoded
  * as a discriminated `SlashCommandAction` so consumers do not re-string-parse.
  *
- * Subagent A's `createConversation` is not yet wired; `/new` resolves to the
- * `kind: "new"` action and the conversation component leaves it as a TODO until
- * the persistence wave lands.
+ * `/new` resolves to `kind: "new"` and the conversation component resets to a
+ * fresh empty state — the next user message lazy-creates the Conversation doc
+ * via the same path as opening the dock for the first time.
  */
 
 /** Visual + behavioural metadata for one slash command. */
@@ -29,7 +29,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   {
     name: "new",
     label: "/new",
-    description: "开新对话(等持久化接入)",
+    description: "开新对话",
   },
   {
     name: "clear",

@@ -246,8 +246,17 @@ export function Conversation({
     const action = parseSlashCommand(text);
     switch (action.kind) {
       case "new":
-        // TODO: 等 morris-conversation-persistence Wave A subagent A 的
-        // createConversation Server Action 接通后, 在这里调用并切换 conversationId.
+        // Reset to a fresh conversation. Follows the existing lazy-create
+        // pattern in submit() — we don't pre-create a Conversation doc here.
+        // The next user message will hit the `if (!id)` block in submit() and
+        // create the doc then, identical to opening the dock for the first
+        // time. The just-abandoned conversation has already been saved by the
+        // previous onFinish, so invalidating the history makes it surface in
+        // the drawer / HistoryPreview immediately.
+        if (typeof setMessages === "function") setMessages([]);
+        setCurrentId(null);
+        router.replace("/assistant", { scroll: false });
+        invalidateConversations();
         return true;
       case "clear":
         // setMessages 由 @ai-sdk/react useChat 提供; 当前版本 (3.0.198) 一定返回。

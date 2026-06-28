@@ -8,7 +8,7 @@
  *   - /list         → useChat.sendMessage({ text: "列出我所有的调研" })
  *   - /study <id>   → context-switch sendMessage prompt
  *   - /help         → local-only assistant message via setMessages
- *   - /new          → no-op TODO (subagent A wires createConversation later)
+ *   - /new          → setMessages([]) + clear currentId + URL reset
  *   - /foo unknown  → falls through to sendMessage with the literal text
  *
  * Follows .kiro/steering/testing.md::Test double pattern §1-2.
@@ -156,18 +156,25 @@ describe("Conversation — slash commands (P1-6)", () => {
     expect(useChatHandle.state.setMessages).not.toHaveBeenCalled();
   });
 
-  it("/new is intercepted as a TODO (no sendMessage, no setMessages)", () => {
-    render(<Conversation />);
+  it("/new resets to a fresh empty conversation (clears messages, no sendMessage)", () => {
+    // seed an existing in-flight conversation so /new has something to clear.
+    useChatHandle.state.messages = [
+      { id: "m1", role: "user", parts: [{ type: "text", text: "hi" }] },
+      { id: "m2", role: "assistant", parts: [{ type: "text", text: "hello" }] },
+    ];
+    render(<Conversation conversationId="existing-conv-id" />);
     const textarea = screen.getByPlaceholderText(
       "问我任何关于你调研的问题…",
     ) as HTMLTextAreaElement;
     typeAndSubmit(textarea, "/new");
 
-    // /new is recognised (not an unknown verb) so it MUST NOT fall through to
-    // sendMessage. It also doesn't touch setMessages — the persistence wave
-    // (subagent A) wires the real action later.
+    // /new resets messages to []. The next user message will lazy-create a
+    // Conversation doc via submit()'s `if (!id)` block — identical to the
+    // first-message path when opening the dock fresh.
+    expect(useChatHandle.state.setMessages).toHaveBeenCalledWith([]);
+    expect(useChatHandle.state.messages).toEqual([]);
+    // /new is a UI-only reset — no LLM round-trip.
     expect(useChatHandle.state.sendMessage).not.toHaveBeenCalled();
-    expect(useChatHandle.state.setMessages).not.toHaveBeenCalled();
     // input must clear after a recognised slash command consumed it.
     expect(textarea.value).toBe("");
   });
