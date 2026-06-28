@@ -121,6 +121,12 @@ describe("issueLivekitToken status routing", () => {
 
     const r = await issueLivekitToken({ linkToken: "valid" }, deps);
     expect(r.status).toBe(500);
+    // P-SEC-04: response body is the flat registered code, no raw
+    // exception text leaked from the catch block (symmetric with the
+    // createRoom-failure case above; without this assertion the
+    // `internal_error: ${err.message}` bug could regress on the
+    // signToken path specifically).
+    if (r.status === 500) expect(r.body.error).toBe("internal_error");
     expect(sessions.size).toBe(0);
     expect(link.usedCount).toBe(1);
   });

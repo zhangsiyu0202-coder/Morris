@@ -33,5 +33,7 @@ describe("changePlan (ADR 0006 M5)", () => {
   it("maps Stripe failure to 500", async () => {
     const r = await changePlan(REQ, makeDeps({ createPlanChangeSession: vi.fn(async () => { throw new Error("stripe down"); }) }));
     expect(r.status).toBe(500);
+    // P-SEC-04: response body is a flat { error: <code> } (no raw message).
+    expect(r.body).toEqual({ error: "internal_error" });
   });
 });
