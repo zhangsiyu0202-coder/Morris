@@ -163,10 +163,16 @@ export async function analyzeSession(
     return { status: 409, body: { error: "session_not_completed" } };
   }
 
-  const transcript = await deps.findTranscript(sessionId);
+  // Transcript (keyed on sessionId) and survey context (keyed on
+  // session.surveyId) are independent — resolve in parallel so the handler's
+  // pre-LLM I/O cost is bounded by the slower of the two reads, not the sum.
+  // We surface transcript_not_found before survey_not_found to match the
+  // original error precedence.
+  const [transcript, survey] = await Promise.all([
+    deps.findTranscript(sessionId),
+    deps.findSurveyContext(session.surveyId),
+  ]);
   if (!transcript) return { status: 404, body: { error: "transcript_not_found" } };
-
-  const survey = await deps.findSurveyContext(session.surveyId);
   if (!survey) return { status: 404, body: { error: "survey_not_found" } };
 
   const llmInput: AnalysisReportInput = {

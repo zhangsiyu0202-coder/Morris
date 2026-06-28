@@ -19,16 +19,20 @@ export default async function TranscriptPage({
   // returns the study only if Appwrite lets the caller read it (author or
   // workspace team — ADR-0006 B). Downstream reads are by session/survey id, so
   // this gate also closes direct by-session access.
-  const study = await getStudyForViewer(id);
+  //
+  // After auth, study / session / bookmarks are all keyed off ids the caller
+  // owns. They're independent — run in parallel so the page's TTFB tracks the
+  // slowest single read, not the sum. transcript stays sequential because it
+  // needs study.ownerUserId to key the analysis-report lookup.
+  const [study, session, bookmarks] = await Promise.all([
+    getStudyForViewer(id),
+    getSessionById(sessionId),
+    listBookmarksBySession(sessionId),
+  ]);
   if (!study) notFound();
-
-  const session = await getSessionById(sessionId);
   if (!session || session.surveyId !== id) notFound();
 
   const transcript = await loadStudyTranscript(sessionId, study.ownerUserId);
-  // Bookmarks: the session client returns the workspace team's annotations (or
-  // just the owner's, solo) — Appwrite enforces the tenant scope natively.
-  const bookmarks = await listBookmarksBySession(sessionId);
 
   return (
     <TranscriptView

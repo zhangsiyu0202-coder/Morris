@@ -54,9 +54,14 @@ export async function loadStudyResults(studyId: string): Promise<ResultsTable> {
   try {
     const owner = await getOwnerUserIdOrNull();
     if (!owner) return getMockResults(studyId);
-    const sessions = await listSessions(studyId);
+    // Both reads depend only on studyId — run in parallel. We still treat 0
+    // sessions as the empty-state mock, but we save one round trip on the
+    // hot path where sessions exist.
+    const [sessions, questions] = await Promise.all([
+      listSessions(studyId),
+      listQuestionRefs(studyId),
+    ]);
     if (sessions.length === 0) return getMockResults(studyId);
-    const questions = await listQuestionRefs(studyId);
     return sessionsToResults(questions, sessions);
   } catch {
     return getMockResults(studyId);
@@ -68,27 +73,42 @@ export async function loadStudyTranscript(
   reportOwnerUserId?: string | null,
 ): Promise<TranscriptDetail> {
   try {
-    const transcript = await getTranscriptBySession(sessionId);
+    // transcript / session / owner are independent of each other. Resolve them
+    // together so this RSC's TTFB is bounded by the slowest single read instead
+    // of the sum of three. Owner lookup matches the original `??` semantics —
+    // null OR undefined fall through to getOwnerUserIdOrNull().
+    const ownerPromise =
+      reportOwnerUserId == null
+        ? getOwnerUserIdOrNull()
+        : Promise.resolve(reportOwnerUserId);
+    const [transcript, session, owner] = await Promise.all([
+      getTranscriptBySession(sessionId),
+      getSessionById(sessionId),
+      ownerPromise,
+    ]);
     if (!transcript) return getMockTranscript(sessionId);
-    const session = await getSessionById(sessionId);
-    // The AnalysisReport is keyed by the study's author; a teammate viewer
-    // passes it in so they see the same AI summary the author does.
-    const owner = reportOwnerUserId ?? (await getOwnerUserIdOrNull());
+
     let aiSummary = "";
     let visualAnalysis = null;
     let recording = null;
     if (owner && session?.surveyId) {
-      const report = await getLatestAnalysisReport(owner, {
-        scope: "session",
-        sessionId,
-        surveyId: session.surveyId,
-      });
+      // analysis report (by ownerUserId + surveyId + sessionId) and recording
+      // (by sessionId) are independent and read the same Appwrite shape; pair
+      // them on the wire.
+      const [report, recordingDoc] = await Promise.all([
+        getLatestAnalysisReport(owner, {
+          scope: "session",
+          sessionId,
+          surveyId: session.surveyId,
+        }),
+        getRecordingBySession(sessionId),
+      ]);
       const body = report ? parseSessionReportBody(report) : null;
       if (body) {
         aiSummary = sessionReportToSummary(body);
         visualAnalysis = body.visualAnalysis ?? null;
       }
-      recording = await getRecordingBySession(sessionId);
+      recording = recordingDoc;
     }
     return transcriptToDetail(transcript, session, aiSummary, recording, visualAnalysis);
   } catch {
