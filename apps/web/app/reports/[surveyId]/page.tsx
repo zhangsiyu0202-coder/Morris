@@ -28,14 +28,16 @@ export default async function ReportDetailPage({
   const { surveyId } = await params;
   const ownerUserId = await getCurrentUserId();
   if (!ownerUserId) return <NotAllowed />;
-  const study = await getStudy(surveyId);
+  // After auth, the three reads are independent — all keyed off (surveyId,
+  // ownerUserId). On the happy path (study exists) parallelizing saves two
+  // round trips. The miss path costs two wasted reads, but it is rare since
+  // users reach this page from the /reports list (study exists by construction).
+  const [study, completed, stored] = await Promise.all([
+    getStudy(surveyId),
+    countCompletedSessions(surveyId),
+    getLatestAnalysisReport(ownerUserId, { surveyId, scope: "survey" }),
+  ]);
   if (!study) return <NotFound />;
-
-  const completed = await countCompletedSessions(surveyId);
-  const stored = await getLatestAnalysisReport(ownerUserId, {
-    surveyId,
-    scope: "survey",
-  });
   const body = stored ? parseSurveyReportBody(stored) : null;
 
   // D5 triptych: empty / loading / rendered.
