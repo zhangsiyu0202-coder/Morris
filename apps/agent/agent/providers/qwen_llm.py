@@ -1,11 +1,9 @@
-"""Qwen-VL LLM adapter (multimodal text+image, drop-in replacement for the
-cascade ``llm=`` slot).
+"""Qwen-VL LLM adapter (multimodal text+image, cascade ``llm=`` slot).
 
 Qwen-VL speaks the OpenAI chat-completions protocol (with ``image_url`` content
 parts), so the livekit ``openai`` plugin is reused with DashScope's
 OpenAI-compatible base URL. This is the active LLM in the cascade today
-(replaced DeepSeek to enable image-stimulus understanding); ``deepseek.py``
-remains in this package as a dormant alternative for easy revert.
+(replaced DeepSeek to enable image-stimulus understanding; see ADR-0011).
 
 Switching the LLM provider violates the default ``DeepSeek is the only LLM``
 rule (``architecture.md``); see ADR-0011 for the authorising decision.

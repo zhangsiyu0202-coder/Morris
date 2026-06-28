@@ -7,8 +7,6 @@ lazily imports ``livekit.plugins``.
 Providers (per design.md §AI 服务):
 - Qwen-VL   -> 全站 cascade LLM（访谈推进与 task result 归纳），多模态
               (text+image)，通过 DashScope 的 OpenAI 兼容端点访问。
-- DeepSeek  -> dormant 保留在 ``deepseek.py`` 以便回退（由架构规则
-              ``architecture.md`` 要求保持，见 ADR-0011 TODO）。
 - Qwen      -> 实时 ASR / TTS，复用 DashScope 同一 API key。
 - Gemini    -> ADR-0007 opt-in realtime mode (MERISM_GEMINI_LIVE=1). AUDIO
               modality: Live API does ASR + LLM + TTS in one model, no external
@@ -22,9 +20,6 @@ from dataclasses import dataclass
 
 # --- Defaults ---------------------------------------------------------------
 
-DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
-DEFAULT_DEEPSEEK_MODEL = "deepseek-chat"
-
 # DashScope exposes an OpenAI-compatible gateway; Qwen ASR/TTS models are
 # addressed through it so the existing livekit openai plugin can be reused.
 DEFAULT_QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
@@ -37,7 +32,7 @@ DEFAULT_LANGUAGE = "zh"
 DEFAULT_QWEN_VL_MODEL = "qwen3-vl-plus"
 
 # Gemini Live realtime option (ADR-0007). Opt-in via MERISM_GEMINI_LIVE=1; when
-# off the agent keeps the DeepSeek (LLM) + Qwen (ASR/TTS) cascade. The 2.5
+# off the agent keeps the Qwen-VL (LLM) + Qwen (ASR/TTS) cascade.
 # native-audio Live model keeps mutable_chat_context=True (unlike the 3.1
 # Live preview, which disables it and would force question-task changes), so
 # the existing question-task on_enter generate_reply works unchanged. Per
@@ -102,9 +97,7 @@ def _first(env: Mapping[str, str], *keys: str, default: str | None = None) -> st
 
 def resolve_llm_settings(env: Mapping[str, str]) -> LLMSettings:
     """Resolve Qwen-VL (cascade) LLM settings via DashScope; raises if the API
-    key is absent. ``QWEN_API_KEY`` is accepted as a ``DASHSCOPE_API_KEY`` alias.
-    The DeepSeek constants (``DEFAULT_DEEPSEEK_*``) are kept dormant for revert
-    but are not read by this resolver."""
+    key is absent. ``QWEN_API_KEY`` is accepted as a ``DASHSCOPE_API_KEY`` alias."""
     api_key = _first(env, "DASHSCOPE_API_KEY", "QWEN_API_KEY")
     if not api_key:
         raise ProviderConfigError("DASHSCOPE_API_KEY (or QWEN_API_KEY) is required for the cascade LLM")
@@ -131,8 +124,8 @@ def resolve_speech_settings(env: Mapping[str, str]) -> SpeechSettings:
 
 
 def gemini_live_enabled(env: Mapping[str, str] | None = None) -> bool:
-    """Whether the realtime interview uses Gemini Live instead of DeepSeek+Qwen
-    (ADR-0007). Strict literal per the steering flag convention. Unset -> off."""
+    """Whether the realtime interview uses Gemini Live instead of the Qwen
+    cascade (ADR-0007). Strict literal per the steering flag convention. Unset -> off."""
     resolved = os.environ if env is None else env
     return resolved.get("MERISM_GEMINI_LIVE") == "1"
 

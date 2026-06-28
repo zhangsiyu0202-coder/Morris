@@ -24,7 +24,6 @@ ADR-0001 fixes the realtime controller as **LiveKit Supervisor + ordered TaskGro
 | `agent/interview/egress_recorder.py` | Recording finalization (LiveKit egress). |
 | `agent/persistence/appwrite_repository.py` | `InterviewRepository` Protocol-injected client; `from_env` builds the real Appwrite SDK client via lazy import. |
 | `agent/persistence/serializers.py` | Pure document shapers (transcript_document, recording_document, session_*_fields). |
-| `agent/providers/deepseek.py` | DeepSeek LLM adapter behind a narrow interface. |
 | `agent/providers/qwen.py` | Qwen ASR/TTS adapter. |
 | `agent/providers/settings.py` | Provider env wiring. |
 | `tests/` | pytest + hypothesis. `tests/properties/` for property tests. `test_workflow.py` covers the pure workflow exhaustively. |
@@ -67,7 +66,7 @@ NEVER:
 - Adding a field the agent does not use yet: skip mirror, leave a `# NOTE: mirror when agent needs it` comment.
 
 ### Provider adapter rules
-- Qwen-VL is the primary cascade LLM (per ADR-0011). DeepSeek is a dormant secondary (``deepseek.py``, retained for revert). Qwen is reserved for ASR/TTS. Adding another requires a new ADR.
+- Qwen-VL is the primary cascade LLM (per ADR-0011). Qwen is reserved for ASR/TTS. Adding another requires a new ADR.
 - Adapters classify failures into `TransientProviderError` (retried by `with_retry`) and `PermanentProviderError` (never retried).
 - Adapters MUST NOT log raw prompts / completions / audio at info. Debug only, gated by `MERISM_DEBUG_PROVIDERS=1`.
 

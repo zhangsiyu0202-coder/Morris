@@ -88,7 +88,8 @@ def test_provider_settings_available_is_false_without_credentials():
 
 def test_resolve_speech_backend_defaults_and_validates():
     assert resolve_speech_backend({}) == DEFAULT_SPEECH_BACKEND
-    assert resolve_speech_backend({"QWEN_SPEECH_BACKEND": "dashscope"}) == "dashscope"
+    assert resolve_speech_backend({"QWEN_SPEECH_BACKEND": "openai"}) == "openai"
+    assert resolve_speech_backend({"QWEN_SPEECH_BACKEND": "dashscope"}) == DEFAULT_SPEECH_BACKEND
     assert resolve_speech_backend({"QWEN_SPEECH_BACKEND": "bogus"}) == DEFAULT_SPEECH_BACKEND
 
 
