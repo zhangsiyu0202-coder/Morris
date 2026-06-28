@@ -32,6 +32,47 @@ const jsonArray = z.preprocess((val) => {
   return val;
 }, z.array(z.unknown()));
 
+/**
+ * Preprocess a JSON-stringified object so an inner zod schema can validate it.
+ * Bridges two wire shapes:
+ *   - Appwrite REST returns the column as a JSON string (e.g. `'{"level":"deep"}'`)
+ *   - TS callers / tests pass the already-parsed object
+ * Also tolerates `null` (Appwrite unset optional column) → treated as undefined
+ * so an `.optional()` outer wrapper resolves cleanly.
+ */
+function jsonObject<T extends z.ZodTypeAny>(inner: T) {
+  return z.preprocess((val) => {
+    if (val === null) return undefined;
+    if (typeof val === "string") {
+      try {
+        return JSON.parse(val);
+      } catch {
+        return val;
+      }
+    }
+    return val;
+  }, inner);
+}
+
+/**
+ * Same wire-bridge as `json` / `jsonArray` but unconstrained on the parsed
+ * value's shape. Used by AnalysisReport.insights, which carries an array for
+ * session-scope reports and an object (the full SurveyAnalysisReportOutput
+ * body) for survey-scope reports. The actual structural validation is the
+ * responsibility of the per-scope parsers in `lib/queries/reports.ts`
+ * (parseSessionReportBody / parseSurveyReportBody).
+ */
+const jsonAny = z.preprocess((val) => {
+  if (typeof val === "string") {
+    try {
+      return JSON.parse(val);
+    } catch {
+      return val;
+    }
+  }
+  return val;
+}, z.unknown());
+
 // Appwrite returns datetimes as ISO 8601 with `+HH:MM` offset
 // (e.g. `2026-06-15T10:05:10.156+00:00`); zod 3 `datetime()`
 // without options requires `Z`. The `offset: true` flag also accepts
@@ -158,8 +199,12 @@ export const SurveySectionSchema = z.object({
   title: z.string(),
   description: z.string().default(""),
   order: z.number().int().nonnegative(),
-  supervisorInstruction: z.string().optional(),
-  sectionInstruction: z.string().optional(),
+  // Appwrite stores these as nullable string columns and returns `null` (not
+  // omission) for unset rows. Schema accepts string | null | undefined so the
+  // strict reader in lib/queries/studies.ts no longer drops valid rows.
+  // Python mirror in apps/agent/agent/contracts.py already uses `str | None`.
+  supervisorInstruction: z.string().nullish(),
+  sectionInstruction: z.string().nullish(),
 });
 
 export const ProbeLevel = z.enum(["standard", "deep"]);
@@ -193,8 +238,12 @@ export const QuestionBlockSchema = z.object({
   type: QuestionType,
   prompt: z.string(),
   config: json.default({}),
-  probeConfig: ProbeConfigSchema.optional(),
-  stimulus: StimulusSchema.optional(),
+  // Appwrite stores these JSON-object columns as stringified JSON, and returns
+  // `null` for unset optional rows. jsonObject preprocesses both shapes through
+  // the typed inner schema. TS callers / Functions / tests that pass parsed
+  // objects continue to validate unchanged.
+  probeConfig: jsonObject(ProbeConfigSchema.optional()),
+  stimulus: jsonObject(StimulusSchema.optional()),
   probingPolicy: json.default({}),
   skipLogic: json.default({}),
 });
@@ -210,7 +259,7 @@ export const InterviewLinkSchema = z.object({
   usedCount: z.number().int().nonnegative().default(0),
   expiresAt: datetime(),
   isRevoked: z.boolean().default(false),
-  label: z.string().optional(),
+  label: z.string().nullish(),
 });
 
 export const TranscriptSegmentSchema = z.object({
@@ -263,13 +312,13 @@ export const InterviewSessionSchema = z
     surveyId: z.string(),
     linkId: z.string(),
     workspaceId: z.string().nullish(),
-    intervieweeAlias: z.string().optional(),
+    intervieweeAlias: z.string().nullish(),
     state: SessionState.default("created"),
     livekitRoom: z.string(),
     collectedAnswers: json.default({}),
-    errorContext: json.optional(),
-    startedAt: datetime().optional(),
-    endedAt: datetime().optional(),
+    errorContext: json.nullish(),
+    startedAt: datetime().nullish(),
+    endedAt: datetime().nullish(),
     qualityFlags: z.array(SessionQualityFlagSchema).default([]),
   })
   .superRefine((session, ctx) => {
@@ -312,7 +361,7 @@ export const DashboardSchema = z.object({
   surveyId: z.string(),
   scope: DashboardScope.default("study"),
   name: z.string(),
-  presetId: z.string().optional(),
+  presetId: z.string().nullish(),
   createdAt: datetime(),
   updatedAt: datetime(),
 });
@@ -366,9 +415,9 @@ export const BookmarkSchema = z.object({
   quote: z.string(),
   source: z.string(),
   respondent: z.string(),
-  segmentIndex: z.number().int().nonnegative().optional(),
+  segmentIndex: z.number().int().nonnegative().nullish(),
   /** Absolute recording offset (ms) this quote anchors to — the seek target for in-app playback. */
-  startMs: z.number().int().nonnegative().optional(),
+  startMs: z.number().int().nonnegative().nullish(),
   /** Researcher's own free-text annotation on this saved quote. Empty when unset. */
   note: z.string().default(""),
   /** Researcher-assigned tags for grouping/filtering bookmarks. Deduped, no empties. */
@@ -396,9 +445,16 @@ export const AnalysisReportSchema = z
     workspaceId: z.string().nullish(),
     authorId: z.string().nullish(),
     themes: jsonArray.default([]),
-    insights: jsonArray.default([]),
+    // `insights` carries an array for scope=session reports and an OBJECT
+    // (the full SurveyAnalysisReportOutput body) for scope=survey reports —
+    // the analyzeSurvey upsert deliberately stuffs the rollup body here
+    // pending a dedicated body column. jsonAny lets both shapes through; the
+    // per-scope parsers in `lib/queries/reports.ts` enforce the inner shape.
+    insights: jsonAny.default([]),
     citations: jsonArray.default([]),
-    storageFileId: z.string().optional(),
+    // Appwrite returns `null` for unset optional columns (not undefined), so
+    // every nullable column maps to `.nullish()` in zod, not `.optional()`.
+    storageFileId: z.string().nullish(),
     generatedAt: datetime(),
   })
   .superRefine((report, ctx) => {

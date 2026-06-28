@@ -27,8 +27,9 @@ function toDisplayStatus(state: InterviewSession["state"]): SessionDisplayStatus
   return "incomplete"; // abandoned / failed
 }
 
-/** ISO -> "YYYY-MM-DD HH:mm"(本地无关,纯字符串切片,避免时区/水合漂移)。 */
-function fmt(iso?: string): string {
+/** ISO -> "YYYY-MM-DD HH:mm"(本地无关,纯字符串切片,避免时区/水合漂移)。
+ * 接受 null 以匹配 contracts.md 中 datetime 列 `.nullish()` 的 wire 形态。 */
+function fmt(iso?: string | null): string {
   if (!iso) return "";
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(iso);
   return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}` : iso;
@@ -102,7 +103,7 @@ export function sessionsToResults(
   return { questionColumns, rows, totalCount: sessions.length };
 }
 
-function durationLabel(startedAt?: string, endedAt?: string): string {
+function durationLabel(startedAt?: string | null, endedAt?: string | null): string {
   if (!startedAt || !endedAt) return "—";
   const ms = Date.parse(endedAt) - Date.parse(startedAt);
   if (!Number.isFinite(ms) || ms <= 0) return "—";
