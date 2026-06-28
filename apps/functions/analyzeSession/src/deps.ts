@@ -158,7 +158,6 @@ export function createRealDeps(): AnalyzeSessionDeps {
     async findSurveyContext(surveyId: string): Promise<SurveyContext | null> {
       try {
         const survey = (await db.getDocument(DB, "surveys", surveyId)) as any;
-        const project = (await db.getDocument(DB, "projects", survey.projectId)) as any;
         const sectionsRes = await db.listDocuments(DB, "survey_sections", [
           Query.equal("surveyId", surveyId),
           Query.orderAsc("order"),
@@ -169,9 +168,22 @@ export function createRealDeps(): AnalyzeSessionDeps {
           Query.orderAsc("order"),
           Query.limit(500),
         ]);
+        // Owner derivation per ADR-0006: prefer `survey.authorId` (post-recast
+        // canonical author), fall back to `survey.ownerUserId` (M2 legacy
+        // column), then to `project.ownerUserId` only when the survey row
+        // carries neither. Reading the project last avoids a redundant round
+        // trip and decouples report ownership from the near-vestigial projects
+        // collection. Old seed data where project.ownerUserId diverges from
+        // survey.ownerUserId no longer writes reports under the wrong owner.
+        let ownerUserId: string | undefined = survey.authorId ?? survey.ownerUserId;
+        if (!ownerUserId) {
+          const project = (await db.getDocument(DB, "projects", survey.projectId)) as any;
+          ownerUserId = project.ownerUserId;
+        }
+        if (!ownerUserId) return null;
         return {
           surveyId,
-          ownerUserId: project.ownerUserId,
+          ownerUserId,
           title: survey.title,
           flowConfig: parseJson(survey.flowConfig, {}),
           sections: sectionsRes.documents.map((s: any) => ({

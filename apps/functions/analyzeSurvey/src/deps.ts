@@ -95,16 +95,29 @@ export function createRealDeps(): AnalyzeSurveyDeps {
     async findSurveyContext(surveyId: string): Promise<SurveyContextLite | null> {
       try {
         const survey = (await db.getDocument(DB, "surveys", surveyId)) as any;
-        const project = (await db.getDocument(DB, "projects", survey.projectId)) as any;
         const flow = parseJson<{ topics?: string[] }>(survey.flowConfig, {});
         const questionsRes = await db.listDocuments(DB, "question_blocks", [
           Query.equal("surveyId", surveyId),
           Query.orderAsc("order"),
           Query.limit(500),
         ]);
+        // Owner derivation per ADR-0006: prefer `survey.authorId` (the post-recast
+        // canonical author), fall back to `survey.ownerUserId` (legacy column kept
+        // through M2 migration), then to `project.ownerUserId` only when the
+        // survey row carries neither. Reading the project last avoids a redundant
+        // round trip on the hot path and decouples report ownership from the
+        // near-vestigial projects collection (P-ANL-Owner). Old seed data where
+        // project.ownerUserId diverges from survey.ownerUserId no longer writes
+        // reports under the wrong owner.
+        let ownerUserId: string | undefined = survey.authorId ?? survey.ownerUserId;
+        if (!ownerUserId) {
+          const project = (await db.getDocument(DB, "projects", survey.projectId)) as any;
+          ownerUserId = project.ownerUserId;
+        }
+        if (!ownerUserId) return null;
         return {
           surveyId,
-          ownerUserId: project.ownerUserId,
+          ownerUserId,
           title: survey.title,
           questionBlocks: questionsRes.documents.map((q: any) => ({
             questionId: q.$id,
