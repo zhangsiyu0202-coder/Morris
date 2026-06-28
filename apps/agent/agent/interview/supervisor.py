@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Mapping
-from datetime import UTC, datetime
 from typing import Any
 
 from agent.contracts import (
@@ -27,6 +26,7 @@ from agent.contracts import (
     SectionTaskGroupConfig,
     SubmitInterviewAnswerRpcRequest,
     SubmitInterviewAnswerRpcResponse,
+    now_iso,
 )
 from agent.interview.task_group_builder import build_section_task_group
 from agent.interview.workflow import (
@@ -36,10 +36,6 @@ from agent.interview.workflow import (
     record_question_result,
     should_accept_ui_answer,
 )
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def create_supervisor_agent_class():
@@ -82,62 +78,15 @@ def create_supervisor_agent_class():
                 self._repo.mark_in_progress(self._state.sessionId)
             try:
                 await self._run_all_sections()
-                self._publish_state("completed")
-                if self._repo is not None:
-                    self._persist_transcript()
-                    await self._persist_recording()
-                    answers = collected_answers_map(self._state)
-                    self._repo.complete_session(self._state.sessionId, answers)
-                    # ADR-0006 D6: emit the billable UsageEvent for a completed
-                    # interview. Idempotent + threshold-gated inside the repo.
-                    duration_ms = int((time.monotonic() - started_monotonic) * 1000)
-                    answered_count = sum(1 for a in answers.values() if a.get("answer"))
-                    self._repo.emit_usage_event(
-                        self._state.sessionId,
-                        self._state.surveyId,
-                        duration_ms=duration_ms,
-                        answered_count=answered_count,
-                    )
-                    # ADR-0003 D1+D4: chain analyzeSession -> analyzeSurvey on
-                    # completion. Failures are logged inside the repository
-                    # method and never raised back to the supervisor.
-                    self._repo.trigger_post_session_analysis(
-                        self._state.sessionId, self._state.surveyId
-                    )
+                await self._finish_session(started_monotonic, state="completed")
             except asyncio.CancelledError:
-                # Browser disconnect / worker shutdown. Persist what we
-                # already collected, mark the session as ``abandoned``,
-                # and still trigger post-session analysis so the
-                # researcher gets a partial report. The Function-side
-                # hallucination gate (analyzeSession R3.4) rejects
-                # transcripts too thin to analyze, so we don't risk
-                # generating garbage reports for trivially short
-                # cancellations. CancelledError must be re-raised so
-                # asyncio can complete cancellation cleanly.
                 self._log.warn(
                     "interview cancelled mid-run",
                     sessionId=self._state.sessionId,
                 )
-                if self._repo is not None:
-                    self._publish_state("abandoned")
-                    self._persist_transcript()
-                    await self._persist_recording()
-                    answers = collected_answers_map(self._state)
-                    self._repo.complete_session(
-                        self._state.sessionId, answers, state="abandoned"
-                    )
-                    self._repo.trigger_post_session_analysis(
-                        self._state.sessionId, self._state.surveyId
-                    )
+                await self._finish_session(started_monotonic, state="abandoned")
                 raise
             except Exception as error:  # noqa: BLE001 - surface + persist failure
-                # LiveKit Agents 1.6 wraps room-disconnect cancellation
-                # in ``ToolError("AgentTask <id> is cancelled")`` instead
-                # of CancelledError. Detect that string + treat as
-                # abandonment so the chain still runs; otherwise it's a
-                # genuine failure (LLM down, bad section, ...) and we
-                # mark the session failed without dispatching analysis
-                # on potentially-broken data.
                 error_msg = str(error)
                 wrapped_cancellation = "cancelled" in error_msg.lower()
                 if wrapped_cancellation:
@@ -146,29 +95,39 @@ def create_supervisor_agent_class():
                         sessionId=self._state.sessionId,
                         error=error_msg,
                     )
+                    await self._finish_session(started_monotonic, state="abandoned")
                 else:
                     self._log.error(
                         "interview failed",
                         sessionId=self._state.sessionId,
                         error=error_msg,
                     )
-                if self._repo is not None:
-                    self._persist_transcript()
-                    await self._persist_recording()
-                    if wrapped_cancellation:
-                        self._publish_state("abandoned")
-                        answers = collected_answers_map(self._state)
-                        self._repo.complete_session(
-                            self._state.sessionId, answers, state="abandoned"
-                        )
-                        self._repo.trigger_post_session_analysis(
-                            self._state.sessionId, self._state.surveyId
-                        )
-                    else:
+                    if self._repo is not None:
                         self._repo.fail_session(
                             self._state.sessionId, {"message": error_msg}
                         )
                 raise
+
+        async def _finish_session(self, started_monotonic: float, *, state: str) -> None:
+            self._publish_state(state)
+            if self._repo is None:
+                return
+            self._persist_transcript()
+            await self._persist_recording()
+            answers = collected_answers_map(self._state)
+            self._repo.complete_session(self._state.sessionId, answers, state=state)
+            if state == "completed":
+                duration_ms = int((time.monotonic() - started_monotonic) * 1000)
+                answered_count = sum(1 for a in answers.values() if a.get("answer"))
+                self._repo.emit_usage_event(
+                    self._state.sessionId,
+                    self._state.surveyId,
+                    duration_ms=duration_ms,
+                    answered_count=answered_count,
+                )
+            self._repo.trigger_post_session_analysis(
+                self._state.sessionId, self._state.surveyId
+            )
 
         # -- section / question loop -------------------------------------
 
@@ -341,7 +300,7 @@ def create_supervisor_agent_class():
                 currentSectionId=self._state.currentSectionId,
                 currentQuestionId=self._state.currentQuestionTaskId,
                 currentQuestion=current_question,
-                updatedAt=_now_iso(),
+                updatedAt=now_iso(),
             )
             # set_attributes is async; _publish_state is called from both
             # sync callback (on_question_enter) and async paths (on_enter,

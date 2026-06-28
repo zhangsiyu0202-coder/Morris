@@ -12,7 +12,6 @@ killing the live interview.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 
 from agent.contracts import (
@@ -20,6 +19,7 @@ from agent.contracts import (
     SessionState,
     TranscriptSegment,
     is_billable_interview,
+    now_iso,
     usage_event_id,
 )
 from agent.persistence.serializers import (
@@ -37,10 +37,6 @@ from agent.persistence.serializers import (
     transcript_document,
     usage_event_document,
 )
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _tenant_read_permissions(
@@ -151,7 +147,7 @@ class InterviewRepository:
         )
 
     def mark_in_progress(self, session_id: str) -> None:
-        fields = session_progress_fields(state="in_progress", started_at=_now_iso())
+        fields = session_progress_fields(state="in_progress", started_at=now_iso())
         self._safe_update(session_id, fields, "mark session in_progress")
 
     def update_state(self, session_id: str, state: SessionState) -> None:
@@ -166,14 +162,39 @@ class InterviewRepository:
     ) -> None:
         fields = session_completion_fields(
             collected_answers=dict(collected_answers),
-            ended_at=_now_iso(),
+            ended_at=now_iso(),
             state=state,
         )
         self._safe_update(session_id, fields, f"set session {state}")
 
     def fail_session(self, session_id: str, error_context: Mapping[str, Any]) -> None:
-        fields = session_failure_fields(error_context=dict(error_context), ended_at=_now_iso())
+        fields = session_failure_fields(error_context=dict(error_context), ended_at=now_iso())
         self._safe_update(session_id, fields, "fail session")
+
+    def _upsert_document(
+        self,
+        collection_id: str,
+        doc_id: str,
+        document: Mapping[str, Any],
+        permissions: Sequence[str] | None,
+        label: str,
+    ) -> None:
+        try:
+            self._db.create_document(
+                DATABASE_ID, collection_id, doc_id, document, permissions
+            )
+        except Exception as create_error:  # noqa: BLE001 - upsert fallback
+            try:
+                self._db.update_document(
+                    DATABASE_ID, collection_id, doc_id, document
+                )
+            except Exception as update_error:  # noqa: BLE001
+                self._log.error(
+                    f"failed to persist {label}",
+                    sessionId=doc_id,
+                    createError=str(create_error),
+                    updateError=str(update_error),
+                )
 
     def save_transcript(
         self,
@@ -194,25 +215,10 @@ class InterviewRepository:
             session_id=session_id,
             segments=segments,
             language=language,
-            finalized_at=_now_iso(),
+            finalized_at=now_iso(),
         )
         permissions = _tenant_read_permissions(owner_user_id, workspace_id)
-        try:
-            self._db.create_document(
-                DATABASE_ID, TRANSCRIPTS_COLLECTION_ID, session_id, document, permissions
-            )
-        except Exception as create_error:  # noqa: BLE001 - upsert fallback
-            try:
-                self._db.update_document(
-                    DATABASE_ID, TRANSCRIPTS_COLLECTION_ID, session_id, document, permissions
-                )
-            except Exception as update_error:  # noqa: BLE001
-                self._log.error(
-                    "failed to persist transcript",
-                    sessionId=session_id,
-                    createError=str(create_error),
-                    updateError=str(update_error),
-                )
+        self._upsert_document(TRANSCRIPTS_COLLECTION_ID, session_id, document, permissions, "transcript")
 
     def resolve_survey_tenancy(self, survey_id: str) -> tuple[str | None, str | None]:
         """Read ``(ownerUserId, workspaceId)`` from the survey for document
@@ -251,7 +257,36 @@ class InterviewRepository:
             self._log.warn("recording persistence skipped: no Storage client configured", sessionId=session_id)
             return
 
-        storage_file_id = session_id
+        uploaded = self._upload_recording_file(
+            session_id=session_id,
+            file_bytes=file_bytes,
+            format=format,
+            owner_user_id=owner_user_id,
+            workspace_id=workspace_id,
+        )
+        if not uploaded:
+            return
+
+        document = recording_document(
+            session_id=session_id,
+            owner_user_id=owner_user_id,
+            storage_file_id=session_id,
+            duration_ms=duration_ms,
+            format=format,
+        )
+        permissions = _tenant_read_permissions(owner_user_id, workspace_id)
+        self._upsert_document(RECORDINGS_COLLECTION_ID, session_id, document, permissions, "recording document")
+
+    def _upload_recording_file(
+        self,
+        *,
+        session_id: str,
+        file_bytes: bytes,
+        format: RecordingFormat,
+        owner_user_id: str,
+        workspace_id: str | None,
+    ) -> bool:
+        """Upload the recording to Appwrite Storage. Returns True on success."""
         mime_by_format: dict[RecordingFormat, str] = {
             "mp4": "video/mp4",
             "webm": "video/webm",
@@ -274,18 +309,18 @@ class InterviewRepository:
             try:
                 self._storage.create_file(
                     RECORDINGS_BUCKET_ID,
-                    storage_file_id,
+                    session_id,
                     upload,
                     permissions,
                 )
             except Exception as create_error:  # noqa: BLE001 - upsert fallback
                 try:
-                    self._storage.delete_file(RECORDINGS_BUCKET_ID, storage_file_id)
+                    self._storage.delete_file(RECORDINGS_BUCKET_ID, session_id)
                 except Exception:  # noqa: BLE001 - best-effort replace
                     pass
                 self._storage.create_file(
                     RECORDINGS_BUCKET_ID,
-                    storage_file_id,
+                    session_id,
                     upload,
                     permissions,
                 )
@@ -294,40 +329,14 @@ class InterviewRepository:
                     sessionId=session_id,
                     createError=str(create_error),
                 )
+            return True
         except Exception as error:  # noqa: BLE001
             self._log.error(
                 "failed to upload recording to storage",
                 sessionId=session_id,
                 error=str(error),
             )
-            return
-
-        document = recording_document(
-            session_id=session_id,
-            owner_user_id=owner_user_id,
-            storage_file_id=storage_file_id,
-            duration_ms=duration_ms,
-            format=format,
-        )
-        permissions = _tenant_read_permissions(owner_user_id, workspace_id)
-        try:
-            self._db.create_document(
-                DATABASE_ID,
-                RECORDINGS_COLLECTION_ID,
-                session_id,
-                document,
-                permissions,
-            )
-        except Exception as create_error:  # noqa: BLE001 - upsert fallback
-            try:
-                self._db.update_document(DATABASE_ID, RECORDINGS_COLLECTION_ID, session_id, document)
-            except Exception as update_error:  # noqa: BLE001
-                self._log.error(
-                    "failed to persist recording document",
-                    sessionId=session_id,
-                    createError=str(create_error),
-                    updateError=str(update_error),
-                )
+            return False
 
     def emit_usage_event(
         self,
@@ -357,7 +366,7 @@ class InterviewRepository:
             workspace_id=workspace_id,
             study_id=survey_id,
             session_id=session_id,
-            occurred_at=_now_iso(),
+            occurred_at=now_iso(),
         )
         try:
             self._db.create_document(

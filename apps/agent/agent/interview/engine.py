@@ -25,11 +25,7 @@ from typing import Any
 from agent.contracts import InterviewRoomMetadata
 from agent.interview.egress_recorder import EgressRecorder, EgressSettings
 from agent.interview.supervisor import create_supervisor_agent_class
-from agent.interview.transcript import (
-    SPEAKER_AGENT,
-    SPEAKER_INTERVIEWEE,
-    TranscriptCollector,
-)
+from agent.interview.transcript import TranscriptCollector
 from agent.interview.workflow import (
     index_runtime_questions,
     initial_workflow_state,
@@ -187,86 +183,72 @@ class InterviewEngine:
     def _wire_transcription(self, session: Any) -> None:
         """Forward finalized conversation turns into the transcript buffer +
         normalize interviewee text to Simplified Chinese in place.
-
-        livekit emits ``conversation_item_added`` with a role + text content.
-        Exact timing isn't always available on the event, so a monotonic cursor
-        is used to keep segments ordered for the analysis module's citations.
-
-        Why mutate events in place: Gemini Live ASR returns Traditional Chinese
-        for Mandarin audio in AI Studio mode (Vertex-AI-only `language_codes`
-        kwarg is rejected, see ``gemini.py``). LiveKit's RoomIO subscribes to
-        ``user_input_transcribed`` and ``conversation_item_added`` to publish
-        the transcription to the room as a LiveKit transcription stream. We
-        register our normalizer FIRST so the mutated `ev.transcript` /
-        ``message.content`` flows through to RoomIO, the persistence layer,
-        and the browser uniformly. pyee's ``EventEmitter`` calls listeners in
-        registration order; we register here, before ``session.start()`` wires
-        RoomIO listeners.
         """
-        from agent.interview.transcript import normalize_interviewee_text
-
-        def normalize_user_event(ev: Any) -> None:
-            transcript = getattr(ev, "transcript", "") or ""
-            if not transcript:
-                return
-            normalized = normalize_interviewee_text(transcript)
-            if normalized != transcript:
-                # Pydantic v2 BaseModel allows attribute assignment unless
-                # frozen; UserInputTranscribedEvent is not frozen.
-                try:
-                    ev.transcript = normalized
-                except Exception as error:  # noqa: BLE001 - best-effort
-                    self._log.warn(
-                        "could not normalize user_input_transcribed",
-                        error=str(error),
-                    )
-
-        def normalize_user_item(event: Any) -> None:
-            item = getattr(event, "item", event)
-            role = getattr(item, "role", "") or ""
-            if role != "user":
-                return
-            content = getattr(item, "content", None)
-            if not content:
-                return
-            new_content: list[Any] = []
-            mutated = False
-            for part in content:
-                if isinstance(part, str):
-                    norm = normalize_interviewee_text(part)
-                    new_content.append(norm)
-                    if norm != part:
-                        mutated = True
-                else:
-                    new_content.append(part)
-            if mutated:
-                try:
-                    item.content = new_content
-                except Exception as error:  # noqa: BLE001 - best-effort
-                    self._log.warn(
-                        "could not normalize conversation_item content",
-                        error=str(error),
-                    )
-
-        def on_item(event: Any) -> None:
-            item = getattr(event, "item", event)
-            role = getattr(item, "role", "") or ""
-            text = self._extract_text(item)
-            if not text:
-                return
-            speaker = SPEAKER_AGENT if role == "assistant" else SPEAKER_INTERVIEWEE
-            start_ms = self._turn_cursor_ms
-            end_ms = start_ms + max(1, len(text) * 60)  # ~heuristic duration
-            self._turn_cursor_ms = end_ms
-            self._transcript.add(speaker=speaker, start_ms=start_ms, end_ms=end_ms, text=text)
-
         try:
-            # ORDER MATTERS: normalizers BEFORE on_item / RoomIO listeners.
-            session.on("user_input_transcribed", normalize_user_event)
-            session.on("conversation_item_added", normalize_user_item)
-            session.on("conversation_item_added", on_item)
+            session.on("user_input_transcribed", self._on_user_input_transcribed)
+            session.on("conversation_item_added", self._on_conversation_item_added)
+            session.on("conversation_item_added", self._on_transcript_item)
         except Exception as error:  # noqa: BLE001 - event wiring is best-effort
             self._log.warn("could not register transcription listener", error=str(error))
+
+    def _on_user_input_transcribed(self, ev: Any) -> None:
+        from agent.interview.transcript import normalize_interviewee_text
+
+        transcript = getattr(ev, "transcript", "") or ""
+        if not transcript:
+            return
+        normalized = normalize_interviewee_text(transcript)
+        if normalized != transcript:
+            try:
+                ev.transcript = normalized
+            except Exception as error:  # noqa: BLE001 - best-effort
+                self._log.warn(
+                    "could not normalize user_input_transcribed",
+                    error=str(error),
+                )
+
+    def _on_conversation_item_added(self, event: Any) -> None:
+        from agent.interview.transcript import normalize_interviewee_text
+
+        item = getattr(event, "item", event)
+        role = getattr(item, "role", "") or ""
+        if role != "user":
+            return
+        content = getattr(item, "content", None)
+        if not content:
+            return
+        new_content: list[Any] = []
+        mutated = False
+        for part in content:
+            if isinstance(part, str):
+                norm = normalize_interviewee_text(part)
+                new_content.append(norm)
+                if norm != part:
+                    mutated = True
+            else:
+                new_content.append(part)
+        if mutated:
+            try:
+                item.content = new_content
+            except Exception as error:  # noqa: BLE001 - best-effort
+                self._log.warn(
+                    "could not normalize conversation_item content",
+                    error=str(error),
+                )
+
+    def _on_transcript_item(self, event: Any) -> None:
+        from agent.interview.transcript import SPEAKER_AGENT, SPEAKER_INTERVIEWEE
+
+        item = getattr(event, "item", event)
+        role = getattr(item, "role", "") or ""
+        text = self._extract_text(item)
+        if not text:
+            return
+        speaker = SPEAKER_AGENT if role == "assistant" else SPEAKER_INTERVIEWEE
+        start_ms = self._turn_cursor_ms
+        end_ms = start_ms + max(1, len(text) * 60)
+        self._turn_cursor_ms = end_ms
+        self._transcript.add(speaker=speaker, start_ms=start_ms, end_ms=end_ms, text=text)
 
     @staticmethod
     def _extract_text(item: Any) -> str:
