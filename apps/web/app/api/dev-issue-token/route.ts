@@ -186,7 +186,15 @@ function makeDeps(): IssueDeps {
           }),
         );
       }
-      await rooms.createRoom({ name: room, metadata: finalMetadata });
+      // LiveKit room defaults — keep in sync with the production
+      // createRealDeps() in apps/functions/issueLivekitToken/src/deps.ts.
+      // See that file for the rationale on emptyTimeout and maxParticipants.
+      await rooms.createRoom({
+        name: room,
+        metadata: finalMetadata,
+        emptyTimeout: 60 * 60,
+        maxParticipants: 5,
+      });
     },
     async deleteRoom(room) {
       await rooms.deleteRoom(room);

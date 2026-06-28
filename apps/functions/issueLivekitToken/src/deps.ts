@@ -194,7 +194,22 @@ export function createRealDeps(): IssueDeps {
         );
       }
 
-      await rooms.createRoom({ name: room, metadata: finalMetadata });
+      // LiveKit room defaults per Server SDK v2 spec
+      // (https://github.com/livekit/node-sdks/blob/main/packages/livekit-server-sdk/README.md#managing-rooms):
+      //   emptyTimeout — seconds after the last participant leaves before the
+      //     room is GC'd. Server default ≈ 5 min, which can drop the room
+      //     during a slow agent dispatch / interviewee reconnect window. One
+      //     hour comfortably covers a 30–45 min interview plus margin.
+      //   maxParticipants — defense in depth: the design has 1 interviewee +
+      //     1 agent. Cap at 5 to leave headroom for the agent reconnect
+      //     window and any future transient participant (e.g. egress agent),
+      //     without ever admitting a third human.
+      await rooms.createRoom({
+        name: room,
+        metadata: finalMetadata,
+        emptyTimeout: 60 * 60,
+        maxParticipants: 5,
+      });
     },
 
     async deleteRoom(room: string): Promise<void> {
