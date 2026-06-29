@@ -1,5 +1,15 @@
 # Morris Memory — Design
 
+> **Status note (2026-06-29):** §3, §10.6 and §11 describe a `destructive 折中` 
+> (整 tool `destructive: false` + `delete` action 直接执行 / 等 morris-tool-metadata 
+> Wave 2 后接 approval) that has been **superseded** by 
+> `docs/adr/0009-aisdk-native-hitl-and-prune-messages.md`. The current 
+> implementation uses AI SDK 6 原生 `tool({ needsApproval: async ({action}) => action === "delete" })` 
+> for per-action approval, removing the `withApprovalGuard` / `proposeApproval` 
+> 套壳 entirely. The §10.6 折中 is no longer in effect. This note is the 
+> breadcrumb; the rest of the spec is preserved as historical record per 
+> `AGENTS.md::specs are append-mostly`.
+
 ## §1. Overview
 
 ```

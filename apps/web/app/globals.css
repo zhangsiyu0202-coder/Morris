@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* Streamdown — Vercel 官方 AI 流式 markdown 组件。让 Tailwind 4 扫到
+ * streamdown 内部默认样式用到的 utility class (markdown 元素 default
+ * renderer 走 streamdown 的 className, 即便我们的 components map 覆盖了
+ * 大多数, 还有少量 prose 元素走默认路径)。
+ * 参 https://streamdown.ai/docs/migrate#7-configure-tailwind-css */
+@source "../node_modules/streamdown/dist/*.js";
+@source "../node_modules/@streamdown/code/dist/*.js";
+@source "../node_modules/@streamdown/cjk/dist/*.js";
+
 /*
  * Mauve Quiet design system tokens.
  * Source of truth: .kiro/steering/design-system.md

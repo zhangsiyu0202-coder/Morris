@@ -20,6 +20,7 @@ vi.mock("@/lib/conversations/actions", async () => ({
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { ConversationHistory } from "../conversation-history";
 import * as actions from "@/lib/conversations/actions";
+import { SWRTestWrapper } from "./fixtures/swr-test-wrapper";
 
 afterEach(() => {
   cleanup();
@@ -54,13 +55,13 @@ describe("ConversationHistory", () => {
     vi.mocked(actions.listConversations).mockImplementation(
       () => new Promise(() => {}), // never resolves
     );
-    render(<ConversationHistory currentId={null} onSelect={vi.fn()} />);
+    render(<ConversationHistory currentId={null} onSelect={vi.fn()} />, { wrapper: SWRTestWrapper });
     expect(screen.getByTestId("history-loading")).toBeTruthy();
   });
 
   it("renders empty state when listConversations returns []", async () => {
     vi.mocked(actions.listConversations).mockResolvedValue([]);
-    render(<ConversationHistory currentId={null} onSelect={vi.fn()} />);
+    render(<ConversationHistory currentId={null} onSelect={vi.fn()} />, { wrapper: SWRTestWrapper });
     await waitFor(() => {
       expect(screen.getByTestId("history-empty")).toBeTruthy();
     });
@@ -68,7 +69,7 @@ describe("ConversationHistory", () => {
 
   it("renders error banner with retry when listConversations throws", async () => {
     vi.mocked(actions.listConversations).mockRejectedValueOnce(new Error("net down"));
-    render(<ConversationHistory currentId={null} onSelect={vi.fn()} />);
+    render(<ConversationHistory currentId={null} onSelect={vi.fn()} />, { wrapper: SWRTestWrapper });
     const errEl = await screen.findByTestId("history-error");
     expect(errEl.textContent).toContain("net down");
     // retry: clicking 重试 calls listConversations again
@@ -81,7 +82,7 @@ describe("ConversationHistory", () => {
 
   it("renders items and highlights the active conversation", async () => {
     vi.mocked(actions.listConversations).mockResolvedValue(sampleItems);
-    render(<ConversationHistory currentId="c1" onSelect={vi.fn()} />);
+    render(<ConversationHistory currentId="c1" onSelect={vi.fn()} />, { wrapper: SWRTestWrapper });
     await waitFor(() => screen.getByTestId("history-item-c1"));
     const activeRow = screen.getByTestId("history-item-c1");
     expect(activeRow.getAttribute("aria-current")).toBe("page");
@@ -92,7 +93,7 @@ describe("ConversationHistory", () => {
   it("clicking a row calls onSelect with that item id", async () => {
     vi.mocked(actions.listConversations).mockResolvedValue(sampleItems);
     const onSelect = vi.fn();
-    render(<ConversationHistory currentId="c1" onSelect={onSelect} />);
+    render(<ConversationHistory currentId="c1" onSelect={onSelect} />, { wrapper: SWRTestWrapper });
     await waitFor(() => screen.getByTestId("history-item-c2"));
     fireEvent.click(screen.getByTestId("history-item-c2"));
     expect(onSelect).toHaveBeenCalledWith("c2");
@@ -106,7 +107,7 @@ describe("ConversationHistory", () => {
       .mockResolvedValueOnce([sampleItems[0]])
       .mockResolvedValueOnce([]);
     vi.mocked(actions.deleteConversation).mockResolvedValue({ ok: true as const });
-    render(<ConversationHistory currentId={null} onSelect={vi.fn()} />);
+    render(<ConversationHistory currentId={null} onSelect={vi.fn()} />, { wrapper: SWRTestWrapper });
     await waitFor(() => screen.getByTestId("history-item-c1"));
     fireEvent.click(screen.getByTestId("history-delete-c1"));
     // confirm dialog appears
@@ -123,7 +124,7 @@ describe("ConversationHistory", () => {
 
   it("delete confirm 取消 keeps the row + closes the dialog", async () => {
     vi.mocked(actions.listConversations).mockResolvedValue([sampleItems[0]]);
-    render(<ConversationHistory currentId={null} onSelect={vi.fn()} />);
+    render(<ConversationHistory currentId={null} onSelect={vi.fn()} />, { wrapper: SWRTestWrapper });
     await waitFor(() => screen.getByTestId("history-item-c1"));
     fireEvent.click(screen.getByTestId("history-delete-c1"));
     fireEvent.click(screen.getByText("取消"));
@@ -135,7 +136,7 @@ describe("ConversationHistory", () => {
   it("close button calls onClose when provided", async () => {
     vi.mocked(actions.listConversations).mockResolvedValue([]);
     const onClose = vi.fn();
-    render(<ConversationHistory currentId={null} onSelect={vi.fn()} onClose={onClose} />);
+    render(<ConversationHistory currentId={null} onSelect={vi.fn()} onClose={onClose} />, { wrapper: SWRTestWrapper });
     await waitFor(() => screen.getByTestId("history-empty"));
     fireEvent.click(screen.getByLabelText("关闭历史"));
     expect(onClose).toHaveBeenCalled();
@@ -143,7 +144,7 @@ describe("ConversationHistory", () => {
 
   it("Escape key closes the delete-confirm dialog without deleting", async () => {
     vi.mocked(actions.listConversations).mockResolvedValue([sampleItems[0]]);
-    render(<ConversationHistory currentId={null} onSelect={vi.fn()} />);
+    render(<ConversationHistory currentId={null} onSelect={vi.fn()} />, { wrapper: SWRTestWrapper });
     await waitFor(() => screen.getByTestId("history-item-c1"));
     fireEvent.click(screen.getByTestId("history-delete-c1"));
     // confirm dialog appears

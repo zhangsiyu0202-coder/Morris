@@ -61,13 +61,18 @@ interface ManageMemoriesArtifact {
  * Morris manageMemories tool — 借鉴 PostHog `manage_memories.py`. 5 actions
  * discriminated union, full type-safe via @merism/contracts schema.
  *
- * destructive metadata 折中 (design.md §10.6): 整 tool 标 `destructive: false`
- * 让 readOnly query/list 不被 over-approved. `delete` action 当前**直接执行**
- * (与实际 confirm 端点 501 占位保持代码-行为一致); 防误删通过 LLM prompt
- * 指引 (description 强调 "仅在用户明确说删除时调") + cross-owner ownership
- * check (loadMemoryDoc + ownerUserId 比对). 真 approval flow 留 morris-
- * tool-metadata Wave 2 引 per-action destructive metadata + confirm 端点接通
- * 后回归.
+ * Per-action approval (ADR-0009): `delete` action 通过 AI SDK 6 原生
+ * `needsApproval: async ({input}) => input.action === "delete"` 触发研究员
+ * 二次确认; `create` / `update` / `query` / `list` 直接执行。整 tool 的
+ * `metadata.annotations.destructive` 仍是 `false`, 因为它描述的是"任意调用
+ * 是否一定 destructive", 答案是否定 (4 个 action 是 read 或 append-only)。
+ * destructive 语义由 needsApproval 在运行时按 input 分流, 不再依赖 metadata
+ * 推导 — 早期 `.kiro/specs/morris-memory/design.md §10.6` 的"折中"(整 tool
+ * destructive=false, delete 直接执行) 由本 ADR 取代。
+ *
+ * Ownership check + cross-owner 防护仍在 `deleteMemory` 内部 (loadMemoryDoc +
+ * ownerUserId 比对, throw "not_authorized"), 与 approval 互为冗余 — 任一拒绝
+ * 即可阻断。
  */
 export function buildManageMemoriesTool(ctx: AssistantToolContext) {
   const { ownerUserId } = ctx;
@@ -76,8 +81,9 @@ export function buildManageMemoriesTool(ctx: AssistantToolContext) {
     title: "管理长期记忆",
     description: TOOL_DESCRIPTION,
     annotations: {
-      // Tool overall is not destructive — write actions (create/update) are
-      // recoverable + delete needs explicit approval flow per Wave 2.
+      // 整 tool 不标 destructive — query/list/create/update 都非破坏性, delete
+      // 是唯一破坏性 action 但已被 needsApproval per-action 拦下。把整 tool
+      // 标 destructive 会让 readOnly query/list 也被过度 approve。
       readOnly: false,
       destructive: false,
       idempotent: false,
@@ -111,6 +117,11 @@ export function buildManageMemoriesTool(ctx: AssistantToolContext) {
     spec: tool({
       description: TOOL_DESCRIPTION,
       inputSchema: InputSchema,
+      // AI SDK 6 原生 per-action approval (per ADR-0009): 仅 `delete` 触发
+      // 研究员二次确认。create/update/query/list 直接执行。`input.action` 在
+      // 这里是 flat union shape (与下面 execute 入参一致), AI SDK 把工具入参
+      // 原样转给 needsApproval 与 execute, 因此判定是 "input.action === 'delete'"。
+      needsApproval: async ({ action }: InputShape) => action === "delete",
       execute: async (
         rawInput: InputShape,
       ): Promise<ToolResultEnvelope<ManageMemoriesArtifact | ToolErrorArtifact>> => {
@@ -167,10 +178,12 @@ export function buildManageMemoriesTool(ctx: AssistantToolContext) {
               });
             }
             case "delete": {
-              // 当前: 直接执行 (无 approval). 防误删靠 LLM prompt 指引 + ownership
-              // check (deleteMemory 内部 loadMemoryDoc + ownerUserId 比对).
-              // 真 approval flow 等 morris-tool-metadata Wave 2 + confirm 端点
-              // 接通后回归 (per design.md §10.6).
+              // 抵达这里时 AI SDK 的 needsApproval gate 已经放行 (用户点了"批准"),
+              // 或工具被以 needsApproval=false 的姿势调用 (不应该发生 — 我们的
+              // tool() 上 needsApproval 写死 `({action}) => action === "delete"`)。
+              // ownership check 仍走 deleteMemory 内部 loadMemoryDoc + ownerUserId
+              // 比对, 作为 approval 的冗余防护 (cross-owner 即使被"批准"也会被
+              // 这层 throw "not_authorized" 拦下)。参 docs/adr/0009-aisdk-native-hitl-and-prune-messages.md。
               await deleteMemory({ memoryId: input.memoryId });
               return toolResult(`已删除 memory ${input.memoryId}`, {
                 action: "delete" as const,

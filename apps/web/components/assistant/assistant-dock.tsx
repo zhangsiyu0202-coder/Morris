@@ -8,7 +8,7 @@ import { Conversation } from "./conversation";
 import { ConversationHistory } from "./conversation-history";
 import { createConversation } from "@/lib/conversations/actions";
 import { useCurrentConversationId } from "./use-current-conversation-id";
-import { invalidateConversations } from "./use-conversation-invalidate";
+import { useInvalidateConversations } from "./use-conversations";
 
 const SUGGESTIONS = ["分析当前调研结果", "受访者最常抱怨什么?", "帮我起草一份新调研"];
 
@@ -18,6 +18,7 @@ export function AssistantDock() {
   const [conversationId, setConversationId] = useCurrentConversationId();
   const [creating, setCreating] = useState(false);
   const pathname = usePathname();
+  const invalidate = useInvalidateConversations();
 
   async function startNewConversation() {
     if (creating) return;
@@ -26,7 +27,7 @@ export function AssistantDock() {
       const { conversationId: id } = await createConversation();
       setConversationId(id);
       setHistoryOpen(false);
-      invalidateConversations();
+      await invalidate();
     } catch {
       // welcome screen still works without persistence — silent fall-through
     } finally {

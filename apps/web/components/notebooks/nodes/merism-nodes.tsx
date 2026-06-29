@@ -64,7 +64,7 @@ function MerismQuote({ node }: { node: MerismNode }) {
   const inner = (
     <>
       <Quote size={12} aria-hidden />
-      <span className="line-clamp-1">"{quote}"</span>
+      <span className="line-clamp-1">&ldquo;{quote}&rdquo;</span>
     </>
   );
   return href ? (

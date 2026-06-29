@@ -1,5 +1,7 @@
 # Design Document — morris-tool-metadata
 
+> **Status note (2026-06-29):** 文中所有把 `withApprovalGuard(toolName, metadata, execute)` 当作 canonical pattern 的描述, 已被 **`docs/adr/0009-aisdk-native-hitl-and-prune-messages.md`** 取代。Destructive 工具改用 AI SDK 6 原生 `tool({ needsApproval })`, 不再有 `withApprovalGuard` 套壳。R1-R3 + R5-R9 (ToolMetadata 字段约定 / enabled 默认值 / enrichUrl 模板 / system prompt manifest 接入 / 测试约束) 仍然有效; R4 (`destructive=true → 自动接 approval` 的语义) 由 `needsApproval` 直接表达。
+>
 > Prerequisite：`morris-agent-hardening/design.md`（工具拆分到 `tools/<name>.ts`、ToolResultEnvelope、ApprovalEnvelope、PageContext、static prompt 拼接器；本 Spec 在其基础上**新增 metadata 字段**，不动其形状）；`analysis-report/design.md`（read tools 与 `lib/queries/*` 读出层）；`notebooks/design.md`（`createNotebook` 与 `searchAcrossStudies` 工具）；`docs/adr/0002-page-assistant-vercel-ai-sdk.md`（Vercel AI SDK 6 / DeepSeek 栈）；`.kiro/steering/scope.md`（borrow-or-build flow，已论证不暴露 MCP server）。借鉴来源 `/home/jia/posthog/products/*/mcp/tools.yaml`，仅作参考实现，**不作为运行时依赖**。
 
 本设计对应 Spec **morris-tool-metadata**：把 Morris 7 个工具的元数据从"散在 system prompt 文本 + `approval.ts` 硬编码 + Card 内硬写 deep link"的隐式状态收紧到每个 builder 显式声明的 `ToolMetadata` 结构。9 个 Requirement 落地全部在 `apps/web/lib/assistant/*` 与 `apps/web/components/assistant/tool-results.tsx`，不动其它包。

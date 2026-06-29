@@ -10,14 +10,7 @@ import {
   PageContextSchema,
   type PageContext,
 } from "@/lib/assistant/page-context";
-import {
-  applyCompaction,
-  planCompaction,
-  summarizeMessages,
-} from "@/lib/assistant/compaction";
 import { getCurrentUserId } from "@/lib/queries/auth";
-
-const COMPACTION_OPTS = { tokenBudget: 12_000, minKeepTurns: 3, tailKeep: 8 };
 
 // AI SDK 必须使用 Node runtime(绝不用 edge),且 cookies() 也只能在 Node 上下文里读。
 export const runtime = "nodejs";
@@ -40,6 +33,11 @@ export const maxDuration = 30;
  * 错误处理 (R4): 由 `classifyMorrisError` 把底层错误归入 5 类(client/api/
  * transient/transport/unknown), 用对应中文文案回复, 同时进程内计数器自增,
  * 服务端日志写一行结构化简述(不含 stack/api key)。
+ *
+ * 对话压缩 (Wave 4 SDD): 早期在这里跑 LLM 摘要器 (planCompaction + applyCompaction
+ * + summarizeMessages) 是错的——pruneMessages 操作 ModelMessage 在 agent 的
+ * prepareStep 里更准确, 且不需要额外一次 LLM 调用。当前实现:agent.ts::prepareStep
+ * 使用 AI SDK 6 原生 `pruneMessages` 按 token 预算结构性裁剪。
  */
 export async function POST(req: Request) {
   let messages: UIMessage[];
@@ -85,15 +83,10 @@ export async function POST(req: Request) {
     }));
 
   try {
-    // R6: 在送进 ToolLoopAgent 之前先做对话压缩。失败 → fallback "(早期对话已省略)"。
-    const compactionPlan = planCompaction(messages, COMPACTION_OPTS);
-    const compacted = await applyCompaction(messages, compactionPlan, summarizeMessages);
-    const uiMessages = compacted as UIMessage[];
-
     const agent = buildMorrisAgent({ ownerUserId, pageContext, agentContext, memories: memoryItems });
     return await createAgentUIStreamResponse({
       agent,
-      uiMessages,
+      uiMessages: messages,
       // Forward the request abort signal so useChat.stop() on the client
       // actually cancels the in-flight DeepSeek call rather than running it
       // to completion (and burning tokens) after the SSE reader is closed.

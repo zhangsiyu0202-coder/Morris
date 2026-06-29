@@ -16,14 +16,13 @@
  *   - card: bg-ink-0 + border-ink-200 + rounded-md + shadow-sm + hover:shadow
  *   - 1 col on small viewports, 2 cols on >= sm (matches dock-vs-standalone form)
  *   - line-clamp-2 on preview text so taller cards do not jitter row height
+ *
+ * Cache is shared with `ConversationHistory` via SWR (see `use-conversations.ts`),
+ * so create / delete / title-generation in one surface immediately reflects in
+ * the other without manual cross-component plumbing.
  */
 
-import { useEffect, useState, useCallback, useRef } from "react";
-import { useOnConversationsInvalidate } from "./use-conversation-invalidate";
-
-import { listConversations } from "@/lib/conversations/actions";
-import type { ConversationListItem } from "@merism/contracts";
-
+import { useConversations } from "./use-conversations";
 import { relativeTime } from "./conversation-history";
 
 interface HistoryPreviewProps {
@@ -38,37 +37,14 @@ export function HistoryPreview({
   limit = 5,
   compact = false,
 }: HistoryPreviewProps) {
-  const [items, setItems] = useState<ConversationListItem[] | null>(null);
-  // Track whether the component is still mounted so we don't call setItems on
-  // a stale promise resolution after the user navigates away. (React 18+ no
-  // longer warns about state-on-unmounted but it's still a real memory leak +
-  // potential test-flake.)
-  const mountedRef = useRef(true);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
+  const { data, isLoading } = useConversations();
 
-  const reload = useCallback(() => {
-    listConversations()
-      .then((list) => {
-        if (mountedRef.current) setItems(list.slice(0, limit));
-      })
-      .catch(() => {
-        if (mountedRef.current) setItems([]); // swallow on welcome screen — no banner here
-      });
-  }, [limit]);
+  // Welcome screen rules: stay clean while loading, stay clean when empty,
+  // stay clean on any error (the dedicated history drawer surfaces errors —
+  // we don't want a red banner on the welcome page).
+  if (isLoading || !data || data.length === 0) return null;
 
-  useEffect(() => {
-    reload();
-  }, [reload]);
-
-  useOnConversationsInvalidate(reload);
-
-  if (items === null) return null; // loading; welcome screen renders without a placeholder
-  if (items.length === 0) return null; // empty → render nothing (no "no history" copy on welcome)
+  const items = data.slice(0, limit);
 
   return (
     <section

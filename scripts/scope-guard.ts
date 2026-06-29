@@ -91,10 +91,6 @@ const BILLING_COLLECTIONS = new Set([
   "workspace_quota", "workspace_memberships", "stripe_events",
 ]);
 // LiveKit grants legitimately use these; neutralize the line if present.
-// Morris conversation-compaction module reuses the word "plan" in the hogai
-// "plan + apply" sense (CompactionPlan / planCompaction / plan.dropped / plan.keep
-// / plan.action). Whitelist those exact tokens so the scope guard does not
-// false-positive on the unrelated "subscription plan" sense.
 //
 // notebooks sub-spec Wave F: also whitelist `\bInsight\b` patterns appearing
 // in legitimate AnalysisReport / dashboard contexts that are intentionally
@@ -103,14 +99,6 @@ const BILLING_COLLECTIONS = new Set([
 const ALLOW = [
   "canSubscribe",
   "canPublish",
-  "CompactionPlan",
-  "planCompaction",
-  "plan.action",
-  "plan.dropped",
-  "plan.keep",
-  "plan + apply",
-  "if (plan.",
-  "compaction_manager",
   // AnalysisReport embedded insights[] / dashboard widget type
   "top_insights",
   "topInsights",

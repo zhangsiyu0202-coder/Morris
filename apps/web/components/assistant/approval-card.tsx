@@ -1,149 +1,151 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, Check, X, Loader2 } from "lucide-react";
-
-import { Markdown } from "./markdown";
+import { AlertTriangle, Check, X } from "lucide-react";
+import type { SurveyDraft } from "@merism/contracts";
 
 /**
- * Morris 危险操作确认卡 (R8 / morris-agent-hardening, 占位).
+ * Morris destructive 工具确认卡片 — AI SDK 6 原生 HITL 形态
+ * (https://ai-sdk.dev/cookbook/next/human-in-the-loop)。
  *
- * 渲染规则:
- * - 在 ToolResult 流里识别 `artifact.status === "pending_approval"` (见 ./tool-results.tsx
- *   的接线点)。
- * - 视觉遵循 .kiro/steering/design-system.md (Mauve Quiet):
- *   primary 用 mauve-200 填充 (批准), 拒绝用 outline + ink-900 边框, 二次确认走 Dialog。
- * - 用户操作 → fetch /api/assistant/confirm。当前端点返 501 → UI 渲染"功能待实施"提示,
- *   不破坏对话 (R8 骨架阶段)。
+ * 由 `conversation.tsx` 在工具 part `state === "approval-requested"` 时渲染。
+ * 不发任何 fetch — 用户点击 → 调 props.onApprove() / props.onDeny() →
+ * 父组件用 useChat.addToolApprovalResponse 把决定写回, AI SDK 在下一轮
+ * sendAutomaticallyWhen 触发服务端续接 execute (批准) 或 skip (拒绝)。
  *
- * 本组件不直接判断"危险"语义, 只渲染 envelope; 消费端 Spec 接入时不需要改这里。
+ * 视觉遵循 .kiro/steering/design-system.md (Mauve Quiet):
+ *   - 批准 button = primary (mauve-200 填充 + ink-900 文字)
+ *   - 拒绝 button = outline (white 填充 + ink-900 边框)
+ *   - 拒绝时可附 reason (透传给 LLM 让它调整方案)
  */
 
-export interface ApprovalCardProps {
-  proposalId: string;
+interface ApprovalCardProps {
   toolName: string;
-  preview: string;
-  payload: Record<string, unknown>;
+  input: unknown;
+  onApprove: () => void;
+  onDeny: (reason?: string) => void;
 }
 
-type Phase = "idle" | "submitting" | "approved" | "rejected" | "error";
+export function ApprovalCard({ toolName, input, onApprove, onDeny }: ApprovalCardProps) {
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-export function ApprovalCard({ proposalId, toolName, preview, payload }: ApprovalCardProps) {
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [feedback, setFeedback] = useState("");
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [result, setResult] = useState<{ message?: string; url?: string } | null>(null);
+  const preview = renderPreviewMarkdown(toolName, input);
 
-  async function send(decision: "approve" | "reject") {
-    setPhase("submitting");
-    setErrorMsg(null);
-    try {
-      const res = await fetch("/api/assistant/confirm", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          proposalId,
-          decision,
-          toolName,
-          ...(decision === "approve" ? { payload } : {}),
-          ...(decision === "reject" && feedback.trim() ? { feedback: feedback.trim() } : {}),
-        }),
-      });
-      if (res.status === 501) {
-        // 该工具的写动作尚未接入(其它消费端 spec 待落地)。
-        setPhase("error");
-        setErrorMsg("该工具的 approval 写动作尚未接入。");
-        return;
-      }
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setPhase("error");
-        setErrorMsg(typeof data?.reason === "string" ? data.reason : typeof data?.error === "string" ? data.error : "confirm 请求失败");
-        return;
-      }
-      if (decision === "approve") {
-        const data = (await res.json().catch(() => ({}))) as { message?: string; url?: string };
-        setResult({ message: data.message, url: data.url });
-      }
-      setPhase(decision === "approve" ? "approved" : "rejected");
-    } catch (err) {
-      setPhase("error");
-      setErrorMsg(err instanceof Error ? err.message : String(err));
-    }
+  function handleApprove() {
+    setSubmitting(true);
+    onApprove();
   }
 
-  const submitting = phase === "submitting";
-  const finished = phase === "approved" || phase === "rejected";
+  function handleDeny() {
+    setSubmitting(true);
+    onDeny(reason.trim() || undefined);
+  }
 
   return (
     <div className="rounded-md border border-ink-200 bg-ink-0 p-4 shadow-sm">
       <div className="flex items-center gap-2 text-ink-900">
         <AlertTriangle size={18} />
-        <span className="font-ui text-body-sm font-semibold">需要您确认: {toolName}</span>
+        <span className="font-ui text-body-sm font-semibold">需要您确认: {labelFor(toolName)}</span>
       </div>
-      <div className="mt-3 max-h-72 overflow-y-auto rounded-sm bg-mauve-50 p-3 font-reading text-body-sm text-ink-800">
-        <Markdown>{preview}</Markdown>
+      <div className="mt-3 max-h-72 overflow-y-auto rounded-sm bg-mauve-50 p-3 font-reading text-body-sm leading-6 text-ink-800 whitespace-pre-wrap">
+        {preview}
       </div>
 
-      {phase === "idle" && (
-        <div className="mt-3 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => send("approve")}
-            className="inline-flex h-9 items-center gap-1.5 rounded bg-mauve-200 px-4 text-body-sm font-medium text-ink-900 transition hover:bg-mauve-100 disabled:opacity-50"
-            disabled={submitting}
-          >
-            <Check size={16} /> 批准
-          </button>
-          <button
-            type="button"
-            onClick={() => send("reject")}
-            className="inline-flex h-9 items-center gap-1.5 rounded border border-ink-900 bg-ink-0 px-4 text-body-sm font-medium text-ink-900 transition hover:bg-mauve-50 disabled:opacity-50"
-            disabled={submitting}
-          >
-            <X size={16} /> 拒绝
-          </button>
-          <input
-            type="text"
-            value={feedback}
-            onChange={(e) => setFeedback(e.target.value)}
-            placeholder="可选反馈 (拒绝时附上原因)"
-            className="ml-2 h-9 flex-1 rounded border border-ink-200 bg-ink-0 px-3 text-body-sm text-ink-900 placeholder:text-ink-400"
-            maxLength={500}
-          />
-        </div>
-      )}
-
-      {submitting && (
-        <div className="mt-3 flex items-center gap-2 text-ink-600">
-          <Loader2 size={16} className="animate-spin" />
-          <span className="text-body-sm">正在提交…</span>
-        </div>
-      )}
-
-      {phase === "approved" && (
-        <div className="mt-3 text-body-sm text-ink-900">
-          <p>{result?.message ?? "已批准。"}</p>
-          {result?.url && (
-            <a
-              href={result.url}
-              className="mt-1 inline-block font-ui text-body-sm text-ink-900 underline hover:text-ink-800"
-            >
-              打开调研 →
-            </a>
-          )}
-        </div>
-      )}
-      {phase === "rejected" && (
-        <p className="mt-3 text-body-sm text-ink-900">已拒绝。可继续与 Morris 对话, 它会调整方案。</p>
-      )}
-      {phase === "error" && errorMsg && (
-        <p className="mt-3 text-body-sm text-ink-900">⚠️ {errorMsg}</p>
-      )}
-
-      {finished && (
-        <p className="mt-2 text-caption text-ink-400">proposalId: {proposalId}</p>
-      )}
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={handleApprove}
+          disabled={submitting}
+          className="inline-flex h-9 items-center gap-1.5 rounded bg-mauve-200 px-4 text-body-sm font-medium text-ink-900 transition hover:bg-mauve-100 disabled:opacity-50"
+        >
+          <Check size={16} /> 批准
+        </button>
+        <button
+          type="button"
+          onClick={handleDeny}
+          disabled={submitting}
+          className="inline-flex h-9 items-center gap-1.5 rounded border border-ink-900 bg-ink-0 px-4 text-body-sm font-medium text-ink-900 transition hover:bg-mauve-50 disabled:opacity-50"
+        >
+          <X size={16} /> 拒绝
+        </button>
+        <input
+          type="text"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="可选反馈 (拒绝时附上原因)"
+          className="ml-2 h-9 flex-1 rounded border border-ink-200 bg-ink-0 px-3 text-body-sm text-ink-900 placeholder:text-ink-400"
+          maxLength={500}
+          disabled={submitting}
+        />
+      </div>
     </div>
   );
+}
+
+/** "createStudyDraft" → "创建调研" 等用户可读名。新增 destructive 工具时同步这里。 */
+function labelFor(toolName: string): string {
+  switch (toolName) {
+    case "createStudyDraft":
+      return "创建调研";
+    case "manageMemories":
+      return "删除长期记忆";
+    default:
+      return toolName;
+  }
+}
+
+/**
+ * 把 tool input 渲染成人读 markdown / 纯文本 preview。每个 destructive 工具
+ * 自己一段; 未注册的 toolName 走 JSON dump fallback (不应该在生产路径上发生)。
+ */
+function renderPreviewMarkdown(toolName: string, input: unknown): string {
+  if (toolName === "createStudyDraft") {
+    return renderCreateStudyDraftPreview(input as SurveyDraft);
+  }
+  if (toolName === "manageMemories") {
+    return renderManageMemoriesPreview(input);
+  }
+  // Fallback — JSON stringified, capped to avoid pathological lengths.
+  try {
+    return JSON.stringify(input, null, 2).slice(0, 2000);
+  } catch {
+    return String(input);
+  }
+}
+
+function renderCreateStudyDraftPreview(draft: SurveyDraft): string {
+  const questionCount = draft.sections.reduce((n, s) => n + s.questions.length, 0);
+  const sectionLines = draft.sections
+    .map((s, i) => {
+      const qs = s.questions.map((q, j) => `   ${j + 1}. ${q.questionText}`).join("\n");
+      return `${i + 1}. ${s.title} — ${s.objective}\n${qs}`;
+    })
+    .join("\n\n");
+  return (
+    `将创建调研「${draft.title}」并保存提纲(${draft.sections.length} 节、${questionCount} 个问题)。\n\n` +
+    `- 研究目标:${draft.researchGoal}\n` +
+    `- 目标人群:${draft.targetAudience}\n\n` +
+    sectionLines
+  );
+}
+
+/**
+ * manageMemories 仅在 `action === "delete"` 时触发 approval (per ADR-0009 +
+ * `tools/manage-memories.ts` 的 needsApproval), 所以只渲染 delete preview。
+ * 其他 action 也走到这里的话, fallback 到 JSON 即可。
+ */
+function renderManageMemoriesPreview(input: unknown): string {
+  const obj = input as { action?: string; memoryId?: string };
+  if (obj?.action === "delete" && obj.memoryId) {
+    return (
+      `将永久删除一条长期记忆 (memoryId=${obj.memoryId})。\n\n` +
+      `此操作不可撤销; 已存于记忆中的相关事实在删除后不再被 Morris 自动取用。`
+    );
+  }
+  try {
+    return JSON.stringify(input, null, 2).slice(0, 2000);
+  } catch {
+    return String(input);
+  }
 }

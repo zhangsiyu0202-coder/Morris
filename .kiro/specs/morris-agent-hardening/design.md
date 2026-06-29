@@ -1,5 +1,7 @@
 # Design Document — morris-agent-hardening
 
+> **Status note (2026-06-29):** R6 (`compaction.ts` LLM 摘要器: `planCompaction` + `applyCompaction` + `summarizeMessages`) 与 R8 (`approval.ts` + `withApprovalGuard` + `hasPendingApproval` stopWhen + `/api/assistant/confirm` 端点 + `ApprovalEnvelope` 两次 round-trip 模型) 已被 **`docs/adr/0009-aisdk-native-hitl-and-prune-messages.md`** 取代, 改用 AI SDK 6 原生 `tool({ needsApproval })` + `useChat.addToolApprovalResponse` + `sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses` + `pruneMessages` (在 `agent.ts::prepareStep`)。文中关于 `compaction.ts` / `withApprovalGuard` / `pending_approval` artifact 的描述是 **历史记录**, 不是当前实现。R1/R2/R3/R4/R5/R7 (ToolResultEnvelope / PageContext / Prompt 结构 / 错误分类 / 工具错误协议 / TodoWrite) 仍然有效。
+>
 > Prerequisite：`foundation-setup/design.md §Components and Interfaces`、`analysis-report/design.md`（Morris 当前工具与 read layer）、`docs/adr/0002-page-assistant-vercel-ai-sdk.md`（Vercel AI SDK 6 / DeepSeek 栈）、`.kiro/steering/design-system.md`（Mauve Quiet）。借鉴来源 `/home/jia/posthog/ee/hogai/`，仅作参考实现，**不作为运行时依赖**。
 
 本设计对应 Spec **morris-agent-hardening**：在不更换框架的前提下，把 Morris 的工具协议、上下文注入、提示词、错误分类、长会话压缩、TodoWrite 与 Approval 框架做齐。

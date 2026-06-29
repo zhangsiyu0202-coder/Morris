@@ -1,4 +1,4 @@
-import { ToolLoopAgent, stepCountIs, type StopCondition } from "ai";
+import { ToolLoopAgent, pruneMessages, stepCountIs, type ModelMessage, type StopCondition } from "ai";
 import {
   buildAssistantTools,
   buildAssistantToolMetadata,
@@ -12,7 +12,6 @@ import {
   type PageContext,
 } from "./page-context";
 import { CHAT_MODEL, REASONING_MODEL } from "./model";
-import { hasPendingApproval } from "./approval";
 import type { AgentContext } from "./agent-context";
 
 /**
@@ -25,6 +24,14 @@ import type { AgentContext } from "./agent-context";
  * LLM is fixed to DeepSeek (deepseek-chat with deepseek-reasoner as a
  * downgrade target on tool errors / late steps). See ADR-0002 for the stack
  * decision.
+ *
+ * Tool approval: 走 AI SDK 6 原生 HITL — `createStudyDraft` 在登录态 `tool({
+ * needsApproval: async () => true })`, SDK 在收到 LLM 的 tool call 时自动暂停
+ * 并把 `tool-approval-request` part 流到客户端;客户端按钮调
+ * `useChat.addToolApprovalResponse` 写回, `sendAutomaticallyWhen:
+ * lastAssistantMessageIsCompleteWithApprovalResponses` 自动续接。我们不再有自
+ * 写的 `hasPendingApproval` stopWhen / `withApprovalGuard` 套壳 / `/api/assistant/
+ * confirm` 端点。参 https://ai-sdk.dev/cookbook/next/human-in-the-loop。
  */
 
 const budgetExceeded: StopCondition<AssistantTools> = ({ steps }) => {
@@ -52,6 +59,21 @@ function hadToolError(
     }),
   );
 }
+
+/**
+ * Approximate token count for a ModelMessage[] window. Per AI SDK 6 cookbook
+ * (https://ai-sdk.dev/cookbook/guides/agent-context-compaction), `JSON.stringify(messages).length / 4`
+ * is a deliberately rough estimate that's "good enough" for triggering compaction
+ * — not a precise tokenizer. If we ever need tight token accounting we can swap
+ * to a provider's token counter, but for compaction trigger the rough number
+ * stays well under provider context limits with margin.
+ */
+function estimateModelMessageTokens(messages: ReadonlyArray<ModelMessage>): number {
+  return Math.ceil(JSON.stringify(messages).length / 4);
+}
+
+/** Token budget that triggers `pruneMessages` in `prepareStep`. */
+const COMPACT_AFTER_TOKENS = 12_000;
 
 /**
  * Morris 单次请求构造 agent 用的上下文。
@@ -107,19 +129,32 @@ export function buildMorrisAgent(ctx: MorrisRequestContext) {
     model: CHAT_MODEL,
     instructions: buildPrompt(),
     tools: buildAssistantTools({ ...ownerCtx, todoState }),
-    stopWhen: [stepCountIs(8), budgetExceeded, hasPendingApproval],
+    stopWhen: [stepCountIs(8), budgetExceeded],
     maxRetries: 2,
     prepareStep: async ({ stepNumber, steps, messages }) => {
       // 每步重渲染 system prompt 以反映最新 todos (R7)。
-      // 真正的对话压缩 (R6) 在 route.ts 进入 createAgentUIStreamResponse 之前完成,
-      // 这里只保留 ModelMessage 级的兜底截断与 reasoner 降级 (与 ADR-0002 一致)。
       const patch: {
         system?: string;
         model?: typeof CHAT_MODEL;
         messages?: typeof messages;
         toolChoice?: "none" | "auto";
       } = { system: buildPrompt() };
-      if (messages.length > 48) patch.messages = messages.slice(-32);
+
+      // Token-budget-driven context compaction via official `pruneMessages`
+      // (https://ai-sdk.dev/cookbook/guides/agent-context-compaction). 替换
+      // 早期自写的 LLM-summarizer (compaction.ts::planCompaction + applyCompaction
+      // + summarizeMessages) — 那套方案每次压缩多一次 DeepSeek 调用 + 摘要质量
+      // 不稳定。pruneMessages 是**纯结构性裁剪** (删 reasoning + 老 tool calls),
+      // 不调 LLM 即可控住 token 上限, 与 AI SDK 6 推荐用法对齐。
+      if (estimateModelMessageTokens(messages) > COMPACT_AFTER_TOKENS) {
+        patch.messages = pruneMessages({
+          messages,
+          reasoning: "all",
+          toolCalls: "before-last-3-messages",
+          emptyMessages: "remove",
+        });
+      }
+
       if (hadToolError(steps) || stepNumber >= 5) {
         patch.model = REASONING_MODEL;
         patch.toolChoice = "none";

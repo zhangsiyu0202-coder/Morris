@@ -117,7 +117,7 @@ Per-module supplement for the Next.js 15 (App Router) researcher web app. Read r
 
 1. **填齐 metadata**：`title` / `description` (≥ 120 字符, 含"做什么 / 何时用 / 关键参数怎么传") / `annotations` (`readOnly` + `destructive` + `idempotent` 三 boolean) / `requiredScopes` 数组 / 可选 `enrichUrl` 模板 / `type` (`read` / `write` / `draft` / `meta`) / `enabled` boolean。
 2. **默认 `enabled: false`**：开放给 LLM 需在 PR 描述写明理由 + reviewer 显式批准。借鉴 PostHog `tools.yaml` 的"60% 默认禁用"哲学。
-3. **destructive 自动走 approval**：`tools.ts::buildAssistantTools` 已用 `withApprovalGuard(name, metadata, execute)` 包装；不允许 builder 内部自调 `proposeApproval`（destructive 元数据驱动而非散落判断）。
+3. **destructive 走 AI SDK 6 原生 approval**：destructive 工具直接在 `tool({ needsApproval: ... })` 处声明 (`boolean | async (input, options) => boolean`,其中 `input` 是工具入参本身、`options` 含 `toolCallId`/`messages`/`experimental_context`),AI SDK 自动暂停 step 并把 `tool-approval-request` part 流给客户端;客户端 `useChat.addToolApprovalResponse` 写回 + `sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses` 自动续接。**不允许**自己造 `withApprovalGuard` 套壳 / `pending_approval` artifact / `/api/assistant/confirm` 端点 / `hasPendingApproval` stopWhen — 这些早期实现已删除。参 https://ai-sdk.dev/cookbook/next/human-in-the-loop。
 4. **`enrichUrl` 模板需有 `{key}` 占位符**：纯静态 URL 应直接放在 Card 视觉里；`tool-results.tsx::EnrichLinkRow` 通过模板 + artifact 字段渲染统一的"打开"按钮。client-safe 镜像 `lib/assistant/tool-enrich-urls.ts` 必须与 builder 内的 metadata.enrichUrl 一致 — `metadata.test.ts::K-METADATA-09` 强制。
 5. **同时注册到两处**：`buildAssistantTools` 与 `buildAssistantToolMetadata`；`metadata.test.ts::K-METADATA-01` 强制 keys 一致。
 
@@ -148,11 +148,11 @@ Morris 对话**全部持久化到 Appwrite** (collection `conversations`), 关 d
 - Server Action `submitFeedback` (`apps/web/lib/conversations/feedback.ts`): observability-only — 当前 `logger.info("morris.feedback", {conversationId, messageId, rating, hasText, textLength, ownerUserId})` 不持久化. 持久化到 `morris_feedback` collection 留单独 sub-spec (cohort eval 阶段需要时再做).
 - `conversationId === null` 时 FeedbackButtons return null — 没持久化的 conversation 不收 feedback 信号.
 
-**Cross-component invalidation** (`use-conversation-invalidate.ts`):
-- 模式: process-local `EventTarget` bus + `invalidateConversations()` producer + `useOnConversationsInvalidate(cb)` consumer hook. 借鉴 PostHog kea logic listener 模式但不引入 zustand/jotai.
-- Producers (调用点): `Conversation.submit` 第一次 createConversation 后 / `Conversation.onFinish` saveMessages 后 (title 可能变了) / `dock.startNewConversation` / `scene-shell.handleNewConversation` / `ConversationHistory.handleConfirmDelete`.
-- Consumers (订阅): `ConversationHistory` + `HistoryPreview` 各自 `useEffect(load)` 后注册 `useOnConversationsInvalidate(reload)`. 任何 producer fire 都触发 reload — dock 删完 standalone 自动刷.
-- 没有它: 两边各拉一次 listConversations, 永远显示 stale state.
+**Cross-component invalidation** (`use-conversations.ts`):
+- 模式: SWR (Vercel 官方) cache key `morris-conversations` + `useConversations()` hook 拿 `data/error/isLoading/mutate` + `useInvalidateConversations()` hook 返回一个 scoped 失效回调 (内部调 `useSWRConfig().mutate(KEY)`). 早期是自写 `EventTarget` bus + module-level `invalidateConversations()`, 已替换为 SWR 以借助内置的 cache/dedupe/cleanup. 用 hook 形式而非顶层 export 是为了让 SWRConfig 自定义 provider 的测试场景能拿到同一份 cache (避免 invalidator 打到 global cache 而组件读 isolated cache 的错配).
+- Producers (4 处, 在自己的 component 顶部调 `const invalidate = useInvalidateConversations()`, 然后在事件处理里 `await invalidate()`): `Conversation.submit` 第一次 createConversation 后 / `Conversation.onFinish` saveMessages 后 (title 可能变了) / `Conversation.handleSlashCommand` 的 `/new` / `dock.startNewConversation` / `scene-shell.handleNewConversation` / `ConversationHistory.handleConfirmDelete`.
+- Consumers (调用 `useConversations()`): `ConversationHistory` 与 `HistoryPreview` 共享同一 SWR cache. 任何 producer fire `invalidate()` 都同时刷新两边 — dock 删完 standalone 自动反映, 不会两边互相 stale.
+- 没有它: 两边各拉一次 listConversations 然后永远 stale; SWR 的 dedupe 还顺带省了同一 mount 周期内的重复请求.
 
 #### Long-term memory (binding, per `.kiro/specs/morris-memory/`)
 
@@ -163,7 +163,7 @@ Morris 跨对话**记得**用户偏好 / 业务背景 / 技术约束 (Appwrite `
 3. **Embedding**: 复用 `lib/server/embedder-qwen` (Qwen text-embedding-v3, 1024-dim, 与 Notebook 同). create/update fire-and-forget `embedAndSaveMemory`. query 时 in-memory cosine 排序 (< 200 memories/user); 失败 → fulltext fallback `Query.search("content", queryText)`, response 标 `fallback: "embedding-error" | "scale-fulltext-only"`.
 4. **Owner isolation**: 与 Conversation/Notebook 同 `OWNER_SCOPED + documentSecurity`. 每个 action 入口 `getCurrentUserId()` + 后比对 `ownerUserId === currentUserId` (cross-owner throw not_authorized). PBT P-MEM-02 强制.
 5. **Schema invariants**: `metadataKeys === Object.keys(metadata).sort()` (zod superRefine + PBT P-MEM-03 强制); embedding 1024-dim 严格 (K-MEM-03); content 1-4000 字符; metadataKeys 上限 16.
-6. **destructive 折中** (per design.md §10.6): tool 整体 `destructive: false` 让 readOnly query/list 不被 over-approved; `delete` action 当前直接执行 (待 morris-tool-metadata Wave 2 引 per-action destructive 后接 approval).
+6. **destructive per-action approval** (per `docs/adr/0009-aisdk-native-hitl-and-prune-messages.md`): tool 整体 `metadata.annotations.destructive: false` 让 readOnly query/list 不被 over-approved; `delete` action 走 AI SDK 6 原生 `needsApproval: async ({action}) => action === "delete"` 触发研究员二次确认; ownership check (loadMemoryDoc + ownerUserId 比对, throw `not_authorized`) 是冗余防护, 与 approval 任一拒绝即可阻断 cross-owner 误删。
 7. **不做** (留下次 sub-spec): 用户面板 /memories 编辑 UI / Memory 编辑 history / archival / TTL.
 
 #### LLM call observability (binding, per `.kiro/specs/morris-llm-observability/`)
@@ -171,8 +171,8 @@ Morris 跨对话**记得**用户偏好 / 业务背景 / 技术约束 (Appwrite `
 Morris 内部所有 LLM 调用必须经过 observability 层：
 
 1. **`apps/web/lib/assistant/model.ts::CHAT_MODEL` / `REASONING_MODEL`** 已用 `wrapLanguageModel({middleware: llmObservabilityMiddleware(...)})` 包过。ToolLoopAgent 内部每个 step 的 LLM 调用都自动走 middleware，scope = `morris.toolloop` / `morris.toolloop.reasoner`，每个 step 记一条 `LLMCallEvent`。
-2. **compaction.ts::summarizeMessages**, **actions/notebooks.ts::createNotebook**, **actions/guide-ai.ts** 用显式 `withLLMCall({scope, traceId, defaultModel}, () => generateText(...))` 包。scope 命名规范见 `.kiro/steering/errors-and-observability.md::LLM call observability`。
-3. **双 event 现象**：compaction 调用既经过 middleware (scope=`morris.toolloop`) 又经过显式 wrap (scope=`morris.compaction.summarize`)，写两条 event。**by design** — 让日志既看到"哪个调用点"又看到"哪个 model"。去重在日志查询层做。
+2. **`actions/notebooks.ts::createNotebook`**, **`actions/guide-ai.ts`** 用显式 `withLLMCall({scope, traceId, defaultModel}, () => generateText(...))` 包。scope 命名规范见 `.kiro/steering/errors-and-observability.md::LLM call observability`。
+3. **对话压缩** 用 AI SDK 6 原生 `pruneMessages` (在 `agent.ts::prepareStep` 里按 token 预算结构性裁剪), 不调 LLM, 因此不出现在 observability 表里 (per Morris SDD 统一 Wave 4)。早期的 `morris.compaction.summarize` LLM 摘要器已删除。
 4. **新加 LLM 调用 site**：必须用上述两种方式之一接入 + 同步登记到 `errors-and-observability.md::LLM call observability::Wave B 接入清单` 表。直接 `await generateText(...)` 而不经过 wrapper 是 forbidden — `pnpm test` 不会抓出来，但 review 必须 reject。
 5. **不要写 prompt / completion 进 event**：`LLMCallEvent` schema 已经把它排除掉。debug snippet 路径仅 `MERISM_DEBUG_PROVIDERS=1` 启用，截首 200 字符。
 

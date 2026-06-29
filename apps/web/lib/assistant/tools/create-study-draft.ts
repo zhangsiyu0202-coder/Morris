@@ -1,5 +1,4 @@
 import { tool } from "ai";
-import { z } from "zod";
 import { SurveyDraftSchema, type SurveyDraft } from "@merism/contracts";
 
 import { createSurveyFromDraft } from "@/lib/actions/survey";
@@ -32,12 +31,13 @@ interface DraftPreviewArtifact {
 /**
  * 工具入参 = 完整 `SurveyDraft`(由 Morris 自己生成,借鉴 PostHog Max
  * `create_user_interview_topic`:外层 agent 直接产出结构化提纲作为工具入参,
- * 工具只做校验 + 落库,不再嵌套一次 LLM 调用)。`approvalToken` 由 confirm
- * 端点回流时携带(withApprovalGuard 读它)。
+ * 工具只做校验 + 落库,不再嵌套一次 LLM 调用)。
+ *
+ * Approval token 不再出现在 input — 用 AI SDK 6 原生 `needsApproval` 后,
+ * 暂停/恢复由 SDK 在 message stream 上跟 `tool-approval-request` /
+ * `tool-approval-response` 两个 parts 自动管理, 我们无需自己塞 token。
  */
-const InputSchema = SurveyDraftSchema.extend({
-  approvalToken: z.string().optional(),
-});
+const InputSchema = SurveyDraftSchema;
 
 const DESCRIPTION =
   "根据研究目标创建一份完整的访谈调研提纲并保存。\n" +
@@ -54,13 +54,22 @@ const DESCRIPTION =
   "- 登录后调用会真正在 Appwrite 创建 Survey(需研究员确认);未登录只返回预览不落库。";
 
 /**
- * `createStudyDraft` 工具:由 Morris 生成结构化提纲,登录则落库(走 approval),
- * 未登录降级为预览。
+ * `createStudyDraft` 工具 — 由 Morris 生成结构化提纲,登录态走 AI SDK 6
+ * 原生 approval 流, 未登录降级为预览。
  *
- * - `annotations.destructive` 随登录态动态取值:未登录 false(identity guard →
- *   直接走 execute 出预览);登录 true(withApprovalGuard 拦截 → 研究员确认 →
- *   confirm 端点 `createSurveyFromDraft` 落库)。
- * - 不依赖 contextPromptTemplate(与具体页面无关)。
+ * Approval flow (AI SDK 6 原生):
+ *  - `needsApproval: async (_input) => ctx.ownerUserId !== null` — 仅在登录态时
+ *    暂停 agent loop, AI SDK 把 `tool-approval-request` part 流到客户端。
+ *  - 用户点"批准" → useChat.addToolApprovalResponse({approved:true}) → 服务端
+ *    在下次 streamText/agent.stream 时由 `sendAutomaticallyWhen:
+ *    lastAssistantMessageIsCompleteWithApprovalResponses` 自动触发, 进入 execute。
+ *  - 用户点"拒绝" → approved:false → SDK 跳过 execute, tool-result state=output-denied。
+ *  - 不再需要 `approvalToken` 字段、`approvalPreview` 函数、`/api/assistant/confirm`
+ *    端点和 `withApprovalGuard` 套壳; UI 直接渲染 `input` (SurveyDraft) 即可生成
+ *    预览。参见 https://ai-sdk.dev/cookbook/next/human-in-the-loop。
+ *
+ * Metadata `destructive` 仍随登录态动态取值, 供 system-prompt manifest 与 UI
+ * 描述使用; 真正的暂停/放行由 `needsApproval` 接管, 不再依赖 metadata 推导。
  */
 export function buildCreateStudyDraftTool(ctx: AssistantToolContext) {
   const signedIn = ctx.ownerUserId !== null;
@@ -74,36 +83,21 @@ export function buildCreateStudyDraftTool(ctx: AssistantToolContext) {
     enabled: true,
   };
 
-  /** 给 approval 卡片的人读预览(withApprovalGuard 在登录态拦截时调用)。 */
-  function approvalPreview(input: z.infer<typeof InputSchema>): string {
-    const sectionLines = input.sections
-      .map((s, i) => {
-        const qs = s.questions.map((q, j) => `   ${j + 1}. ${q.questionText}`).join("\n");
-        return `**${i + 1}. ${s.title}** — ${s.objective}\n${qs}`;
-      })
-      .join("\n\n");
-    const questionCount = input.sections.reduce((n, s) => n + s.questions.length, 0);
-    return (
-      `将创建调研「**${input.title}**」并保存提纲(${input.sections.length} 节、${questionCount} 个问题)。\n\n` +
-      `- 研究目标:${input.researchGoal}\n` +
-      `- 目标人群:${input.targetAudience}\n\n` +
-      sectionLines
-    );
-  }
-
   return {
     contextPromptTemplate: undefined as string | undefined,
     metadata,
-    approvalPreview,
     spec: tool({
       description: DESCRIPTION,
       inputSchema: InputSchema,
+      // 仅登录态需要研究员二次确认才会真正写库; 未登录态走预览路径(execute
+      // 内自己拦了一次), needsApproval 直接 false 让 AI SDK 不弹 approval UI。
+      needsApproval: async () => signedIn,
       execute: async (
         input,
       ): Promise<ToolResultEnvelope<CreatedStudyArtifact | DraftPreviewArtifact | ToolErrorArtifact>> => {
-        // 入参校验(剥离 approvalToken 后按 SurveyDraft 校验,含 superRefine 不变量)。
-        const { approvalToken: _approvalToken, ...draftInput } = input;
-        const parsed = SurveyDraftSchema.safeParse(draftInput);
+        // 入参 schema 已经在 AI SDK 层用 InputSchema(=SurveyDraftSchema) 校验过,
+        // 这里只兜底 superRefine 跨字段约束(zod safeParse 第二次)。
+        const parsed = SurveyDraftSchema.safeParse(input);
         if (!parsed.success) {
           return toToolError("创建调研", new Error(parsed.error.issues[0]?.message ?? "提纲格式不合法"));
         }
@@ -123,8 +117,7 @@ export function buildCreateStudyDraftTool(ctx: AssistantToolContext) {
           );
         }
 
-        // 登录态:此处仅在 confirm 端点回流(携带 approvalToken)时被 withApprovalGuard
-        // 放行执行;正常 UI 路径由 /api/assistant/confirm 直接调 createSurveyFromDraft。
+        // 登录态: needsApproval=true 保证只有研究员明确"批准"后才能到达这里。
         try {
           const { surveyId, url } = await createSurveyFromDraft(draft);
           return toolResult(

@@ -1,5 +1,7 @@
 # Requirements Document
 
+> **Status note (2026-06-29):** R4 (`destructive=true → 自动接 approval`) 中关于 `withApprovalGuard` 套壳的实现细节已被 **`docs/adr/0009-aisdk-native-hitl-and-prune-messages.md`** 取代; 当前用 AI SDK 6 原生 `tool({ needsApproval })` 直接表达 approval 语义。R1-R3 + R5-R9 (ToolMetadata 字段 / enabled 默认值 / enrichUrl 模板 / manifest / 测试) 仍然有效。
+
 ## Feature: morris-tool-metadata（Morris 工具元数据驱动改造）
 
 ## Introduction

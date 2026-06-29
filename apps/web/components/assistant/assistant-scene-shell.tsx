@@ -24,7 +24,7 @@ import { Conversation } from "./conversation";
 import { ConversationHistory } from "./conversation-history";
 import { createConversation } from "@/lib/conversations/actions";
 import { useCurrentConversationId } from "./use-current-conversation-id";
-import { invalidateConversations } from "./use-conversation-invalidate";
+import { useInvalidateConversations } from "./use-conversations";
 
 interface AssistantSceneShellProps {
   conversationId: string | null;
@@ -40,16 +40,17 @@ export function AssistantSceneShell({
   const router = useRouter();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const invalidate = useInvalidateConversations();
   // Mirror the URL conversationId into shared storage so the floating dock
   // picks up the same thread when reopened. URL is canonical; the hook only
   // writes downstream (no overwriting URL state from storage).
   const [, setSharedConversationId] = useCurrentConversationId(conversationId);
-  // Whenever the URL conversationId changes, sync to storage.
-  // (initial=conversationId already set on first mount.)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Whenever the URL conversationId changes, sync to storage. setSharedConversationId
+  // 在 useCurrentConversationId 内部用 useCallback(..., []) 包过, 引用稳定, 加进
+  // deps 不会触发额外 effect 重跑 — 是写规范 deps 的好处, 不再需要 eslint-disable。
   useEffect(() => {
     setSharedConversationId(conversationId);
-  }, [conversationId]);
+  }, [conversationId, setSharedConversationId]);
 
   async function handleNewConversation() {
     if (creating) return;
@@ -59,7 +60,7 @@ export function AssistantSceneShell({
       // the welcome screen renders without ?conversationId= and the user's
       // first message will retry createConversation via Conversation's submit.
       const { conversationId: newId } = await createConversation();
-      invalidateConversations();
+      await invalidate();
       router.push(`/assistant?conversationId=${newId}`);
     } catch {
       router.push("/assistant");

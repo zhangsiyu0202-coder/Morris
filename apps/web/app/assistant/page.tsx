@@ -1,5 +1,4 @@
 import { FileText, Search, BarChart3, Layers } from "lucide-react";
-import { Conversation } from "@/components/assistant/conversation";
 import { AssistantSceneShell } from "@/components/assistant/assistant-scene-shell";
 import { loadConversation } from "@/lib/conversations/actions";
 import type { UIMessage } from "ai";

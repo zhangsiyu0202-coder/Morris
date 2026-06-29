@@ -82,7 +82,7 @@ export async function saveNotebookFromMarkdown(
   const sections = extractCardSections(doc);
   let headline = "";
   let summary = "";
-  let confidence: "high" | "medium" | "low" = "medium";
+  const confidence: "high" | "medium" | "low" = "medium";
   let sectionCount = 0;
   if (sections) {
     headline = sections.question;

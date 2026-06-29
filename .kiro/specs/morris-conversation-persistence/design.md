@@ -1,5 +1,7 @@
 # Morris Conversation Persistence — Design
 
+> **Status note (2026-06-29):** §10 / §11 中提到的"前端 compaction.ts (token budget 12K) 会先做摘要"是 **历史描述**。Morris 对话压缩已在 `docs/adr/0009-aisdk-native-hitl-and-prune-messages.md` 中改为 AI SDK 6 原生 `pruneMessages` 纯结构性裁剪 (在 `apps/web/lib/assistant/agent.ts::prepareStep` 里), 不再调用 `compaction.ts` (该文件已删除). 本 spec 的 256KB 兜底设计不受影响, 上游变成了 pruneMessages 而非 LLM 摘要器。
+
 ## §1. Overview
 
 ```

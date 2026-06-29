@@ -38,22 +38,20 @@ beforeEach(() => {
   mockCreate.mockReset();
 });
 
-describe("createStudyDraft: auth-conditional behavior", () => {
+describe("createStudyDraft: auth-conditional execute behavior", () => {
   it("anonymous (ownerUserId null) → preview only, never writes", async () => {
     const built = buildCreateStudyDraftTool({ ownerUserId: null });
-    const res = await (built.spec as any).execute(
-      validDraft,
-    );
+    const res = await (built.spec as any).execute(validDraft);
     expect(res.artifact).toMatchObject({ persisted: false });
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
-  it("signed-in + approvalToken → persists via createSurveyFromDraft", async () => {
+  it("signed-in → execute persists via createSurveyFromDraft", async () => {
+    // AI SDK 6 原生 HITL: 当 needsApproval=true 时 execute 只在用户批准后被调用。
+    // 单测里直接调 execute 等价于"AI SDK 已批准放行"的状态, 期望真正写库。
     mockCreate.mockResolvedValue({ surveyId: "sv9", url: "/studies/sv9" });
     const built = buildCreateStudyDraftTool({ ownerUserId: "u1" });
-    const res = await (built.spec as any).execute(
-      { ...validDraft, approvalToken: "tok-1" },
-    );
+    const res = await (built.spec as any).execute(validDraft);
     expect(mockCreate).toHaveBeenCalledOnce();
     expect(res.artifact).toMatchObject({ persisted: true, surveyId: "sv9", url: "/studies/sv9" });
   });
@@ -62,7 +60,6 @@ describe("createStudyDraft: auth-conditional behavior", () => {
     const built = buildCreateStudyDraftTool({ ownerUserId: "u1" });
     const bad = {
       ...validDraft,
-      approvalToken: "tok-1",
       sections: [
         {
           title: "渠道",
@@ -88,24 +85,34 @@ describe("createStudyDraft: metadata reflects auth", () => {
   });
 });
 
-describe("createStudyDraft: approval guard wiring", () => {
-  it("signed-in, no approvalToken → pending_approval (guard intercepts, no write)", async () => {
-    const tools = buildAssistantTools({ ownerUserId: "u1" });
-    const res = (await (tools.createStudyDraft as any).execute(
-      validDraft,
-    )) as { artifact: Record<string, unknown> };
-    expect(res.artifact).toMatchObject({ status: "pending_approval", toolName: "createStudyDraft" });
-    // approval 卡片需要 payload 原样带回 confirm 端点。
-    expect(res.artifact.payload).toMatchObject({ title: validDraft.title });
-    expect(mockCreate).not.toHaveBeenCalled();
+describe("createStudyDraft: needsApproval gates AI SDK pause/resume (R3 / SDD Wave 3)", () => {
+  it("anonymous → needsApproval returns false (no pause, direct execute)", async () => {
+    const built = buildCreateStudyDraftTool({ ownerUserId: null });
+    // AI SDK signature: needsApproval(input, { toolCallId, messages, experimental_context }).
+    // 单测只关心返回值; 给最小的 options 形参。
+    const need = await (built.spec as any).needsApproval(validDraft, {
+      toolCallId: "tc-1",
+      messages: [],
+    });
+    expect(need).toBe(false);
   });
 
-  it("anonymous, no approvalToken → preview (guard is identity, executes)", async () => {
-    const tools = buildAssistantTools({ ownerUserId: null });
-    const res = (await (tools.createStudyDraft as any).execute(
-      validDraft,
-    )) as { artifact: Record<string, unknown> };
-    expect(res.artifact).toMatchObject({ persisted: false });
+  it("signed-in → needsApproval returns true (AI SDK pauses for HITL)", async () => {
+    const built = buildCreateStudyDraftTool({ ownerUserId: "u1" });
+    const need = await (built.spec as any).needsApproval(validDraft, {
+      toolCallId: "tc-1",
+      messages: [],
+    });
+    expect(need).toBe(true);
+  });
+
+  it("buildAssistantTools 暴露的 spec 也带 needsApproval (扁平 record 透传不丢)", async () => {
+    const tools = buildAssistantTools({ ownerUserId: "u1" });
+    const need = await (tools.createStudyDraft as any).needsApproval(validDraft, {
+      toolCallId: "tc-1",
+      messages: [],
+    });
+    expect(need).toBe(true);
   });
 });
 

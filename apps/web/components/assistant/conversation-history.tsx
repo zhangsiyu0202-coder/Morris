@@ -7,7 +7,7 @@
  * Borrowed from PostHog `ConversationHistory.tsx` shape (drawer-style list of
  * past conversations), but rewritten in our stack: server actions + Appwrite
  * (not Django + Postgres + LangGraph checkpoints), Mauve Quiet design tokens
- * (not lemon-ui), no kea (plain useState).
+ * (not lemon-ui), no kea (SWR for cache + cross-component invalidation).
  *
  * Form factor:
  *  - Standalone in /assistant scene: full-width vertical drawer alongside the
@@ -29,15 +29,11 @@
  *    that violates the design system; we use an outline/primary button pair)
  */
 
-import { useEffect, useState, useCallback, useRef } from "react";
-import { useOnConversationsInvalidate, invalidateConversations } from "./use-conversation-invalidate";
+import { useEffect, useState } from "react";
 import { Trash2, MessageSquare, Loader2, AlertTriangle, X, RotateCcw } from "lucide-react";
 
-import {
-  listConversations,
-  deleteConversation,
-} from "@/lib/conversations/actions";
-import type { ConversationListItem } from "@merism/contracts";
+import { deleteConversation } from "@/lib/conversations/actions";
+import { useConversations, useInvalidateConversations } from "./use-conversations";
 
 interface ConversationHistoryProps {
   /** Currently-active conversation id (highlights that row). */
@@ -67,36 +63,11 @@ export function ConversationHistory({
   onSelect,
   onClose,
 }: ConversationHistoryProps) {
-  const [items, setItems] = useState<ConversationListItem[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: items, error, isLoading, mutate: revalidate } = useConversations();
+  const invalidate = useInvalidateConversations();
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
-
-  // Mount guard — listConversations is async; if the user closes the drawer
-  // mid-flight we drop the result rather than setItems on an unmounted tree.
-  const mountedRef = useRef(true);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
-  const load = useCallback(async () => {
-    if (mountedRef.current) setError(null);
-    try {
-      const list = await listConversations();
-      if (mountedRef.current) setItems(list);
-    } catch (err) {
-      if (!mountedRef.current) return;
-      setError(err instanceof Error ? err.message : "加载历史失败");
-      setItems([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Escape closes the inline delete-confirm dialog (not blocking — just a UX
   // shortcut so the user doesn't have to click 取消). No-op when no dialog
@@ -114,24 +85,23 @@ export function ConversationHistory({
     return () => window.removeEventListener("keydown", onKey);
   }, [pendingDeleteId, deleting]);
 
-  // Reload when another surface mutates the conversations list.
-  useOnConversationsInvalidate(() => {
-    void load();
-  });
-
   async function handleConfirmDelete(id: string) {
     setDeleting(id);
+    setDeleteError(null);
     try {
       await deleteConversation(id);
-      setItems((prev) => (prev ?? []).filter((i) => i.$id !== id));
       setPendingDeleteId(null);
-      invalidateConversations();
+      // mutate the SWR cache; revalidate=true triggers a re-fetch so the
+      // server state stays the source of truth (vs only optimistic local mutation).
+      await invalidate();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "删除失败");
+      setDeleteError(err instanceof Error ? err.message : "删除失败");
     } finally {
       setDeleting(null);
     }
   }
+
+  const displayError = deleteError ?? (error ? error.message || "加载历史失败" : null);
 
   return (
     <div className="flex h-full flex-col bg-ink-0">
@@ -152,7 +122,7 @@ export function ConversationHistory({
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto" data-testid="conversation-history-body">
-        {items === null && !error && (
+        {isLoading && !displayError && (
           <div
             className="flex h-full items-center justify-center gap-2 py-8 font-ui text-body-sm text-ink-400"
             data-testid="history-loading"
@@ -162,7 +132,7 @@ export function ConversationHistory({
           </div>
         )}
 
-        {error && (
+        {displayError && (
           <div
             className="m-3 flex items-start gap-2 rounded-md border border-mauve-200 bg-mauve-50 px-3 py-2.5"
             data-testid="history-error"
@@ -171,10 +141,13 @@ export function ConversationHistory({
               <AlertTriangle size={14} />
             </span>
             <div className="flex-1">
-              <p className="font-ui text-body-sm leading-6 text-ink-800">{error}</p>
+              <p className="font-ui text-body-sm leading-6 text-ink-800">{displayError}</p>
               <button
                 type="button"
-                onClick={load}
+                onClick={() => {
+                  setDeleteError(null);
+                  void revalidate();
+                }}
                 className="mt-1.5 inline-flex items-center gap-1 font-ui text-body-sm font-medium text-ink-600 transition-colors hover:text-ink-900"
               >
                 <RotateCcw size={13} /> 重试
@@ -183,7 +156,7 @@ export function ConversationHistory({
           </div>
         )}
 
-        {items !== null && items.length === 0 && !error && (
+        {items !== undefined && items.length === 0 && !displayError && (
           <p
             className="px-6 py-10 text-center font-ui text-body-sm text-ink-400"
             data-testid="history-empty"
@@ -192,7 +165,7 @@ export function ConversationHistory({
           </p>
         )}
 
-        {items !== null && items.length > 0 && (
+        {items !== undefined && items.length > 0 && (
           <ul role="list" className="flex flex-col gap-0.5 p-2">
             {items.map((item) => {
               const isActive = currentId === item.$id;

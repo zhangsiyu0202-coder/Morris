@@ -25,9 +25,10 @@ import { z } from "zod";
 /**
  * messagesJson 字符长度上限 (≈ 256KB).
  *
- * 64K tokens × 4 字符/token; conversation 真到这量级前端 compaction.ts (token
- * budget 12K) 会先做摘要, 256KB 是兜底。Appwrite string 存储靠 schema 那侧的
- * JSON_SIZE = 1_000_000 给上限, 这个 256KB 是契约层的早拦截。
+ * 64K tokens × 4 字符/token; conversation 真到这量级前 agent.ts::prepareStep
+ * 的 `pruneMessages` (token budget 12K, per ADR-0009) 会先做结构性裁剪, 256KB
+ * 是兜底。Appwrite string 存储靠 schema 那侧的 JSON_SIZE = 1_000_000 给上限,
+ * 这个 256KB 是契约层的早拦截。
  */
 export const MAX_MESSAGES_JSON_BYTES = 256_000;
 
@@ -129,7 +130,8 @@ export type ConversationListItem = z.infer<typeof ConversationListItemSchema>;
  * API 请求 schema — Server Actions 入口校验用.
  *
  * UIMessage 内部 union 不强 typed (见上方文档说明); 只限制是数组 + 数量上限.
- * 数量上限 500 是经验值 — 单 conversation 真到 500 条之前 compaction 会先收敛.
+ * 数量上限 500 是经验值 — 单 conversation 真到 500 条之前 agent.ts::prepareStep
+ * 的 pruneMessages 会先收敛 (per ADR-0009)。
  */
 export const ConversationCreateRequestSchema = z.object({}).strict();
 export type ConversationCreateRequest = z.infer<typeof ConversationCreateRequestSchema>;

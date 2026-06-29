@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, type UIMessage } from "ai";
+import { DefaultChatTransport, lastAssistantMessageIsCompleteWithApprovalResponses, type UIMessage } from "ai";
 
 import {
   createConversation,
@@ -24,9 +24,10 @@ import { UNKNOWN_TOOL_METADATA } from "@/lib/assistant/tool-metadata";
 import { Markdown } from "./markdown";
 import { usePageContextRef } from "./page-context-provider";
 import { HistoryPreview } from "./history-preview";
-import { invalidateConversations } from "./use-conversation-invalidate";
+import { useInvalidateConversations } from "./use-conversations";
 import { ReasoningPart } from "./reasoning-part";
 import { FeedbackButtons } from "./feedback-buttons";
+import { ApprovalCard } from "./approval-card";
 
 const TOOL_PENDING_LABEL: Record<string, string> = {
   createStudyDraft: "正在拟定调研草稿…",
@@ -58,6 +59,7 @@ export function Conversation({
 }) {
   const router = useRouter();
   const [input, setInput] = useState("");
+  const invalidate = useInvalidateConversations();
   // currentId tracks the active conversation in this component lifecycle. null
   // until first user message; then we lazy-create a Conversation row, set this,
   // and shallow-replace the URL.
@@ -81,11 +83,17 @@ export function Conversation({
       }),
     [pageContextRef],
   );
-  const { messages, sendMessage, status, error, regenerate, clearError, stop, setMessages } =
+  const { messages, sendMessage, status, error, regenerate, clearError, stop, setMessages, addToolApprovalResponse } =
     useChat({
       transport,
       // Seed with persisted history when the URL carries a conversationId.
       messages: initialMessages,
+      // AI SDK 6 原生 HITL: 当一条 assistant 消息里所有 tool-approval-request part
+      // 都已被回应 (用户点过批准/拒绝), 自动续接一次 sendMessage 把审批结果带回服务端,
+      // streamText 看到 tool-approval-response 后正式执行 tool execute (批准) 或跳过
+      // (拒绝)。等价于 PostHog 的 _resume_after_approval, 我们不用自己 polling /
+      // 重新发原 prompt。https://ai-sdk.dev/cookbook/next/human-in-the-loop
+      sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
       // Fired after the assistant turn finishes (or errors). We persist the
       // **complete** messages array (user + assistant + tool parts), not a
       // delta — that matches the on-the-wire shape useChat manages internally
@@ -106,7 +114,7 @@ export function Conversation({
           await saveMessages(currentId, finalMessages);
           setSaveError(null);
           // Title may now have been generated; refresh history surfaces.
-          invalidateConversations();
+          invalidate();
         } catch (err) {
           // Best-effort retry once after 3s; if it still fails, surface a
           // non-blocking banner so the user knows refresh will lose the turn.
@@ -256,7 +264,7 @@ export function Conversation({
         if (typeof setMessages === "function") setMessages([]);
         setCurrentId(null);
         router.replace("/assistant", { scroll: false });
-        invalidateConversations();
+        invalidate();
         return true;
       case "clear":
         // setMessages 由 @ai-sdk/react useChat 提供; 当前版本 (3.0.198) 一定返回。
@@ -326,7 +334,7 @@ export function Conversation({
         id = result.conversationId;
         setCurrentId(id);
         router.replace(`/assistant?conversationId=${id}`, { scroll: false });
-        invalidateConversations();
+        invalidate();
       } catch (err) {
         // If we can't even create the doc, fall back to in-memory mode (no
         // persistence) so the user's first message still goes through. Surface
@@ -421,7 +429,72 @@ export function Conversation({
                       }
                       if (part.type.startsWith("tool-")) {
                         const toolName = part.type.slice(5);
-                        const tp = part as unknown as { state: string; output?: unknown };
+                        const tp = part as unknown as {
+                          state: string;
+                          output?: unknown;
+                          input?: unknown;
+                          approval?: { id: string };
+                          toolCallId?: string;
+                        };
+                        // Stable React key: 优先用 SDK 提供的 toolCallId (AI SDK 6
+                        // 所有 tool-part 变体都带这个字段, 参 dist/index.d.ts), fallback
+                        // 到数组 index 仅在罕见的"该 part 缺 toolCallId"边界保底。
+                        // 用 toolCallId 而非 i 是因为 ApprovalCard 含 useState
+                        // (拒绝原因输入), 若同一 message 里其他 part 异步插入导致
+                        // 数组 index 漂移, key=i 会把 state 错位到别的卡片。
+                        const partKey = tp.toolCallId ?? `idx-${i}`;
+                        // AI SDK 6 原生 HITL: 工具自己声明 needsApproval=true 时,
+                        // SDK 把这一步暂停, 客户端收到 state="approval-requested"
+                        // 的 part (带 approval.id 与 input)。用户点击 → 调
+                        // addToolApprovalResponse 把决定写回, useChat 的
+                        // sendAutomaticallyWhen 自动续接一次请求让服务端续 execute
+                        // (批准) 或跳过 (拒绝, 返回 output-denied)。
+                        if (tp.state === "approval-requested" && tp.approval) {
+                          const approvalId = tp.approval.id;
+                          return (
+                            <ApprovalCard
+                              key={partKey}
+                              toolName={toolName}
+                              input={tp.input}
+                              onApprove={() =>
+                                addToolApprovalResponse({ id: approvalId, approved: true })
+                              }
+                              onDeny={(reason) =>
+                                addToolApprovalResponse({
+                                  id: approvalId,
+                                  approved: false,
+                                  reason,
+                                })
+                              }
+                            />
+                          );
+                        }
+                        if (tp.state === "output-denied") {
+                          return (
+                            <div
+                              key={partKey}
+                              className="rounded-md border border-mauve-200 bg-mauve-50 px-3 py-2 font-ui text-body-sm text-ink-700"
+                            >
+                              已拒绝 {toolName}, 对话继续。
+                            </div>
+                          );
+                        }
+                        if (tp.state === "output-error") {
+                          // O5: 工具 execute 抛出未被 envelope 拦下的异常时的终态。
+                          // 大多数 Morris 工具用 toToolError 把异常翻译成 error: true
+                          // artifact 走 output-available 分支, 这里覆盖兜底情况(provider-executed
+                          // tool / SDK 自身错误 / 未 catch 的运行时), 防止用户停在永远的"处理中…"。
+                          const errText =
+                            (tp as { errorText?: string }).errorText ?? "工具执行失败,请重试。";
+                          return (
+                            <div
+                              key={partKey}
+                              className="rounded-md border border-mauve-200 bg-mauve-50 px-3 py-2 font-ui text-body-sm text-ink-700"
+                            >
+                              {toolName}: {errText}
+                            </div>
+                          );
+                        }
                         if (tp.state === "output-available") {
                           // metadata 在 client 侧从 TOOL_ENRICH_URLS 取 enrichUrl, 其余字段 fallback (Wave E T21).
                           const enrichUrl = TOOL_ENRICH_URLS[toolName];
@@ -430,7 +503,7 @@ export function Conversation({
                             : UNKNOWN_TOOL_METADATA;
                           return (
                             <ToolResult
-                              key={i}
+                              key={partKey}
                               toolName={toolName}
                               output={tp.output}
                               metadata={metadata}
@@ -438,7 +511,7 @@ export function Conversation({
                           );
                         }
                         return (
-                          <div key={i} className="inline-flex items-center gap-2 font-ui text-body-sm text-ink-400">
+                          <div key={partKey} className="inline-flex items-center gap-2 font-ui text-body-sm text-ink-400">
                             <Loader2 size={14} className="animate-spin" />
                             {TOOL_PENDING_LABEL[toolName] ?? "处理中…"}
                           </div>

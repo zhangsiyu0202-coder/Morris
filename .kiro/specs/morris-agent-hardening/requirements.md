@@ -1,5 +1,7 @@
 # Requirements Document
 
+> **Status note (2026-06-29):** R6 (对话压缩 `planCompaction`/`applyCompaction`) 与 R8 (危险操作 Approval 框架 `ApprovalEnvelope`/`withApprovalGuard`/`confirmTool`) 已被 **`docs/adr/0009-aisdk-native-hitl-and-prune-messages.md`** 取代, 改用 AI SDK 6 原生 `tool({ needsApproval })` + `useChat.addToolApprovalResponse` + `pruneMessages`。本文档对这两项的描述是 **历史记录**。R1/R2/R3/R4/R5/R7 仍然有效。
+
 ## Feature: morris-agent-hardening（Morris 研究助手 Agent 加固）
 
 ## Introduction

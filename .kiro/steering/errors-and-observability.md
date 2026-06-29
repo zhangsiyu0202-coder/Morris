@@ -171,8 +171,8 @@ grep -rn 'await generateText\b\|await streamText\b' apps packages \
 | Prefix | 用途 | 例 |
 |---|---|---|
 | `morris.tool.<toolName>` | Morris 工具调用 (未来) | `morris.tool.analyzeData` |
-| `morris.compaction.<phase>` | Morris 对话压缩 | `morris.compaction.summarize` |
 | `morris.toolloop[.suffix]` | ToolLoopAgent 内部 (middleware 自动) | `morris.toolloop` / `morris.toolloop.reasoner` |
+| `morris.title.<phase>` | Morris 对话 title 生成 | `morris.title.generate` |
 | `function.<functionName>.<phase>` | Appwrite Function 内 LLM 调用 | `function.analyzeSession.text-pass` |
 | `action.<actionName>` | Server Action 内 LLM 调用 | `action.notebooks.generateReport` |
 
@@ -197,14 +197,13 @@ LLM 调用全部走 `llmGate` (p-limit 包装), default 最多 8 并发, env `ME
 | 接入点 | 方式 | scope |
 |---|---|---|
 | `apps/web/lib/assistant/model.ts::CHAT_MODEL/REASONING_MODEL` | middleware | `morris.toolloop` / `morris.toolloop.reasoner` |
-| `apps/web/lib/assistant/compaction.ts::summarizeMessages` | withLLMCall | `morris.compaction.summarize` |
 | `apps/web/lib/actions/notebooks.ts::createNotebook` | withLLMCall | `action.notebooks.generateReport` |
 | `apps/web/lib/actions/guide-ai.ts::generateGuide / expandSection` | withLLMCall | `action.guide-ai.<fn>` |
 | `apps/functions/analyzeSession/src/deps.ts` (text-pass + quality-flags) | withLLMCall | `function.analyzeSession.<phase>` |
 | `apps/functions/analyzeSurvey/src/deps.ts` (extract / assign / combine / compose) | withLLMCall | `function.analyzeSurvey.<phase>` |
 | `apps/web/lib/conversations/title.ts::generateConversationTitle` | withLLMCall | `morris.title.generate` |
 
-新增 LLM 调用 site 必须同步登记到此表. ADR-0005 `analyzeSessionVisual` 由对应 PR 接入.
+新增 LLM 调用 site 必须同步登记到此表. ADR-0005 `analyzeSessionVisual` 由对应 PR 接入. **Morris 对话压缩**早期通过 `morris.compaction.summarize` 摘要器接入 LLM, 已在 Morris SDD 统一中改用 AI SDK 6 原生 `pruneMessages` 纯结构性裁剪 (不调 LLM), 因此从本表移除。
 
 ### Non-LLM 信号 logger scope
 

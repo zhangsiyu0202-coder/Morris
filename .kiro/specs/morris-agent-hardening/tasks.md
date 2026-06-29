@@ -1,5 +1,9 @@
 # Implementation Plan — morris-agent-hardening
 
+## Introduction
+
+> **Status note (2026-06-29):** Wave R6 (`compaction.ts`) 与 Wave R8 (`approval.ts` + `/api/assistant/confirm`) 对应的 Tasks 已被 **`docs/adr/0009-aisdk-native-hitl-and-prune-messages.md`** 取代; 这些 task 描述的文件已删除, 改用 AI SDK 6 原生 API。文中相关 task 已 completed-by-supersession。
+
 每个任务保持 `pnpm typecheck` 绿、可独立提交与回退。所有改动落在 `apps/web/lib/assistant/*` 与 `apps/web/app/api/assistant/*`，不涉及 Appwrite schema、契约 package、agent worker。
 
 ## Wave A — 工具协议巩固（R1）

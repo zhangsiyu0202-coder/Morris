@@ -2,8 +2,6 @@ import Link from "next/link";
 import { FileText, Search, BarChart3, Layers, ArrowRight, AlertTriangle, NotebookText, Check } from "lucide-react";
 import { SentimentTag } from "@/components/report/shared";
 import { UNKNOWN_TOOL_METADATA, type ToolMetadata } from "@/lib/assistant/tool-metadata";
-import { isPendingApprovalArtifact } from "@/lib/assistant/approval";
-import { ApprovalCard } from "./approval-card";
 
 function ToolCard({
   icon,
@@ -287,18 +285,6 @@ export function ToolResult({
   metadata?: ToolMetadata;
 }) {
   const artifact = unwrapToolOutput(output);
-
-  // 危险写操作的 pending_approval 形态 → 渲染确认卡 (R8 / survey-editor T11)。
-  if (isPendingApprovalArtifact(artifact)) {
-    return (
-      <ApprovalCard
-        proposalId={artifact.proposalId}
-        toolName={artifact.toolName}
-        preview={artifact.preview}
-        payload={artifact.payload}
-      />
-    );
-  }
 
   // 统一拦截工具失败态:任意工具返回 { error: true, message } 时渲染错误卡。
   if (artifact && typeof artifact === "object" && (artifact as { error?: boolean }).error === true) {

@@ -15,6 +15,7 @@ vi.mock("@/lib/conversations/actions", async () => ({
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { HistoryPreview } from "../history-preview";
 import * as actions from "@/lib/conversations/actions";
+import { SWRTestWrapper } from "./fixtures/swr-test-wrapper";
 
 afterEach(() => {
   cleanup();
@@ -49,13 +50,13 @@ describe("HistoryPreview", () => {
     vi.mocked(actions.listConversations).mockImplementation(
       () => new Promise(() => {}),
     );
-    const { container } = render(<HistoryPreview onSelect={vi.fn()} />);
+    const { container } = render(<HistoryPreview onSelect={vi.fn()} />, { wrapper: SWRTestWrapper });
     expect(container.firstChild).toBeNull();
   });
 
   it("returns null when no conversations exist (empty welcome)", async () => {
     vi.mocked(actions.listConversations).mockResolvedValue([]);
-    const { container } = render(<HistoryPreview onSelect={vi.fn()} />);
+    const { container } = render(<HistoryPreview onSelect={vi.fn()} />, { wrapper: SWRTestWrapper });
     await waitFor(() => {
       expect(container.firstChild).toBeNull();
     });
@@ -63,7 +64,7 @@ describe("HistoryPreview", () => {
 
   it("renders cards for up to `limit` conversations", async () => {
     vi.mocked(actions.listConversations).mockResolvedValue(items);
-    render(<HistoryPreview onSelect={vi.fn()} limit={2} />);
+    render(<HistoryPreview onSelect={vi.fn()} limit={2} />, { wrapper: SWRTestWrapper });
     await waitFor(() => {
       expect(screen.getByTestId("preview-card-c1")).toBeTruthy();
       expect(screen.getByTestId("preview-card-c2")).toBeTruthy();
@@ -72,7 +73,7 @@ describe("HistoryPreview", () => {
 
   it("title fallback to '新对话' when title is empty", async () => {
     vi.mocked(actions.listConversations).mockResolvedValue([items[1]]);
-    render(<HistoryPreview onSelect={vi.fn()} />);
+    render(<HistoryPreview onSelect={vi.fn()} />, { wrapper: SWRTestWrapper });
     await waitFor(() => screen.getByTestId("preview-card-c2"));
     expect(screen.getByTestId("preview-card-c2").textContent).toContain("新对话");
   });
@@ -80,7 +81,7 @@ describe("HistoryPreview", () => {
   it("clicking a card calls onSelect with the id", async () => {
     vi.mocked(actions.listConversations).mockResolvedValue(items);
     const onSelect = vi.fn();
-    render(<HistoryPreview onSelect={onSelect} />);
+    render(<HistoryPreview onSelect={onSelect} />, { wrapper: SWRTestWrapper });
     await waitFor(() => screen.getByTestId("preview-card-c1"));
     fireEvent.click(screen.getByTestId("preview-card-c1"));
     expect(onSelect).toHaveBeenCalledWith("c1");
