@@ -168,6 +168,38 @@ export function Conversation({
   }, []);
   const isBusy = status === "submitted" || status === "streaming";
 
+  // Conversation-switch reconciliation. The parent (AssistantSceneShell or
+  // AssistantDock) re-renders with a new `initialConversationId` prop when the
+  // user clicks a history entry, "新对话", or navigates via URL. Previously the
+  // parent set `<Conversation key={conversationId}>` to force a remount and
+  // re-seed useChat — but that ALSO triggered on the lazy-create path (welcome
+  // null → first user message creates an id and replaces the URL), which made
+  // the in-flight chat vanish from the UI (the just-typed user message + the
+  // streaming assistant reply got thrown away on remount; persistence still
+  // worked via fire-and-forget onFinish, but the visible main pane reverted to
+  // the welcome screen with HistoryPreview — looking to the user like "Morris
+  // ate my message").
+  //
+  // The fix: keep Conversation mounted across prop changes, and only reset
+  // useChat state when the parent prop genuinely diverges from our internal
+  // currentId (i.e. a real conversation switch). On the lazy-create path,
+  // submit() sets `currentId = newId` BEFORE router.replace, so by the time
+  // the parent re-renders with the new `initialConversationId` prop the two
+  // match and we no-op.
+  useEffect(() => {
+    if (initialConversationId === undefined) return;
+    if (initialConversationId === currentId) return;
+    setMessages(initialMessages ?? []);
+    setCurrentId(initialConversationId);
+    // Clear any in-flight save-error banner from the previous conversation.
+    setSaveError(null);
+    // initialMessages intentionally excluded: on a real switch the parent
+    // always passes a fresh array, but on parent re-renders that DON'T change
+    // conversationId, we want to ignore initialMessages changes (the user is
+    // in the middle of chatting; respecting a re-seed would wipe their work).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialConversationId]);
+
   // Slash-command palette state. The textarea owns input value; this state only
   // tracks which command row is keyboard-highlighted in the floating panel.
   const [highlightIndex, setHighlightIndex] = useState(0);

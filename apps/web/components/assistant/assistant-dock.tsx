@@ -126,8 +126,12 @@ export function AssistantDock() {
                   onClose={() => setHistoryOpen(false)}
                 />
               ) : (
+                /*
+                 * No `key={conversationId}` — Conversation reconciles its own
+                 * state on prop change via an internal useEffect. See
+                 * assistant-scene-shell.tsx for the rationale.
+                 */
                 <Conversation
-                  key={conversationId ?? "welcome"}
                   conversationId={conversationId ?? undefined}
                   suggestions={SUGGESTIONS}
                   compact

@@ -168,10 +168,38 @@ export function AnalysisCard({ data }: { data: Analysis }) {
 }
 
 type StudyList = {
-  studies: { id: string; title: string; status: "draft" | "live" | "closed"; responses: number; completionRate: number }[];
+  studies: {
+    id: string;
+    title: string;
+    /**
+     * `listStudies` tool 返回的是 SurveyStatus 全集 (draft / published /
+     * paused / closed / archived), 不是 (旧错误声明的) "draft" | "live" |
+     * "closed"。STATUS_LABEL 必须覆盖全集, 否则 fallback 直出英文 enum 值。
+     */
+    status: string;
+    version: number;
+    updatedAt: string;
+  }[];
 };
 
-const STATUS_LABEL = { draft: "草稿", live: "进行中", closed: "已结束" };
+const STATUS_LABEL: Record<string, string> = {
+  draft: "草稿",
+  published: "进行中",
+  paused: "已暂停",
+  closed: "已结束",
+  archived: "已归档",
+};
+
+/**
+ * Survey ISO timestamp → short locale date.
+ * Defensive: empty / invalid input returns "—" (not "Invalid Date" / NaN).
+ */
+function formatStudyDate(iso: string | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toISOString().slice(0, 10); // YYYY-MM-DD
+}
 
 export function StudyListCard({ data }: { data: StudyList }) {
   return (
@@ -182,18 +210,18 @@ export function StudyListCard({ data }: { data: StudyList }) {
             <div className="min-w-0">
               <p className="truncate font-ui text-body-sm font-medium text-ink-800">{s.title}</p>
               <p className="font-ui text-caption text-ink-400">
-                {s.responses} 份回答 · 完成率 {Math.round(s.completionRate * 100)}%
+                v{s.version} · 更新于 {formatStudyDate(s.updatedAt)}
               </p>
             </div>
             <span
               className="shrink-0 rounded-full px-2 py-0.5 font-ui text-caption font-medium"
               style={{
-                color: s.status === "live" ? "var(--color-positive)" : "var(--color-ink-400)",
+                color: s.status === "published" ? "var(--color-positive)" : "var(--color-ink-400)",
                 backgroundColor:
-                  s.status === "live" ? "color-mix(in oklab, var(--color-positive) 14%, transparent)" : "var(--color-mauve-100)",
+                  s.status === "published" ? "color-mix(in oklab, var(--color-positive) 14%, transparent)" : "var(--color-mauve-100)",
               }}
             >
-              {STATUS_LABEL[s.status]}
+              {STATUS_LABEL[s.status] ?? s.status}
             </span>
           </li>
         ))}

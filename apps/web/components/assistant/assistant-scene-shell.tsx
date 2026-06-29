@@ -108,9 +108,15 @@ export function AssistantSceneShell({
           </aside>
         )}
         <div className="min-w-0 flex-1">
-          {/* key forces remount on conversation switch so initialMessages take effect */}
+          {/*
+           * No `key={conversationId}` — Conversation reconciles its own state
+           * on conversationId prop change via an internal useEffect. Keying
+           * on conversationId would force a remount on the lazy-create path
+           * (welcome null → first user message → URL gets ?conversationId=X)
+           * and throw away the in-flight useChat state, making the chat
+           * appear to vanish to the user even though persistence succeeded.
+           */}
           <Conversation
-            key={conversationId ?? "welcome"}
             conversationId={conversationId ?? undefined}
             initialMessages={initialMessages}
             suggestions={suggestions}
