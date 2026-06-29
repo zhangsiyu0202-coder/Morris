@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Inclusive_Sans, Istok_Web, Inika, Inknut_Antiqua } from "next/font/google";
 import "./globals.css";
-import { AssistantDock } from "@/components/assistant/assistant-dock";
 import { PageContextProvider } from "@/components/assistant/page-context-provider";
 import { AppShell } from "@/components/shell/app-shell";
 import { getCurrentResearcher } from "@/lib/auth/current-user";
@@ -77,7 +76,6 @@ export default async function RootLayout({
       <body className="font-ui antialiased">
         <PageContextProvider>
           <AppShell studies={studies} researcher={researcher}>{children}</AppShell>
-          <AssistantDock />
         </PageContextProvider>
       </body>
     </html>

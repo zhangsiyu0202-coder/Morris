@@ -3,13 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { CurrentResearcher } from "@merism/contracts";
+import { AssistantDock } from "@/components/assistant/assistant-dock";
 import { Sidebar, type SidebarStudy } from "./sidebar";
 
-// 不显示主菜单的全屏路由。
-// "/" 与 "/interview" 均为受访者端访谈页,面向外部受访者,
-// 不能挂研究者主菜单(会泄露内部 studies 并破坏受访体验)。
-// "/login" "/signup" "/auth/*" 为研究者认证页,登录前不应出现工作台主菜单。
-// 其余全部研究者工作台页面共用主菜单。
+// 不显示研究者 chrome (Sidebar + Morris dock) 的全屏路由。
+// "/" 与 "/interview" 均为受访者端访谈页,面向匿名外部受访者,
+//   绝不能挂研究者主菜单或 Morris (会泄露 studies、且 Morris 工具要求
+//   研究者会话, 在 interviewee 上下文中调用必 401)。
+// "/login" "/signup" "/auth/*" 为研究者认证页,登录前不应出现工作台 chrome。
+// 其余研究者工作台页面共用 chrome。
+// 借鉴 posthog `Navigation.tsx::mode !== 'full'` 的 layout-level chrome gate。
 const FULLSCREEN_ROUTES = ["/", "/interview", "/login", "/signup", "/auth"];
 
 export function AppShell({
@@ -27,6 +30,11 @@ export function AppShell({
   );
 
   if (fullscreen) return <>{children}</>;
+
+  // Defense-in-depth (mirror of posthog `TABS_REQUIRING_A_TEAM`):
+  // 即使路由通过, 没有研究者会话仍不挂 Morris — 任何调用都会被
+  // server action 401 拒掉, UI 不该提供入口。
+  const showAssistantDock = researcher !== null;
 
   const showVerifyBanner =
     researcher && !researcher.emailVerified && !pathname?.startsWith("/settings/account");
@@ -50,6 +58,7 @@ export function AppShell({
         ) : null}
         <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
       </div>
+      {showAssistantDock ? <AssistantDock /> : null}
     </div>
   );
 }
