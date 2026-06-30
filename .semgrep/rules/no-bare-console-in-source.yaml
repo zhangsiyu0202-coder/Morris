@@ -16,12 +16,7 @@ rules:
 
       See `.kiro/steering/errors-and-observability.md` § Logger contract.
       Companion: `.kiro/specs/robustness-hardening/` REQ-1.
-
-      Wave A note: severity is WARNING because ~5 existing legacy findings
-      predate this rule (mostly `console.warn` in `apps/web/lib/queries/`).
-      Cleanup tracked in follow-up sub-spec `lint-baseline-cleanup`; once
-      WARN count drops to 0, bump to ERROR.
-    severity: WARNING
+    severity: ERROR
     languages: [typescript]
     paths:
       include:

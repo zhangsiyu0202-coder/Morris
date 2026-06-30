@@ -12,13 +12,13 @@ have no other mechanical guard. Every rule has a companion fixture under
 |---|---|---|---|
 | `handler-no-sdk-import` | ERROR | 0 | `architecture.md` § Function shape |
 | `no-secret-in-source` | ERROR | 0 | `errors-and-observability.md` § Secret masking |
-| `no-silent-catch-fallback` | WARNING¹ | ~20 | `errors-and-observability.md` § try/catch matrix |
-| `no-bare-console-in-source` | WARNING¹ | ~5 | `errors-and-observability.md` § Logger contract |
+| `no-silent-catch-fallback` | ERROR | 0 | `errors-and-observability.md` § try/catch matrix |
+| `no-bare-console-in-source` | ERROR | 0 | `errors-and-observability.md` § Logger contract |
 
-¹ WARNING during Wave A baseline. Cleanup tracked in follow-up sub-spec
-`lint-baseline-cleanup`; once each rule's WARN count drops to 0, bump to
-ERROR. Adding a NEW violation in source still surfaces in CI output and
-must be justified in PR review even at WARNING severity.
+All four rules ship at ERROR severity. Adding a new violation fails CI
+(`pnpm semgrep`). Genuinely-exempt sites use the standard inline
+`// nosemgrep: <rule-id> (reason)` escape hatch above the matched line — the
+reason text is for review and should be auditable.
 
 ## Commands
 

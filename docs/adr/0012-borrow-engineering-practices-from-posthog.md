@@ -117,6 +117,13 @@ These are concepts that surfaced during the audit but are explicitly rejected. F
 
 - We are now "officially" coupled to PostHog as a reference, not just a one-off mention in steering. Maintenance cost: zero (we read; they don't know we exist). Drift risk: low (we cite the file path so we can re-verify on any borrow).
 
+## Wave A outcomes
+
+Timestamped record of Wave A landings, so the next agent can trace what shipped without re-reading the spec end to end.
+
+- **2026-06-30** — Wave A REQ-1 + REQ-3 + REQ-4 + REQ-5 landed; REQ-2 (husky/lint-staged) rejected (see anti-borrow table above). 4 semgrep rules added; two rules shipped at WARNING severity with a documented baseline (`no-silent-catch-fallback`, `no-bare-console-in-source`) so existing code didn't block merge.
+- **2026-06-30** — `lint-baseline-cleanup` sub-spec cleared the 36-finding baseline (20 `no-silent-catch-fallback` + 16 `no-bare-console-in-source`) via the three-state policy: 26 `nosemgrep:` annotations with reason, 8 `createLogger` migrations, 2 nosemgrep'd template placeholders. Both rules promoted from WARNING to ERROR; `.semgrep/README.md` updated to reflect 0 hits across all 4 rules at ERROR severity.
+
 ## Alternatives considered
 
 | Alternative | Why rejected |
