@@ -81,6 +81,17 @@ const EXEMPT_PREFIXES = [
   "apps/web/lib/queries/notebooks.ts", // session-client native reads (workspace team)
   "apps/web/lib/actions/survey.ts", // createSurvey: read(team)+write(author) permissions
   "apps/web/app/studies/[id]/results/[sessionId]/page.tsx", // viewer auth for shared review
+  // robustness-hardening REQ-4: Morris tool workspace ACL. This file is the
+  // canonical role/scope check for Morris tools — it MUST reference
+  // workspace/role/scope by name. Companion spec:
+  // .kiro/specs/robustness-hardening/.
+  "apps/web/lib/assistant/access-control.ts",
+  "apps/web/lib/assistant/__tests__/access-control.test.ts",
+  // robustness-hardening REQ-4 wiring: Morris route reads the workspace
+  // context for the ACL gate; tool-types carries the workspace field on
+  // AssistantToolContext. Same PR / same rationale.
+  "apps/web/app/api/assistant/route.ts",
+  "apps/web/lib/assistant/tool-types.ts",
   "scripts/backfill-workspace-tenancy.ts", // ADR-0006 M2 tenancy backfill tool
   "scripts/seed-workspace.ts", // ADR-0006 dev workspace seed
   "scripts/seed-plans.ts", // ADR-0006 plans catalog seed (Plus/Pro entitlements)

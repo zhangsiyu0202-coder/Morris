@@ -11,6 +11,7 @@ import {
 } from "../envelope";
 import type { AssistantToolContext } from "../tool-types";
 import type { ToolMetadata } from "../tool-metadata";
+import { checkWorkspaceAccess } from "../access-control";
 import { embedText, EMBEDDING_DIM } from "@/lib/server/embedder-qwen";
 
 /**
@@ -189,7 +190,7 @@ export function buildSearchAcrossStudiesTool(ctx: AssistantToolContext) {
       "返回 top-N 匹配, 每条含 notebookShortId / headline / snippet / score。" +
       "owner 级隔离 (永不跨 owner)。Notebook 数量过多或 embedding API 不可用时自动退化为 fulltext 检索 (response.fallback 字段标记)。",
     annotations: { readOnly: true, destructive: false, idempotent: true },
-    requiredScopes: ["notebook:read"],
+    requiredScopes: ["notebook:viewer"],
     type: "read",
     enabled: true,
   };
@@ -221,6 +222,13 @@ export function buildSearchAcrossStudiesTool(ctx: AssistantToolContext) {
         limit,
       }): Promise<ToolResultEnvelope<Artifact | ToolErrorArtifact>> => {
         if (!ownerUserId) return NOT_SIGNED_IN;
+        if (ctx.workspace) {
+          const denied = checkWorkspaceAccess(ctx.workspace, {
+            toolName: "searchAcrossStudies",
+            requiredScopes: ["notebook:viewer"],
+          });
+          if (denied) return denied;
+        }
         try {
           const db = getDb();
           const studyIdFilter = studyId ?? null;

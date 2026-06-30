@@ -15,6 +15,7 @@ import {
 } from "../envelope";
 import type { AssistantToolContext } from "../tool-types";
 import type { ToolMetadata } from "../tool-metadata";
+import { checkWorkspaceAccess } from "../access-control";
 
 interface AnalyzeArtifact {
   studyTitle: string;
@@ -48,7 +49,7 @@ export function buildAnalyzeDataTool(ctx: AssistantToolContext) {
       "如该调研尚未生成 survey-scope report (例如刚创建还没有完成的访谈), 返回 envelope 含 error: true 与提示先跑 analyzeSurvey Function; " +
       "不要假装有数据。结果可用于跳转 /reports/{surveyId} 查看完整报告。",
     annotations: { readOnly: true, destructive: false, idempotent: true },
-    requiredScopes: ["study:read", "report:read"],
+    requiredScopes: ["study:viewer", "analysis:viewer"],
     enrichUrl: "/reports/{surveyId}",
     type: "read",
     enabled: true,
@@ -70,6 +71,13 @@ export function buildAnalyzeDataTool(ctx: AssistantToolContext) {
         studyId,
       }): Promise<ToolResultEnvelope<AnalyzeArtifact | ToolErrorArtifact>> => {
         if (!ownerUserId) return NOT_SIGNED_IN;
+        if (ctx.workspace) {
+          const denied = checkWorkspaceAccess(ctx.workspace, {
+            toolName: "analyzeData",
+            requiredScopes: ["study:viewer", "analysis:viewer"],
+          });
+          if (denied) return denied;
+        }
         try {
           const stored = await getLatestAnalysisReport(ownerUserId, {
             surveyId: studyId,

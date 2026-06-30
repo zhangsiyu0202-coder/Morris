@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { listStudies } from "@/lib/queries";
 
+import { checkWorkspaceAccess } from "../access-control";
 import {
   NOT_SIGNED_IN,
   toToolError,
@@ -36,7 +37,7 @@ export function buildListStudiesTool(ctx: AssistantToolContext) {
       "当用户问'我有哪些调研'、或需要先了解上下文再决定调用哪个工具 (analyzeData / searchInterviewData) 时调用。" +
       "无入参 (空 zod object)。返回的 artifact.studies 数组每项含 id / title / status / version / updatedAt, 可直接用于后续工具的 studyId 入参串联。",
     annotations: { readOnly: true, destructive: false, idempotent: true },
-    requiredScopes: ["study:read"],
+    requiredScopes: ["study:viewer"],
     type: "read",
     enabled: true,
   };
@@ -53,6 +54,13 @@ export function buildListStudiesTool(ctx: AssistantToolContext) {
         ToolResultEnvelope<ListStudiesArtifact | ToolErrorArtifact>
       > => {
         if (!ownerUserId) return NOT_SIGNED_IN;
+        if (ctx.workspace) {
+          const denied = checkWorkspaceAccess(ctx.workspace, {
+            toolName: "listStudies",
+            requiredScopes: ["study:viewer"],
+          });
+          if (denied) return denied;
+        }
         try {
           const surveys = await listStudies();
           const artifact: ListStudiesArtifact = {

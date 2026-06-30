@@ -7,7 +7,9 @@
  *
  * 设计取舍 (见 design.md §4):
  * - `ToolType` 用 as const 联合而非 enum, 避免 enum 编译产物的 tree-shaking 成本。
- * - `requiredScopes` 现在不强制, 只声明 — 留给将来 MCP / API key 化时审计。
+ * - `requiredScopes` 类型已收紧为 `WorkspaceScopeValue[]` (robustness-hardening
+ *   REQ-4 Task 1.4) — 由 `checkWorkspaceAccess` 在 tool 执行体顶部强制. 不再是
+ *   "仅声明不强制" 的占位; 写错或漏写都会在 typecheck 阶段挂掉。
  * - `enabled` 不带默认值, 强制每个 builder 显式表态 (借鉴 PostHog 60% 默认 false 哲学).
  * - 全 readonly, metadata 是值对象禁止就地修改; builder 每次调用返回新实例。
  *
@@ -16,6 +18,7 @@
  * - 任何新增字段必须同步: (a) ToolMetadata 接口 (b) validateToolMetadata 校验规则
  *   (c) tasks.md Wave G 文档段。
  */
+import type { WorkspaceScopeValue } from "@merism/contracts";
 
 /** 工具语义分类。 */
 export type ToolType = "read" | "write" | "draft" | "meta";
@@ -41,11 +44,14 @@ export interface ToolMetadata {
   readonly description: string;
   readonly annotations: ToolAnnotations;
   /**
-   * 将来引入 MCP server / Personal API Key 时该工具需要的 scope. 现在仅声明不强制 —
-   * approval guard 不读它, 但测试与未来审计读它。
-   * `type === "meta"` 时必须为 [].
+   * Workspace scopes the tool requires. Enforced at runtime by
+   * `checkWorkspaceAccess(ctx, { requiredScopes })` called at the top of the
+   * tool's `execute` body — see `apps/web/lib/assistant/access-control.ts`.
+   *
+   * `type === "meta"` 时必须为 [] (meta tools 是用户级 UI state, 不动 workspace
+   * 数据). `validateToolMetadata` 强制这条互斥。
    */
-  readonly requiredScopes: readonly string[];
+  readonly requiredScopes: readonly WorkspaceScopeValue[];
   /**
    * Deep link 模板, `{key}` 占位符仅匹配 ASCII 标识符 [A-Za-z_][A-Za-z0-9_]*.
    * 形如 "/notebooks/{notebookShortId}"; 必含至少一个占位符 (纯静态 URL 应硬写卡片视觉)。
@@ -149,7 +155,7 @@ export const UNKNOWN_TOOL_METADATA: ToolMetadata = Object.freeze({
     "If you see this in production it is a registration bug — check tools.ts to ensure the tool is in both " +
     "buildAssistantTools and buildAssistantToolMetadata.",
   annotations: Object.freeze({ readOnly: true, destructive: false, idempotent: true }) as ToolAnnotations,
-  requiredScopes: Object.freeze([]) as readonly string[],
+  requiredScopes: Object.freeze([]) as readonly WorkspaceScopeValue[],
   type: "meta",
   enabled: false,
 }) as ToolMetadata;

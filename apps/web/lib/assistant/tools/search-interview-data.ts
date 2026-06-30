@@ -12,6 +12,7 @@ import {
 } from "../envelope";
 import type { AssistantToolContext } from "../tool-types";
 import type { ToolMetadata } from "../tool-metadata";
+import { checkWorkspaceAccess } from "../access-control";
 
 interface SearchArtifact {
   count: number;
@@ -42,7 +43,7 @@ export function buildSearchInterviewDataTool(ctx: AssistantToolContext) {
       "studyId 必填; 若用户在 study 详情页, 优先使用 PageContext.surveyId 作为默认值。" +
       "返回的 quote 片段含 sessionId 与 segmentIndex, 用于 createNotebook 的 merism-quote tag 引用。",
     annotations: { readOnly: true, destructive: false, idempotent: true },
-    requiredScopes: ["study:read", "interview:read"],
+    requiredScopes: ["study:viewer"],
     type: "read",
     enabled: true,
   };
@@ -65,6 +66,13 @@ export function buildSearchInterviewDataTool(ctx: AssistantToolContext) {
         studyId,
       }): Promise<ToolResultEnvelope<SearchArtifact | ToolErrorArtifact>> => {
         if (!ownerUserId) return NOT_SIGNED_IN;
+        if (ctx.workspace) {
+          const denied = checkWorkspaceAccess(ctx.workspace, {
+            toolName: "searchInterviewData",
+            requiredScopes: ["study:viewer"],
+          });
+          if (denied) return denied;
+        }
         try {
           const hits = await searchTranscriptSegments({
             query: query ?? "",

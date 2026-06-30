@@ -23,6 +23,7 @@ import {
   type ToolErrorArtifact,
 } from "../envelope";
 import type { AssistantToolContext } from "../tool-types";
+import { checkWorkspaceAccess } from "../access-control";
 import type { ToolMetadata } from "../tool-metadata";
 
 const TOOL_DESCRIPTION = `管理用户级长期记忆 — 跨对话保留的关键事实 (调研偏好 / 业务背景 / 技术约束).
@@ -88,7 +89,7 @@ export function buildManageMemoriesTool(ctx: AssistantToolContext) {
       destructive: false,
       idempotent: false,
     },
-    requiredScopes: ["memory:read", "memory:write"],
+    requiredScopes: ["memory:viewer", "memory:editor"],
     type: "write",
     enabled: true,
   };
@@ -126,6 +127,13 @@ export function buildManageMemoriesTool(ctx: AssistantToolContext) {
         rawInput: InputShape,
       ): Promise<ToolResultEnvelope<ManageMemoriesArtifact | ToolErrorArtifact>> => {
         if (!ownerUserId) return NOT_SIGNED_IN;
+        if (ctx.workspace) {
+          const denied = checkWorkspaceAccess(ctx.workspace, {
+            toolName: "manageMemories",
+            requiredScopes: ["memory:viewer", "memory:editor"],
+          });
+          if (denied) return denied;
+        }
         const parsed = ManageMemoriesActionSchema.safeParse(rawInput);
         if (!parsed.success) {
           const detail = parsed.error.issues

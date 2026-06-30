@@ -11,6 +11,7 @@ import {
   type PageContext,
 } from "@/lib/assistant/page-context";
 import { getCurrentUserId } from "@/lib/queries/auth";
+import { getCurrentWorkspaceAccessContext } from "@/lib/auth/workspace";
 
 // AI SDK 必须使用 Node runtime(绝不用 edge),且 cookies() 也只能在 Node 上下文里读。
 export const runtime = "nodejs";
@@ -69,6 +70,11 @@ export async function POST(req: Request) {
   // "not signed in" rather than reading anything.
   const ownerUserId = await getCurrentUserId();
 
+  // robustness-hardening REQ-4: resolve the active workspace + role for the
+  // Morris workspace access-control gate. null → solo researcher (no team)
+  // or unauthenticated; tools still short-circuit via NOT_SIGNED_IN above.
+  const workspace = await getCurrentWorkspaceAccessContext();
+
   // P1-1: build the runtime AgentContext (current researcher / project / time / URL
   // patterns) once per request; injected into the system prompt so the LLM never
   // has to recover these facts from the conversation history. Failure paths inside
@@ -83,7 +89,7 @@ export async function POST(req: Request) {
     }));
 
   try {
-    const agent = buildMorrisAgent({ ownerUserId, pageContext, agentContext, memories: memoryItems });
+    const agent = buildMorrisAgent({ ownerUserId, workspace, pageContext, agentContext, memories: memoryItems });
     return await createAgentUIStreamResponse({
       agent,
       uiMessages: messages,

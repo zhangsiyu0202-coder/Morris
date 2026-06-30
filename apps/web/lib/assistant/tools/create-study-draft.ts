@@ -10,6 +10,7 @@ import {
 } from "../envelope";
 import type { AssistantToolContext } from "../tool-types";
 import type { ToolMetadata } from "../tool-metadata";
+import { checkWorkspaceAccess } from "../access-control";
 
 /** 落库成功后的 artifact:给 UI 渲染「已创建」卡片 + 深链。 */
 interface CreatedStudyArtifact {
@@ -78,7 +79,7 @@ export function buildCreateStudyDraftTool(ctx: AssistantToolContext) {
     title: "创建调研",
     description: DESCRIPTION,
     annotations: { readOnly: false, destructive: signedIn, idempotent: false },
-    requiredScopes: ["survey:write"],
+    requiredScopes: ["study:editor"],
     type: "write",
     enabled: true,
   };
@@ -103,6 +104,18 @@ export function buildCreateStudyDraftTool(ctx: AssistantToolContext) {
         }
         const draft = parsed.data;
         const questionCount = draft.sections.reduce((n, s) => n + s.questions.length, 0);
+
+        // robustness-hardening REQ-4: workspace ACL gate. Runs BEFORE the
+        // preview branch so a signed-in member without `study:editor` is
+        // denied even before we'd offer them a preview. Skipped entirely
+        // when ctx.workspace is null (solo / unauthenticated path → preview).
+        if (ctx.workspace) {
+          const denied = checkWorkspaceAccess(ctx.workspace, {
+            toolName: "createStudyDraft",
+            requiredScopes: ["study:editor"],
+          });
+          if (denied) return denied;
+        }
 
         // 未登录降级:只回预览,不落库(保留免登录可用)。
         if (ctx.ownerUserId === null) {

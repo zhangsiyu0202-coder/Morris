@@ -10,6 +10,7 @@ import {
 } from "../envelope";
 import type { AssistantToolContext } from "../tool-types";
 import type { ToolMetadata } from "../tool-metadata";
+import { checkWorkspaceAccess } from "../access-control";
 import {
   saveNotebookFromMarkdown,
   type SaveNotebookResult,
@@ -54,7 +55,7 @@ export function buildCreateNotebookTool(ctx: AssistantToolContext) {
       "系统会自动转为 ProseMirror JSON 落库。永远 create 新一份, 不更新已有 notebook " +
       "(研究员不满意时让 Morris 重新生成新一份)。返回 notebookShortId 用于 /notebooks/{shortId} 跳转。",
     annotations: { readOnly: false, destructive: false, idempotent: false },
-    requiredScopes: ["notebook:write"],
+    requiredScopes: ["notebook:editor"],
     enrichUrl: "/notebooks/{notebookShortId}",
     type: "write",
     enabled: true,
@@ -77,6 +78,13 @@ export function buildCreateNotebookTool(ctx: AssistantToolContext) {
         input,
       ): Promise<ToolResultEnvelope<CreateNotebookArtifact | ToolErrorArtifact>> => {
         if (!ownerUserId) return NOT_SIGNED_IN;
+        if (ctx.workspace) {
+          const denied = checkWorkspaceAccess(ctx.workspace, {
+            toolName: "createNotebook",
+            requiredScopes: ["notebook:editor"],
+          });
+          if (denied) return denied;
+        }
         try {
           // draftContent → 不落库, 只做 echo (Morris 内部"先想再写"草稿)
           if (input.draftContent !== undefined) {

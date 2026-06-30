@@ -39,7 +39,7 @@ function validReadFixture(): ToolMetadata {
       "它代表一个典型的 read 类工具: 从 Appwrite 读出某个研究员的资源列表, 不写库, " +
       "结果可被后续工具串联或 UI 渲染。",
     annotations: { readOnly: true, destructive: false, idempotent: true },
-    requiredScopes: ["study:read"],
+    requiredScopes: ["study:viewer"],
     type: "read",
     enabled: true,
   };
@@ -53,7 +53,7 @@ function validWriteFixture(): ToolMetadata {
       "它代表 write 类工具: 在 Appwrite 中创建新文档, 同样输入会产出不同 $id, " +
       "因此 idempotent=false, 但创建动作不破坏现有数据所以 destructive=false。",
     annotations: { readOnly: false, destructive: false, idempotent: false },
-    requiredScopes: ["notebook:write"],
+    requiredScopes: ["notebook:editor"],
     enrichUrl: "/notebooks/{shortId}",
     type: "write",
     enabled: true,
@@ -140,7 +140,7 @@ describe("validateToolMetadata — type ↔ annotations invariants", () => {
   it("rejects type=meta with non-empty requiredScopes", () => {
     const m: ToolMetadata = {
       ...validMetaFixture(),
-      requiredScopes: ["meta:rw"],
+      requiredScopes: ["study:viewer"],
     };
     const issues = validateToolMetadata("foo", m);
     expect(issues).toContain("foo.type=meta requires requiredScopes === []");
@@ -200,10 +200,13 @@ describe("validateToolMetadata — defensive runtime checks (cast attacks)", () 
     expect(issues.some((s) => s.includes("annotations.readOnly must be boolean"))).toBe(true);
   });
 
-  it("rejects empty-string requiredScopes element", () => {
+  it("rejects empty-string requiredScopes element (runtime defense vs cast-attack)", () => {
+    // Type system rejects this at compile time; the runtime check defends
+    // against a forged metadata object cast through `unknown`. Both layers
+    // matter — keep both tests + check.
     const m: ToolMetadata = {
       ...validReadFixture(),
-      requiredScopes: ["study:read", ""],
+      requiredScopes: ["study:viewer", ""] as unknown as ToolMetadata["requiredScopes"],
     };
     const issues = validateToolMetadata("foo", m);
     expect(issues.some((s) => s.includes("requiredScopes[1] must be non-empty string"))).toBe(true);

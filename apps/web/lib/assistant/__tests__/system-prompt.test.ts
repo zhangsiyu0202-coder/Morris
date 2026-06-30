@@ -142,7 +142,7 @@ const FIXTURE_MANIFEST: Record<string, ToolMetadata> = {
       "Gamma 工具的描述足够长以满足 MIN_DESCRIPTION_CHARS=120 字符的硬阈值。" +
       "首句被取出后用于 overview 行展示, 后续句子被 oneLine 截掉。",
     annotations: { readOnly: false, destructive: false, idempotent: false },
-    requiredScopes: ["test:write"],
+    requiredScopes: ["notebook:editor"],
     type: "write",
     enabled: true,
   },

@@ -94,7 +94,10 @@ export interface MorrisRequestContext extends AssistantToolContext {
 }
 
 export function buildMorrisAgent(ctx: MorrisRequestContext) {
-  const ownerCtx: AssistantToolContext = { ownerUserId: ctx.ownerUserId };
+  const ownerCtx: AssistantToolContext = {
+    ownerUserId: ctx.ownerUserId,
+    workspace: ctx.workspace ?? null,
+  };
   const pageContext = ctx.pageContext ?? EMPTY_PAGE_CONTEXT;
   const agentContext = ctx.agentContext;
   const toolContextTemplates = buildToolContextTemplates(ownerCtx);
