@@ -73,6 +73,7 @@ MerismV2 拥有**两条彼此独立的 LLM 链路**。它们不是同一个 agen
 - `supervisor.py` — Supervisor 实例; `Supervisor.__init__` 用 `state.workflowConfig.supervisorInstruction` 初始化 (line 69)
 - `engine.py` — LiveKit 副作用层 (room metadata / 参与者属性 / RPC / barge-in)
 - `transcript.py` — 转写处理
+- `tasks/question.py::LiveKitQuestionTask` — 每个 question 一个 task 实例; `record_probe_round` 按 `question.probeConfig.maxRounds > 0` **conditional 注册**(不挂时 LLM 看不到该 tool, 不在 `tools=[]` 列表里), `confirmation_heard: bool` self-reporting 参数在 false 时拒绝记账。**改回静态 `@function_tool()` 装饰器或移除 `confirmation_heard` 参数会破坏 `apps/agent/tests/properties/test_probe_tool_gate.py` 的 P-FLOW-06 / P-FLOW-07 property test**。详 `.kiro/specs/interview-probe-task-hardening/`。
 - `persistence/` — 仅 finalized artifact 通过 Function 单向落 Appwrite (per `architecture.md::Realtime ↔ persistence boundary`)
 
 `livekit-agents` 模块在 `agent/interview/` **必须 lazy import**, 否则 `pnpm test:py` 在没装 `--extra realtime` 时会炸 (per `architecture.md`)。

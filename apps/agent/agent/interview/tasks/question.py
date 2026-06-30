@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Final
 
 from agent.contracts import (
     InterviewAnswerPayload,
@@ -14,11 +14,98 @@ from agent.contracts import (
 from agent.interview.workflow import format_ui_answer
 
 
+# --------------------------------------------------------------------------- #
+# Tool descriptions — exposed as module-level constants / factories so that:
+#   (1) build_question_instructions and the description payloads stay in sync
+#       (changing one breaks the property test that pins the wording),
+#   (2) tests can grep for the exact rejection text without reaching into the
+#       LiveKitQuestionTask closure,
+#   (3) the conditional-registration code path in __init__ stays compact.
+#
+# Borrowed shape from LiveKit "Tool loop design" § Write descriptions the model
+# can act on (https://docs.livekit.io/agents/logic/tools/design/#write-descriptions-the-model-can-act-on):
+# describe what the tool does, when to call it, when not to, and parameter
+# semantics (especially for the self-reporting `confirmation_heard`).
+# --------------------------------------------------------------------------- #
+
+COMPLETE_QUESTION_DESCRIPTION: Final[str] = """\
+Finish the current interview question and submit the respondent's consolidated answer.
+
+Call this when:
+- For a non-probing question: as soon as the respondent has given their answer.
+- For a probing question: after you have completed at least one probe round
+  (recorded via record_probe_round) and you judge the answer is fully explored.
+
+Do not call this:
+- Before the respondent has answered the main question.
+- For a probing question, before any record_probe_round has been recorded.
+
+Args:
+    respondent_answer: The consolidated answer to the main question, as a
+        single string. For multi-turn answers, summarize what the respondent
+        actually said in their own voice — do not paraphrase or interpret.
+"""
+
+
+PROBE_GATE_REJECTION: Final[str] = (
+    "You must actually voice the probe out loud and wait for the respondent's "
+    "answer before recording. Ask the probe now; after you hear the response, "
+    "call this tool again with confirmation_heard=True. If the respondent is "
+    "refusing or has gone silent, you may still record with the verbatim "
+    "refusal or 'no answer' as probe_respondent_answer — but only after you "
+    "actually heard them say so."
+)
+
+
+def _record_probe_round_description(max_rounds: int) -> str:
+    """Build the record_probe_round tool description for a specific max_rounds.
+
+    Injecting the numeric ceiling into the description (rather than relying on
+    instructions alone) makes the limit visible at tool-selection time, which
+    LiveKit Tool loop design recommends:
+    https://docs.livekit.io/agents/logic/tools/design/#pin-down-parameter-values
+    """
+    return f"""\
+Record one probe exchange (a follow-up question and the respondent's answer to it).
+
+This question allows up to {max_rounds} probe rounds. The tool will reject
+recording beyond {max_rounds} rounds and tell you to call complete_question.
+
+Call this:
+- AFTER you have voiced a probing follow-up out loud AND heard the respondent answer.
+- Once per probe round; do not batch multiple probes into one call.
+
+Do not call this:
+- For a probe you only thought about asking but did not voice.
+- Before the respondent has answered the probe.
+- When this question is not configured for probing (you will not see this tool
+  in that case; if you somehow see it without configuration, do not call it).
+
+Args:
+    probe_question: The probe follow-up you actually voiced — the literal
+        sentence you asked the respondent, not a paraphrase or a probe you
+        only considered.
+    probe_respondent_answer: The respondent's actual spoken answer to the
+        probe. Include refusals or "I don't know" verbatim; do not substitute
+        a placeholder.
+    confirmation_heard: Self-reporting gate. Set True ONLY after BOTH:
+        (1) you have actually voiced the probe question, AND
+        (2) the respondent has actually answered (any answer, including
+            refusal or "I don't know").
+        Set False if you have not yet asked OR if the respondent has not yet
+        answered. NEVER set True for a probe you only thought about asking
+        but did not voice.
+"""
+
+
 def build_question_instructions(question: QuestionTaskConfig) -> str:
     probe = question.probeConfig
     probe_text = ""
-    if probe is not None:
-        guidance = probe.instruction.strip() or "（无特定指引，自行判断如何深入。）"
+    # Sync with conditional tool registration in LiveKitQuestionTask.__init__:
+    # only inject the probe section when the question actually permits at
+    # least one probe round. probeConfig=None or maxRounds==0 ⇒ no probe.
+    if probe is not None and probe.maxRounds > 0:
+        guidance = probe.instruction.strip() or "(no specific guidance — probe at your discretion)"
         probe_text = f"""
 
 Probing (this question is always probed):
@@ -27,8 +114,11 @@ Probing (this question is always probed):
 - Maximum probe rounds: {probe.maxRounds}
 - You MUST ask at least one probe before finishing this question — never jump
   straight to the next question. That feels robotic and loses the human touch.
-- After each probe exchange, call record_probe_round with the probe question and
-  the respondent's answer to it.
+- After each probe exchange, call record_probe_round with the probe question,
+  the respondent's answer, AND confirmation_heard=True.
+- Set confirmation_heard=True ONLY after you have ACTUALLY voiced the probe and
+  ACTUALLY heard the respondent answer it. Never set True for a probe you only
+  thought about asking but did not voice.
 - You MAY stop probing early once you feel the answer is fully explored — you do
   not have to use all {probe.maxRounds} rounds.
 - You may never exceed {probe.maxRounds} probe rounds. Once you reach the limit,
@@ -143,9 +233,34 @@ def create_question_task_class():
             # Accumulates each probe exchange so we can enforce the round ceiling
             # deterministically rather than trusting the LLM to count.
             self._rounds: list[ProbeRound] = []
+
+            # Conditional tool registration (interview-probe-task-hardening spec):
+            # complete_question is always available — any question must be able
+            # to finish. record_probe_round is only registered when this question
+            # is configured for at least one probe round, so the LLM does not
+            # even see the tool for non-probing questions (per LiveKit Tool loop
+            # design § Focus the toolset).
+            tools: list[Any] = [
+                function_tool(
+                    self._complete_question_impl,
+                    name="complete_question",
+                    description=COMPLETE_QUESTION_DESCRIPTION,
+                ),
+            ]
+            probe = question.probeConfig
+            if probe is not None and probe.maxRounds > 0:
+                tools.append(
+                    function_tool(
+                        self._record_probe_round_impl,
+                        name="record_probe_round",
+                        description=_record_probe_round_description(probe.maxRounds),
+                    )
+                )
+
             super().__init__(
                 instructions=build_question_instructions(question),
                 chat_ctx=chat_ctx,
+                tools=tools,
             )
 
         @property
@@ -195,24 +310,34 @@ def create_question_task_class():
             )
             return True
 
-        @function_tool()
-        async def record_probe_round(
+        async def _record_probe_round_impl(
             self,
             probe_question: str,
             probe_respondent_answer: str,
+            confirmation_heard: bool,
         ) -> str:
-            """Record one probe exchange (a follow-up question and its answer).
-
-            Returns guidance on whether more probing is allowed. The probe-round
-            ceiling is enforced here: rounds beyond the maximum are not recorded.
+            """Plain async impl. Registered as a function_tool conditionally in
+            __init__ (only when probeConfig.maxRounds > 0). The LLM-facing
+            description lives in _record_probe_round_description() at module
+            scope so tests can pin the wording independently of the closure.
             """
+            # SelfReportingConfirmation gate — must run BEFORE any state branch
+            # so that confirmation_heard=False is a true no-op (it must not
+            # bump rounds, must not flip completed, and must not emit a
+            # "limit reached" / "already done" message that would mislead the
+            # LLM about system state).
+            if not confirmation_heard:
+                return PROBE_GATE_REJECTION
+
             if self._completed:
                 return "This question was already answered on screen. Move on."
-            if self._max_rounds <= 0:
-                return (
-                    "This question is not configured for probing. "
-                    "Call complete_question now."
-                )
+
+            # Note: an explicit `_max_rounds <= 0` check here would be dead
+            # code — conditional registration in __init__ guarantees this
+            # method is only reachable when maxRounds > 0. If you ever need
+            # to call this impl directly from a unit test under a degenerate
+            # config, fix the test (set maxRounds > 0) rather than re-adding
+            # the defensive branch.
 
             # Hard upper bound: refuse to record beyond maxRounds.
             if len(self._rounds) >= self._max_rounds:
@@ -239,21 +364,28 @@ def create_question_task_class():
                 "Ask another probe if useful, or call complete_question to finish."
             )
 
-        @function_tool()
-        async def complete_question(self, respondent_answer: str) -> str | None:
-            """Finish this question with the consolidated answer to the main question.
+        async def _complete_question_impl(self, respondent_answer: str) -> str | None:
+            """Plain async impl. Registered as a function_tool in __init__.
+            The LLM-facing description lives in COMPLETE_QUESTION_DESCRIPTION
+            at module scope so tests can pin the wording independently of the
+            closure.
 
-            Enforces the lower bound: when probing is configured you must record at
-            least one probe round before completing.
+            Enforces the lower bound: when probing is configured you must
+            record at least one probe round before completing.
             """
             # First-writer-wins: a UI click may have already completed this
             # question. Calling self.complete() again would double-complete.
             if self._completed:
                 return None
 
-            probe_config = self.question.probeConfig
-
-            if probe_config is None:
+            # "No probing" path. Use _max_rounds (which collapses both
+            # probeConfig=None and probeConfig.maxRounds==0 into 0) so this
+            # branch stays in lockstep with the conditional registration
+            # decision in __init__. Diverging the two predicates here is what
+            # would otherwise cause a deadlock: registration hiding
+            # record_probe_round from the LLM while this method still
+            # demands "ask a probe first".
+            if self._max_rounds <= 0:
                 self._completed = True
                 self.complete(
                     QuestionTaskResult(
@@ -271,6 +403,12 @@ def create_question_task_class():
                     "You must ask at least one probe before finishing. "
                     "Ask a follow-up question and call record_probe_round first."
                 )
+
+            # probeConfig is guaranteed non-None here because _max_rounds > 0.
+            # mypy-pleasing local pin so we can read .level / .instruction
+            # without a separate None-check.
+            probe_config = self.question.probeConfig
+            assert probe_config is not None  # invariant: _max_rounds > 0 ⇒ probeConfig set
 
             self._completed = True
             self.complete(
