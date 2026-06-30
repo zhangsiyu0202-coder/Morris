@@ -18,9 +18,11 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import signal
 from datetime import UTC, datetime
 
 from agent.contracts import INTERVIEW_STATE_ATTRIBUTE, InterviewAgentState, InterviewRoomMetadata
+from agent.health import start_health_server, write_prestop_marker
 from agent.logging import create_logger
 from agent.providers.settings import (
     gemini_live_enabled,
@@ -29,6 +31,33 @@ from agent.providers.settings import (
 )
 
 log = create_logger("agent.main")
+
+
+def _install_drain_handler() -> None:
+    """Install a SIGTERM handler that writes the prestop marker so the next
+    /_readyz returns 503 and k8s stops routing traffic. In-flight rooms keep
+    running to completion (LiveKit AgentSession + TaskGroup tear-down handles
+    finalization).
+
+    Idempotent: re-registering on SIGTERM during drain is a no-op. SIGINT
+    (Ctrl-C in dev) gets the same handler so local `uv run python -m agent.main`
+    behaves like k8s for testing.
+    """
+
+    def _handler(signum, _frame) -> None:  # noqa: ANN001 - signal API
+        log.info("agent.signal.received", signal=signum)
+        write_prestop_marker()
+        # Do NOT call sys.exit here. livekit-agents' own shutdown path needs
+        # to finish in-flight jobs first. The marker is enough — k8s will
+        # follow up with SIGKILL after its terminationGracePeriodSeconds.
+
+    try:
+        signal.signal(signal.SIGTERM, _handler)
+        signal.signal(signal.SIGINT, _handler)
+    except ValueError:
+        # signal.signal raises if called from a non-main thread (e.g. inside
+        # tests that import main). Safe to skip; production main thread sets it.
+        log.warn("agent.signal.install_skipped_non_main_thread")
 
 
 def prewarm(proc) -> None:  # proc: livekit.agents.JobProcess
@@ -112,6 +141,12 @@ async def entrypoint(ctx) -> None:  # ctx: livekit.agents.JobContext
 
 
 def main() -> None:
+    # Health server (REQ-3): start before the worker loop so k8s probes
+    # answer immediately. Daemon thread = dies with the process.
+    start_health_server()
+    # SIGTERM drain handler (REQ-3): writes the prestop marker, then lets
+    # the worker finish in-flight jobs before k8s SIGKILL.
+    _install_drain_handler()
     # Imported lazily so the package is importable without the realtime extra.
     from livekit.agents import WorkerOptions, cli
 
