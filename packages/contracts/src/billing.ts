@@ -11,6 +11,46 @@ import { z } from "zod";
 export const WorkspaceRole = z.enum(["owner", "admin", "member"]);
 export type WorkspaceRoleValue = z.infer<typeof WorkspaceRole>;
 
+// Workspace scopes (per .kiro/specs/robustness-hardening/ REQ-4). The Morris
+// page-assistant tools (and any future workspace-scoped tool) declare a
+// `requiredScopes` set in their metadata; `withWorkspaceAccessControl`
+// rejects a call whose role does not grant every required scope.
+//
+// Two-layer policy:
+// 1. Role-level (this map): does the workspace role have the scope at all?
+// 2. Resource-level (`withWorkspaceAccessControl.resourceCheck`, not here):
+//    given the role passes, does THIS specific resource allow the action?
+//    The "write-private" half of ADR 0006 D3 — a member can edit their own
+//    study but not someone else's — lives in the resource-level check.
+//
+// In Wave A all three roles carry every scope. The differentiation we expect
+// next is workspace-level (e.g. `workspace:settings`, `billing:edit` for
+// owner-only) and lands as a separate scope; the map shape doesn't change.
+export const WorkspaceScope = z.enum([
+  "study:viewer",
+  "study:editor",
+  "notebook:viewer",
+  "notebook:editor",
+  "analysis:viewer", // analysis reports are auto-generated; no editor scope
+  "memory:viewer",
+  "memory:editor",
+]);
+export type WorkspaceScopeValue = z.infer<typeof WorkspaceScope>;
+
+const ALL_SCOPES: readonly WorkspaceScopeValue[] = WorkspaceScope.options;
+
+/**
+ * Role-level scope grant. Today (Wave A) all three roles map to the full
+ * scope set; the layer exists so future role-differentiated scopes plug in
+ * without rewriting the wrapper. See `withWorkspaceAccessControl` and the
+ * resource-level creator-vs-non-creator gate (ADR 0006 D3).
+ */
+export const ROLE_SCOPES: Readonly<Record<WorkspaceRoleValue, readonly WorkspaceScopeValue[]>> = {
+  owner: ALL_SCOPES,
+  admin: ALL_SCOPES,
+  member: ALL_SCOPES,
+};
+
 export const MembershipStatus = z.enum(["active", "invited"]);
 export type MembershipStatusValue = z.infer<typeof MembershipStatus>;
 

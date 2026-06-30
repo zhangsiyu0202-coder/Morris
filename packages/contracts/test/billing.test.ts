@@ -4,6 +4,8 @@ import {
   WorkspaceSchema,
   WorkspaceMembershipSchema,
   WorkspaceRole,
+  WorkspaceScope,
+  ROLE_SCOPES,
   PlanSchema,
   SubscriptionSchema,
   UsageEventSchema,
@@ -128,6 +130,74 @@ describe("contracts: billing predicates", () => {
         };
         const once = SubscriptionSchema.parse(row);
         expect(SubscriptionSchema.parse(once)).toEqual(once);
+      }),
+    );
+  });
+});
+
+describe("contracts: WorkspaceScope & ROLE_SCOPES (REQ-4)", () => {
+  const EXPECTED_SCOPES = [
+    "study:viewer",
+    "study:editor",
+    "notebook:viewer",
+    "notebook:editor",
+    "analysis:viewer",
+    "memory:viewer",
+    "memory:editor",
+  ] as const;
+
+  it("WorkspaceScope enumerates exactly the 7 documented scopes", () => {
+    expect(new Set(WorkspaceScope.options)).toEqual(new Set(EXPECTED_SCOPES));
+    expect(WorkspaceScope.options).toHaveLength(EXPECTED_SCOPES.length);
+  });
+
+  it("rejects an unknown scope", () => {
+    expect(WorkspaceScope.safeParse("workspace:admin").success).toBe(false);
+    expect(WorkspaceScope.safeParse("study:owner").success).toBe(false);
+    expect(WorkspaceScope.safeParse("").success).toBe(false);
+  });
+
+  it("every documented scope round-trips", () => {
+    for (const s of EXPECTED_SCOPES) {
+      expect(WorkspaceScope.parse(s)).toBe(s);
+    }
+  });
+
+  it("ROLE_SCOPES covers every workspace role", () => {
+    expect(Object.keys(ROLE_SCOPES).sort()).toEqual([...WorkspaceRole.options].sort());
+  });
+
+  it("every role currently grants every scope (Wave A: role-level uniform)", () => {
+    for (const role of WorkspaceRole.options) {
+      const granted = new Set(ROLE_SCOPES[role]);
+      expect(granted.size).toBe(WorkspaceScope.options.length);
+      for (const scope of WorkspaceScope.options) {
+        expect(granted.has(scope)).toBe(true);
+      }
+    }
+  });
+
+  it("ROLE_SCOPES entries contain no duplicates", () => {
+    for (const role of WorkspaceRole.options) {
+      const set = ROLE_SCOPES[role];
+      expect(new Set(set).size).toBe(set.length);
+    }
+  });
+
+  it("property: any scope drawn from options parses idempotently", () => {
+    fc.assert(
+      fc.property(fc.constantFrom(...WorkspaceScope.options), (s) => {
+        expect(WorkspaceScope.parse(WorkspaceScope.parse(s))).toBe(s);
+      }),
+    );
+  });
+
+  it("property: every ROLE_SCOPES entry contains only valid scopes", () => {
+    fc.assert(
+      fc.property(fc.constantFrom(...WorkspaceRole.options), (role) => {
+        for (const s of ROLE_SCOPES[role]) {
+          expect(WorkspaceScope.options.includes(s)).toBe(true);
+        }
       }),
     );
   });

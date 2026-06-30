@@ -5,6 +5,7 @@ export * from "./notebook.js";
 export * from "./billing.js";
 export * from "./conversation.js";
 export * from "./memory.js";
+export * from "./health.js";
 
 // Wave F (T46): legacy alias removed (was Insight ↦ Notebook). All
 // consumers must use Notebook / NotebookSchema / notebookReportSchema.

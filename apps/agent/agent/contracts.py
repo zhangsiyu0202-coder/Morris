@@ -294,6 +294,11 @@ class Notebook(BaseModel):  # zod: NotebookSchema
 # Mirrors packages/contracts/src/billing.ts (UsageEventSchema + isBillableInterview
 # + the two thresholds). The agent emits one UsageEvent per billable session on
 # completion; downstream aggregateWorkspaceUsage rolls these into the quota.
+#
+# NOTE: TS billing.ts also exports WorkspaceRole / WorkspaceScope / ROLE_SCOPES
+# (per .kiro/specs/robustness-hardening/ REQ-4). The agent does not consume
+# role-based authorization today — Morris is the only WorkspaceScope caller,
+# and Morris runs in apps/web (Node). Mirror these when the agent needs them.
 
 
 class UsageEvent(BaseModel):  # zod: UsageEventSchema
