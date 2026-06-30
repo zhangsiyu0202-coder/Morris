@@ -145,6 +145,7 @@ export function createRealDeps(): IssueDeps {
       // sweep the rest on the next click; correctness is maintained
       // (idempotent reclaim).
       const cutoffIso = new Date(Date.now() - olderThanMs).toISOString();
+      // nosemgrep: no-silent-catch-fallback (orphan reclaim is best-effort and idempotent; failure defers cleanup to next click)
       try {
         const res = await db.listDocuments(DB, "interview_sessions", [
           Query.equal("linkId", linkId),

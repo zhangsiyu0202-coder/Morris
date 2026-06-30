@@ -2,6 +2,7 @@ import Link from "next/link";
 import { FileText, Search, BarChart3, Layers, ArrowRight, AlertTriangle, NotebookText, Check } from "lucide-react";
 import { SentimentTag } from "@/components/report/shared";
 import { UNKNOWN_TOOL_METADATA, type ToolMetadata } from "@/lib/assistant/tool-metadata";
+import { createLogger } from "@merism/observability";
 
 function ToolCard({
   icon,
@@ -288,8 +289,10 @@ export function EnrichLinkRow({
     return encodeURIComponent(String(v));
   });
   if (missing) {
-    // eslint-disable-next-line no-console
-    console.warn(`[tool-results] enrichUrl placeholder missing: tool=${toolName} key=${missing}`);
+    createLogger("component.assistant.tool-results").warn("enrichUrl placeholder missing", {
+      toolName,
+      key: missing,
+    });
     return null;
   }
   return (

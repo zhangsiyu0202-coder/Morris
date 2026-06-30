@@ -22,6 +22,7 @@ import { getCurrentUserId } from "@/lib/queries/auth";
 
 /** Resolve the signed-in researcher's workspace (Appwrite Team `$id`), or null. */
 export async function getCurrentWorkspaceId(): Promise<string | null> {
+  // nosemgrep: no-silent-catch-fallback (no request context / appwrite not configured / expired session → solo mode)
   try {
     const secret = await readSessionSecret();
     if (!secret) return null;

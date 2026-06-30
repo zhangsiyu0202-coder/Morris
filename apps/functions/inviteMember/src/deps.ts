@@ -21,6 +21,7 @@ export function createRealDeps(callerUserId: string | null): InviteMemberDeps {
     callerUserId,
 
     async getCallerRole(workspaceId, userId): Promise<WorkspaceRoleResolved> {
+      // nosemgrep: no-silent-catch-fallback (Teams.listMemberships failure or non-member → null role, typed contract)
       try {
         // Native Teams is the role truth source. Teams are seat-limited (small),
         // so listing memberships and matching the caller is cheap.
@@ -36,6 +37,7 @@ export function createRealDeps(callerUserId: string | null): InviteMemberDeps {
     },
 
     async getSeats(workspaceId) {
+      // nosemgrep: no-silent-catch-fallback (subscription lookup; null = no active subscription, typed contract)
       try {
         const sub = await db.getDocument(DB_ID, "subscriptions", `sub_${workspaceId}`);
         const seats = (sub as { seats?: number }).seats;

@@ -78,8 +78,8 @@ export async function generateGuide(input: {
     return { error: "请先填写调研标题或研究目标,AI 才能生成提纲。" };
   }
 
+  const log = createLogger("action.guide-ai.generateGuide");
   try {
-    const log = createLogger("action.guide-ai.generateGuide");
     const { experimental_output } = await withLLMCall(
       {
         scope: "action.guide-ai.generateGuide",
@@ -104,7 +104,7 @@ export async function generateGuide(input: {
     }
     return { sections: withIds(experimental_output.sections) };
   } catch (err) {
-    console.error("[v0] generateGuide failed:", err);
+    log.error("generateGuide failed", { error: err instanceof Error ? err.message : String(err) });
     return { error: "生成提纲时出错,请稍后重试。" };
   }
 }
@@ -116,8 +116,8 @@ export async function expandSection(input: {
   sectionObjective: string;
   existingQuestions: string[];
 }): Promise<{ questions: GuideQuestion[] } | { error: string }> {
+  const log = createLogger("action.guide-ai.expandSection");
   try {
-    const log = createLogger("action.guide-ai.expandSection");
     const { experimental_output } = await withLLMCall(
       {
         scope: "action.guide-ai.expandSection",
@@ -147,7 +147,7 @@ ${input.existingQuestions.length ? input.existingQuestions.map((q, i) => `${i + 
     }
     return { questions: experimental_output.questions.map(toGuideQuestion) };
   } catch (err) {
-    console.error("[v0] expandSection failed:", err);
+    log.error("expandSection failed", { error: err instanceof Error ? err.message : String(err) });
     return { error: "扩充问题时出错,请稍后重试。" };
   }
 }

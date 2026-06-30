@@ -2,6 +2,7 @@ import type { Databases } from "node-appwrite";
 import { SurveySchema, SurveySectionSchema, QuestionBlockSchema } from "@merism/contracts";
 import type { Survey, SurveySection, QuestionBlock } from "@merism/contracts";
 import { DATABASE_ID, getServerClient, getSessionDb, Query } from "./client";
+import { createLogger } from "@merism/observability";
 
 const SURVEYS = "surveys";
 const SURVEY_SECTIONS = "survey_sections";
@@ -21,7 +22,7 @@ function parseAll<T>(rows: unknown[], parser: (raw: unknown) => T | null, label:
   for (const raw of rows) {
     const parsed = parser(raw);
     if (parsed) out.push(parsed);
-    else console.warn(`[queries:${label}] dropped row failing schema check`);
+    else createLogger(`queries.${label}`).warn("dropped row failing schema check");
   }
   return out;
 }

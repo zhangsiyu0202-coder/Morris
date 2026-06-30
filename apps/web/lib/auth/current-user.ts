@@ -13,6 +13,7 @@ import { readSessionSecret, sessionClient } from "./appwrite";
  */
 export async function getCurrentResearcher(): Promise<CurrentResearcher | null> {
   let secret: string | null = null;
+  // nosemgrep: no-silent-catch-fallback (cookie reader can throw outside request context; null = no session)
   try {
     secret = await readSessionSecret();
   } catch {
@@ -20,6 +21,7 @@ export async function getCurrentResearcher(): Promise<CurrentResearcher | null> 
   }
   if (!secret) return null;
 
+  // nosemgrep: no-silent-catch-fallback (Appwrite Account.get fails on expired/invalid session; null = signed-out)
   try {
     const account = new Account(sessionClient(secret));
     const user = await account.get();

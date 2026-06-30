@@ -3,6 +3,7 @@ import {
   type IssueLivekitTokenResponse,
   IssueLivekitTokenResponseSchema,
 } from "@merism/contracts"
+import { createLogger } from "@merism/observability"
 
 const ENDPOINT = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT
 const PROJECT_ID = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID
@@ -51,8 +52,9 @@ export async function issueLivekitToken(
       TOKEN_TIMEOUT_MS,
     )
   } catch (err: unknown) {
-    // eslint-disable-next-line no-console
-    console.error("[issueLivekitToken] SDK createExecution threw:", err)
+    createLogger("interview.issue-token").error("SDK createExecution threw", {
+      error: err instanceof Error ? err.message : String(err),
+    })
     // Local dev fallback: when the Appwrite Function isn't deployed (the
     // project's docker-compose omits appwrite-executor for foundation-setup),
     // functions.createExecution throws AppwriteException with code 404 from
@@ -77,21 +79,19 @@ export async function issueLivekitToken(
   }
 
   if (execution.responseStatusCode >= 400) {
-    // eslint-disable-next-line no-console
-    console.error("[issueLivekitToken] non-2xx:", execution.responseStatusCode, execution.responseBody)
+    createLogger("interview.issue-token").error("non-2xx execution", {
+      status: execution.responseStatusCode,
+      body: execution.responseBody,
+    })
     throw new Error(parseError(execution.responseBody))
   }
 
-  // eslint-disable-next-line no-console
-  console.log(
-    "[issueLivekitToken] execution settled:",
-    JSON.stringify({
-      status: execution.status,
-      httpStatus: execution.responseStatusCode,
-      bodyChars: (execution.responseBody ?? "").length,
-      bodyHead: (execution.responseBody ?? "").slice(0, 120),
-    }),
-  )
+  createLogger("interview.issue-token").info("execution settled", {
+    status: execution.status,
+    httpStatus: execution.responseStatusCode,
+    bodyChars: (execution.responseBody ?? "").length,
+    bodyHead: (execution.responseBody ?? "").slice(0, 120),
+  })
 
   let json: unknown
   try {
@@ -102,8 +102,9 @@ export async function issueLivekitToken(
 
   const parsed = IssueLivekitTokenResponseSchema.safeParse(json)
   if (!parsed.success) {
-    // eslint-disable-next-line no-console
-    console.error("[issueLivekitToken] schema mismatch:", parsed.error.flatten())
+    createLogger("interview.issue-token").error("schema mismatch", {
+      issues: parsed.error.flatten(),
+    })
     throw new Error("invalid_token_response")
   }
   return parsed.data

@@ -71,6 +71,7 @@ export function createRealDeps(): StripeWebhookDeps {
     async verifyAndParse(rawBody, signature) {
       if (!signature) return null;
       let event: Stripe.Event;
+      // nosemgrep: no-silent-catch-fallback (Stripe signature mismatch → null, treated as unauthenticated webhook)
       try {
         event = stripe.webhooks.constructEvent(rawBody, signature, whSecret);
       } catch {

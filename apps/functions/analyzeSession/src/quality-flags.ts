@@ -78,6 +78,7 @@ export async function deriveQualityFlagsLLM(
   input: LLMInput,
   fn: DeriveQualityFlagsLLM,
 ): Promise<SessionQualityFlag[]> {
+  // nosemgrep: no-silent-catch-fallback (LLM derivation failure falls back to empty flags; rule-layer flags still apply)
   try {
     const { flags } = await fn(input);
     return flags;

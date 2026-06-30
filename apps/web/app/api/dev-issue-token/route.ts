@@ -28,6 +28,7 @@ import type {
   SessionInit,
 } from "../../../../functions/issueLivekitToken/src/handler";
 import { issueLivekitToken } from "../../../../functions/issueLivekitToken/src/handler";
+import { createLogger } from "@merism/observability";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -125,6 +126,7 @@ function makeDeps(): IssueDeps {
     async listOrphanSessions(linkId, olderThanMs) {
       // Keep in sync with apps/functions/issueLivekitToken/src/deps.ts.
       const cutoffIso = new Date(Date.now() - olderThanMs).toISOString();
+      // nosemgrep: no-silent-catch-fallback (orphan reclaim is best-effort and idempotent; mirrors issueLivekitToken/deps.ts)
       try {
         const res = await db.listDocuments(DB, "interview_sessions", [
           Query.equal("linkId", linkId),
@@ -246,7 +248,7 @@ export async function POST(req: Request) {
     return NextResponse.json(result.body, { status: result.status });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    console.error("[dev-issue-token] handler threw", detail);
+    createLogger("route.dev-issue-token.post").error("handler threw", { detail });
     return NextResponse.json(
       { error: "internal_error", detail },
       { status: 500 },

@@ -5,6 +5,7 @@ import { buildAgentContext } from "@/lib/assistant/agent-context";
 import { listMemories } from "@/lib/memories/actions";
 import { classifyMorrisError } from "@/lib/assistant/errors";
 import { morrisErrorCounter } from "@/lib/assistant/metrics";
+import { createLogger } from "@merism/observability";
 import {
   EMPTY_PAGE_CONTEXT,
   PageContextSchema,
@@ -41,6 +42,7 @@ export const maxDuration = 30;
  * 使用 AI SDK 6 原生 `pruneMessages` 按 token 预算结构性裁剪。
  */
 export async function POST(req: Request) {
+  const log = createLogger("route.assistant.post");
   let messages: UIMessage[];
   let pageContext: PageContext = EMPTY_PAGE_CONTEXT;
   try {
@@ -56,10 +58,9 @@ export async function POST(req: Request) {
         pageContext = parsed.data;
       } else {
         // 不让一个坏的 pageContext 把整次请求 400 掉; 退化为空 + warn。
-        console.warn(
-          "[assistant] pageContext schema mismatch, falling back to empty:",
-          parsed.error.flatten(),
-        );
+        log.warn("pageContext schema mismatch, falling back to empty", {
+          issues: parsed.error.flatten(),
+        });
       }
     }
   } catch {
@@ -101,7 +102,7 @@ export async function POST(req: Request) {
         const m = classifyMorrisError(error);
         morrisErrorCounter.inc(m.kind);
         // 服务端结构化日志: 只输出 kind 与脱敏后的 detail, 不打印 stack/api key。
-        console.error("[assistant] %s: %s", m.kind, m.detail);
+        log.error("morris.error", { kind: m.kind, detail: m.detail });
         return m.userMessage;
       },
     });
@@ -109,7 +110,7 @@ export async function POST(req: Request) {
     // 进入这里的多是 buildMorrisAgent / 路由配置错误, 也按同一分类器走一遍。
     const m = classifyMorrisError(error);
     morrisErrorCounter.inc(m.kind);
-    console.error("[assistant fatal] %s: %s", m.kind, m.detail);
+    log.error("morris.fatal", { kind: m.kind, detail: m.detail });
     return Response.json({ error: m.userMessage }, { status: 500 });
   }
 }

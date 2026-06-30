@@ -18,6 +18,7 @@
 import { Client, Databases, ID, Permission, Role } from "node-appwrite";
 import { CreateNotebookRequestSchema } from "@merism/contracts";
 import type { CreateNotebookRequest } from "@merism/contracts";
+import { createLogger } from "@merism/observability";
 import { generateShortId } from "@/lib/notebooks/short-id";
 import { markdownToProseMirror } from "@/lib/notebooks/markdown-to-prose";
 import { extractTextContent } from "@/lib/notebooks/prose-to-markdown";
@@ -137,13 +138,12 @@ export async function saveNotebookFromMarkdown(
       embeddingJson = JSON.stringify(vec);
       embeddingModel = EMBEDDING_MODEL_TAG;
     } catch (err) {
-      // best-effort: log via console; saveNotebookFromMarkdown still succeeds.
-      // searchAcrossNotebooks Function will see embedding="" and skip this row
-      // (or fall back to fulltext if the entire owner-set is sparse).
-      console.warn(
-        "[saveNotebookFromMarkdown] embedding generation failed, continuing with empty embedding:",
-        err instanceof Error ? err.message : String(err),
-      );
+      // best-effort: searchAcrossNotebooks Function will see embedding="" and
+      // skip this row (or fall back to fulltext if the entire owner-set is
+      // sparse).
+      createLogger("server.notebooks").warn("embedding generation failed, continuing with empty embedding", {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 

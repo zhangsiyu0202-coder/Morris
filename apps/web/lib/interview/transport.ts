@@ -18,6 +18,7 @@ import {
   type SubmitInterviewAnswerRpcResponse,
   SUBMIT_ANSWER_RPC_METHOD,
 } from "@merism/contracts"
+import { createLogger } from "@merism/observability"
 
 export type TransportPhase =
   | "idle"
@@ -69,7 +70,10 @@ export function parseRoomMetadata(raw: string | undefined | null): InterviewRoom
   let json: unknown
   try {
     json = JSON.parse(raw)
-  } catch {
+  } catch (err) {
+    createLogger("interview.transport").warn("parseRoomMetadata: invalid JSON", {
+      error: err instanceof Error ? err.message : String(err),
+    })
     return null
   }
   const parsed = InterviewRoomMetadataSchema.safeParse(json)
@@ -89,7 +93,10 @@ export function parseAgentState(raw: string | undefined | null): InterviewAgentS
   let json: unknown
   try {
     json = JSON.parse(raw)
-  } catch {
+  } catch (err) {
+    createLogger("interview.transport").warn("parseAgentState: invalid JSON", {
+      error: err instanceof Error ? err.message : String(err),
+    })
     return null
   }
   const parsed = InterviewAgentStateSchema.safeParse(json)
@@ -227,7 +234,10 @@ export class InterviewTransport {
     })
     try {
       return JSON.parse(raw) as SubmitInterviewAnswerRpcResponse
-    } catch {
+    } catch (err) {
+      createLogger("interview.transport").warn("submitAnswer: RPC response is not JSON", {
+        error: err instanceof Error ? err.message : String(err),
+      })
       return null
     }
   }

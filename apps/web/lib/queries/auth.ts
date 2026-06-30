@@ -25,6 +25,7 @@ export async function getCurrentUserId(): Promise<string | null> {
     .setProject(projectId)
     .setSession(sessionCookie.value);
 
+  // nosemgrep: no-silent-catch-fallback (Appwrite Account.get fails on expired/invalid session; null = signed-out)
   try {
     const user = await new Account(client).get();
     return user.$id;
@@ -69,6 +70,7 @@ export async function getCurrentUserProfile(): Promise<CurrentUserProfile | null
     .setProject(projectId)
     .setSession(sessionCookie.value);
 
+  // nosemgrep: no-silent-catch-fallback (Appwrite Account.get fails on expired/invalid session; null = signed-out)
   try {
     const user = await new Account(client).get();
     return {

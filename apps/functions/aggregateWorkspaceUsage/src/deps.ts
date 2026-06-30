@@ -44,6 +44,7 @@ export function createRealDeps(): AggregateDeps {
     },
 
     async getIncludedInterviews(workspaceId) {
+      // nosemgrep: no-silent-catch-fallback (billing lookup; null = no active subscription, typed contract)
       try {
         const sub = await db.getDocument(DB_ID, "subscriptions", `sub_${workspaceId}`);
         if ((sub as unknown as { status?: string }).status === "canceled") return null; // no active entitlement

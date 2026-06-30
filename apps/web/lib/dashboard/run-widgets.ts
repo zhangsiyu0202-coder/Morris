@@ -12,6 +12,7 @@ import {
   parseSurveyReportBody,
 } from "@/lib/queries";
 import { getOrCreateStudyDashboard, type DashboardTileWithWidget } from "./queries";
+import { createLogger } from "@merism/observability";
 
 type WidgetRunner = (ctx: WidgetRunContext, widget: DashboardWidget) => Promise<unknown>;
 
@@ -34,7 +35,11 @@ async function getSurveyReport(
   try {
     const report = await getLatestAnalysisReport(ownerUserId, { surveyId, scope: "survey" });
     return report ? parseSurveyReportBody(report) : null;
-  } catch {
+  } catch (err) {
+    createLogger("dashboard.run-widgets").warn("getSurveyReport failed; widget data will be null", {
+      surveyId,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
 }

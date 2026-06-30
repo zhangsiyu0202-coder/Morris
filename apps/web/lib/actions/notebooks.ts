@@ -153,9 +153,9 @@ export async function createNotebook(input: {
   const study = await getStudy(studyId);
   if (!study) return { error: "找不到该调研。" };
 
+  const log = createLogger("action.notebooks.generateReport");
   try {
     const context = await buildStudyContext(ownerUserId, studyId);
-    const log = createLogger("action.notebooks.generateReport");
 
     // DeepSeek 仍生成结构化 NotebookReport 中间格式 (作为 experimental_output schema)
     const { experimental_output } = await withLLMCall(
@@ -191,7 +191,7 @@ export async function createNotebook(input: {
     revalidatePath("/notebooks");
     return { id: result.$id, shortId: result.shortId };
   } catch (err) {
-    console.error("[notebooks] createNotebook failed:", err);
+    log.error("createNotebook failed", { error: err instanceof Error ? err.message : String(err) });
     return { error: "洞察生成失败,请稍后重试。" };
   }
 }

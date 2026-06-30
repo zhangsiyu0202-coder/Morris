@@ -18,11 +18,13 @@ export function renderContextPromptTemplate(
 ): string {
   return template.replace(PLACEHOLDER_RE, (_, key: string) => {
     if (!Object.prototype.hasOwnProperty.call(ctx, key)) {
+      // nosemgrep: no-bare-console-in-source (template-helper placeholder; replace with createLogger(scope) when copying into a real tool)
       console.warn(`[assistant] context template (${toolName ?? "?"}) missing key: ${key}`);
       return "None";
     }
     const value = (ctx as Record<string, unknown>)[key];
     if (value === undefined || value === null) {
+      // nosemgrep: no-bare-console-in-source (template-helper placeholder; replace with createLogger(scope) when copying into a real tool)
       console.warn(`[assistant] context template (${toolName ?? "?"}) key "${key}" is null/undefined`);
       return "None";
     }

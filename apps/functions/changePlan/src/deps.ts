@@ -15,6 +15,7 @@ export function createRealDeps(callerUserId: string | null): ChangePlanDeps {
   return {
     callerUserId,
     async getCallerRole(workspaceId, userId) {
+      // nosemgrep: no-silent-catch-fallback (Teams.listMemberships failure or non-member → null role, typed contract)
       try {
         // Native Teams is the role truth source (ADR-0006 D1; mirrors inviteMember).
         const res = await teams.listMemberships(workspaceId);

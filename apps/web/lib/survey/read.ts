@@ -54,6 +54,7 @@ export async function loadSurveyDraft(surveyId: string): Promise<LoadedSurvey | 
   const database = getServerClient().databases;
 
   let doc: Raw;
+  // nosemgrep: no-silent-catch-fallback (Appwrite getDocument 404 → null, typed "not found" contract)
   try {
     doc = (await database.getDocument(DATABASE_ID, "surveys", surveyId)) as unknown as Raw;
   } catch {
@@ -130,6 +131,7 @@ export async function loadSurveyMeta(surveyId: string): Promise<SurveyMeta | nul
   if (!owner) return null;
   const database = getServerClient().databases;
   let doc: Raw;
+  // nosemgrep: no-silent-catch-fallback (Appwrite getDocument 404 → null, typed "not found" contract)
   try {
     doc = (await database.getDocument(DATABASE_ID, "surveys", surveyId)) as unknown as Raw;
   } catch {
@@ -187,6 +189,7 @@ export async function listQuestionRefs(surveyId: string): Promise<{ id: string; 
 export async function getSessionById(sessionId: string): Promise<InterviewSession | null> {
   const database = getServerClient().databases;
   let d: Raw;
+  // nosemgrep: no-silent-catch-fallback (Appwrite getDocument 404 → null, typed "not found" contract)
   try {
     d = (await database.getDocument(DATABASE_ID, "interview_sessions", sessionId)) as unknown as Raw;
   } catch {
