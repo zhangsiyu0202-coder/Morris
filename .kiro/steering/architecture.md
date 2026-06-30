@@ -8,6 +8,11 @@ Module boundaries, Function shape, agent realtime↔persistence boundary, concur
 
 ## Module map
 
+> Enforced by `.dependency-cruiser.cjs` (module-graph layer) — see
+> `docs/architecture/module-boundaries.md`. Companion to `.semgrep/rules/`
+> which enforces file-content patterns. Both layers documented in
+> `.kiro/specs/dependency-cruiser-boundaries/`.
+
 | Module | Path | Owns | MUST NOT |
 |---|---|---|---|
 | Contracts | `packages/contracts` | zod schemas + TS types for every cross-module shape | runtime logic, I/O, network calls |

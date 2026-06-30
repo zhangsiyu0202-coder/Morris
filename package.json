@@ -20,6 +20,9 @@
     "semgrep": "semgrep --config .semgrep/rules/ --severity ERROR --error .",
     "semgrep:test": "semgrep --test --config .semgrep/rules/ .semgrep/rules/",
     "semgrep:warn": "semgrep --config .semgrep/rules/ --severity WARNING .",
+    "deps:cruise": "depcruise --config .dependency-cruiser.cjs apps packages",
+    "deps:cruise:report": "depcruise --config .dependency-cruiser.cjs --output-type json apps packages > deps-cruise-report.json",
+    "deps:graph": "depcruise --config .dependency-cruiser.cjs --output-type dot apps packages | dot -T svg > docs/architecture/module-graph.svg",
     "stack:up": "bash scripts/stack-up.sh",
     "stack:down": "bash scripts/stack-down.sh",
     "stack:reset": "bash scripts/stack-reset.sh"
@@ -27,6 +30,7 @@
   "devDependencies": {
     "@merism/contracts": "workspace:*",
     "@types/node": "^22.10.2",
+    "dependency-cruiser": "18.0.0",
     "fast-check": "^3.23.2",
     "livekit-server-sdk": "^2.9.0",
     "node-appwrite": "^14.1.0",

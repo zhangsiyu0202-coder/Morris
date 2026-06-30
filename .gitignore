@@ -65,3 +65,7 @@ scripts/poc-*/outputs/
 
 # External agent CLI runtime state (antigravity tools, etc).
 .antigravitycli/
+
+# tooling output (run artifacts, not committed)
+deps-cruise-report.json
+tests/evals/reports/

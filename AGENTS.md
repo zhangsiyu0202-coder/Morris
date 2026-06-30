@@ -563,6 +563,7 @@ When enforcing a new convention, prefer the highest-strength tool that fits. Cli
    - `pnpm scope-guard` for forbidden product-shape concepts
    - `pnpm schema:verify` for Appwrite drift
    - `pnpm semgrep` (AST patterns) for binding steering rules — see `.semgrep/README.md`
+   - `pnpm deps:cruise` (dependency-cruiser) for module-graph boundaries — see `docs/architecture/module-boundaries.md`
    - Targeted `grep -RIn ...` rules in CI for the patterns documented in steering
 3. **Module AGENTS.md** (`packages/*/AGENTS.md`, `apps/*/AGENTS.md`). Per-module rules and gotchas that don't generalize. Loaded on demand, enforced by reviewer.
 4. **Sub-spec / ADR**. Architectural decisions that are too narrow for steering or change too rarely to live in CI.

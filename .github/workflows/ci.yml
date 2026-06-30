@@ -95,6 +95,24 @@ jobs:
         if: always()
         run: semgrep --config .semgrep/rules/ --severity WARNING . || true
 
+  dependency-cruiser:
+    # Module-graph boundary enforcement (robustness-hardening REQ-6 +
+    # dependency-cruiser-boundaries sub-spec). Companion to semgrep:
+    # cruiser owns "module A may not import module B" (graph shape);
+    # semgrep owns "this AST pattern is forbidden in source X". Rules
+    # are NOT duplicated across layers.
+    name: dep-cruiser
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm deps:cruise
+
   e2e:
     name: playwright
     runs-on: ubuntu-latest
