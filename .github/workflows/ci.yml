@@ -73,6 +73,28 @@ jobs:
       # --prod: ignore devDependency noise (test/build tooling).
       - run: pnpm audit --audit-level=high --prod
 
+  semgrep:
+    # Pattern-level enforcement (robustness-hardening REQ-1).
+    # ERROR-severity rules fail the build; WARNING-severity rules surface
+    # in output for cleanup but don't block. See `.semgrep/rules/` and
+    # `.kiro/specs/robustness-hardening/` for the rule catalog + rationale.
+    name: semgrep
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install --quiet semgrep
+      # Two passes:
+      #   1) Hard gate: any ERROR-severity finding fails the build.
+      #   2) Soft pass: list WARNING-severity findings for review (non-blocking).
+      - name: semgrep (ERROR — fail-closed)
+        run: semgrep --config .semgrep/rules/ --severity ERROR --error .
+      - name: semgrep (WARNING — informational)
+        if: always()
+        run: semgrep --config .semgrep/rules/ --severity WARNING . || true
+
   e2e:
     name: playwright
     runs-on: ubuntu-latest

@@ -22,6 +22,9 @@ Cross-module data flows ONLY through `packages/contracts`. Cross-module side eff
 
 ## Function shape (binding)
 
+> Enforced by `.semgrep/rules/handler-no-sdk-import.yaml` (no SDK import in
+> `handler.ts`). See `.kiro/specs/robustness-hardening/` REQ-1.
+
 Reference implementation: `apps/functions/issueLivekitToken/`. Every new Function MUST follow it.
 
 - `src/handler.ts` — pure core. Takes `rawInput: unknown` and a typed `Deps` interface. Returns `{status, body}`. Fully unit/property testable with in-memory deps.

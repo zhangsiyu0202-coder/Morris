@@ -1,0 +1,59 @@
+rules:
+  - id: no-bare-console-in-source
+    message: |
+      Direct `console.{log,info,debug,warn,error}` is forbidden in app /
+      package source. Use `createLogger(scope)` from `@merism/observability`
+      so log lines carry `traceId`, structured fields, and the right scope.
+
+      Allowed paths (excluded below): `scripts/`, all test files, the
+      logger module itself (`packages/observability/src/logger.ts`) which
+      uses `console` internally as the sink, and CLI tools / e2e specs
+      where `console` IS the right output channel.
+
+      If you really need `console` in a one-off debug, add
+      `// nosemgrep: no-bare-console-in-source (reason)` above the line —
+      the reason will surface in code review.
+
+      See `.kiro/steering/errors-and-observability.md` § Logger contract.
+      Companion: `.kiro/specs/robustness-hardening/` REQ-1.
+
+      Wave A note: severity is WARNING because ~5 existing legacy findings
+      predate this rule (mostly `console.warn` in `apps/web/lib/queries/`).
+      Cleanup tracked in follow-up sub-spec `lint-baseline-cleanup`; once
+      WARN count drops to 0, bump to ERROR.
+    severity: WARNING
+    languages: [typescript]
+    paths:
+      include:
+        - "/apps/**/*.ts"
+        - "/apps/**/*.tsx"
+        - "/packages/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+        - "**/scripts/**"
+        - "**/.semgrep/**"
+        # The logger module is the sole legitimate user of console — it IS
+        # the structured-log sink.
+        - "packages/observability/src/logger.ts"
+        # CLI tools: console.log IS the right output channel (human-readable
+        # apply / verify status, not application logs).
+        - "packages/appwrite-schema/src/apply-schema.ts"
+        - "packages/appwrite-schema/src/verify-schema.ts"
+        # Playwright e2e specs run outside the Next.js process — they have
+        # their own logger story (Playwright report).
+        - "apps/web/e2e/**"
+        # One-off browser-side test script. If this file outlives Wave A,
+        # it should be deleted or moved under scripts/.
+        - "apps/web/test_browser.ts"
+    pattern-either:
+      - pattern: console.log(...)
+      - pattern: console.info(...)
+      - pattern: console.debug(...)
+      - pattern: console.warn(...)
+      - pattern: console.error(...)
+    metadata:
+      docs: ".kiro/steering/errors-and-observability.md#logger-contract-binding"
+      category: observability
+      owner: platform

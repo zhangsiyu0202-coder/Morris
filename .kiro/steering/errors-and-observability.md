@@ -8,6 +8,10 @@ inclusion: always
 
 ## try/catch matrix (binding)
 
+> Enforced by `.semgrep/rules/no-silent-catch-fallback.yaml` (Wave A: WARNING
+> severity; will bump to ERROR after baseline cleanup). See
+> `.kiro/specs/robustness-hardening/` REQ-1.
+
 A `catch` clause MUST do exactly one of:
 
 | Case | What to do | Example |
@@ -38,6 +42,11 @@ grep -RIn 'catch.*{[^}]*return \(null\|undefined\|\[\]\|{}\)' apps packages
 A hit that is NOT a documented best-effort cleanup is a defect.
 
 ## Logger contract (binding)
+
+> Enforced by `.semgrep/rules/no-bare-console-in-source.yaml` (no
+> `console.{log,info,debug,warn,error}` in app/package source — use
+> `createLogger`). Wave A: WARNING severity; will bump to ERROR after
+> baseline cleanup. See `.kiro/specs/robustness-hardening/` REQ-1.
 
 Logger is the only entry point for diagnostic output.
 
@@ -84,6 +93,9 @@ Rules:
 - Error code strings are stable forever once shipped; if semantics change, introduce a new code and deprecate the old one (parallel to schema deprecation).
 
 ## Secret masking (binding)
+
+> Enforced by `.semgrep/rules/no-secret-in-source.yaml` (no JWT / sk_live /
+> sk-OpenAI literals in source). See `.kiro/specs/robustness-hardening/` REQ-1.
 
 `maskSecret(value, visible=4)` is the only allowed serialization of secret-bearing values.
 

@@ -30,6 +30,93 @@ MerismV2 is an AI-driven voice interview qualitative research platform. The inte
 
 The product is for qualitative voice interviews: survey design, anonymous interview links, realtime AI voice interviews, transcripts/recordings, and structured analysis reports.
 
+## Two LLM Chains: Morris vs LiveKit Agent (binding)
+
+MerismV2 拥有**两条彼此独立的 LLM 链路**。它们不是同一个 agent 的两种模式 —— 是两个进程、两套 SDK、两组工具、两组使用者、两条数据流。任何工作开始前先确认要碰的是哪一条;混淆这两条会导致改错文件 / 错放责任 / 错验证。
+
+| 维度 | **Morris** (页面助理) | **LiveKit Agent** (语音访谈主持人) |
+|---|---|---|
+| 责任 | 帮研究员**操作 Merism 数据**(起草 study / 检索访谈 / 触发分析 / 长期记忆) | 在 LiveKit room 内**与匿名 interviewee 实时语音交谈**, 按 Survey 推进访谈 |
+| 进程 | Next.js Node runtime (`apps/web`) | 独立 Python 进程 (`apps/agent`) |
+| 启动方式 | 随 `apps/web` Next.js 进程; 用户访问 `/assistant` 或侧边栏 dock | `cd apps/agent && uv sync --extra realtime && uv run python -m agent.main dev` |
+| 入口 | `apps/web/app/assistant/` (standalone) + `apps/web/components/assistant/*` (sidebar dock) + `apps/web/app/api/assistant/route.ts` (POST chat endpoint) | `apps/functions/issueLivekitToken` 发 short-lived JWT → interviewee join LiveKit room → agent worker 同 room join |
+| 框架 | Vercel AI SDK 6 `ToolLoopAgent` (per ADR-0002) | LiveKit Supervisor + ordered TaskGroup + focused AgentTask (per ADR-0001) — **不是 LangGraph** |
+| LLM provider | DeepSeek (`apps/web/lib/assistant/model.ts::CHAT_MODEL`/`REASONING_MODEL`) | Qwen-VL primary cascade (per ADR-0011); DeepSeek dormant secondary |
+| ASR / TTS | — (纯文本聊天) | Qwen (DashScope) |
+| 使用者 | 登录态研究员 (Appwrite Account) | 匿名 interviewee (**无账号**, 凭 `InterviewLink` 拿 JWT) |
+| 观测 scope | `morris.*` (per `morris-llm-observability` 注册表: `morris.toolloop` / `morris.toolloop.reasoner` / `morris.title.*`; 另有 `action.*` / `function.*` 等非 Morris-工具的 LLM 调用) | `agent.*` (Python `agent/logging.py::create_logger`; 当前主要是 `agent.main` 等模块前缀, LLM 调用尚未接 `morris-llm-observability` Wave B) |
+| `traceId` 命名空间 | 一次 Morris 请求 / Server Action / Function 调用一个 | 一次访谈 session 一个 |
+| 持久化对象 | `Conversation` (对话历史) / `Notebook` (研究员 ad-hoc 报告) / `morris_memories` (长期记忆) / `SurveyDraft` (经 `createStudyDraft` + 研究员批准) | finalized `InterviewSession` / `Recording` / `collectedAnswers` / `qualityFlags` (经 Function 单向落 Appwrite) |
+| 实时音视频 | 不接 | **唯一**承载方 (LiveKit room + ParticipantEgress 录制, ADR-0008) |
+| Spec 文档 | `.kiro/specs/morris-{tool-metadata, llm-observability, memory, conversation-persistence}/` | `.kiro/specs/{ai-interview-engine, interviewee-portal}/` |
+
+### Morris 工具集 (`apps/web/lib/assistant/tools/`)
+
+当前 8 个工具, 全部对 Merism 数据做**动作** — 不是聊天 playground:
+
+| Tool | 责任 | 涉及对象 |
+|---|---|---|
+| `listStudies` | 列研究员的 study | `Study` (web Drizzle 过渡层) / `Survey` |
+| `searchInterviewData` | 单 study 内检索 transcript 片段 | `TranscriptSegment` |
+| `analyzeData` | 触发 / 读取 session 分析 | `AnalysisReport` |
+| `createStudyDraft` | 起草 Survey draft (`needsApproval=true` in 登录态) | `SurveyDraft` → 研究员复核后才落 `Survey` |
+| `createNotebook` | 起草 Notebook (研究员 ad-hoc Q + AI 报告) | `Notebook` (per ADR-0003 D2) |
+| `searchAcrossStudies` | 跨 study 全文 + embedding 检索 | `Survey` + `TranscriptSegment` |
+| `todoWrite` | 任务列表元工具 (UI state, 无后端写) | 仅内存 |
+| `manageMemories` | 长期记忆 5-action discriminated union (`create/query/update/delete/list`, `delete` 走 `needsApproval`) | `morris_memories` |
+
+新增 Morris 工具必须自证"为什么归 Morris 而不是 server action / Function"(per `scope.md::borrow-or-build`), 并同步在 `tool-metadata.ts` 登记 + `tool-enrich-urls.ts` 同步(per `morris-tool-metadata` sub-spec)。
+
+### LiveKit Agent 关键代码点 (`apps/agent/agent/interview/`)
+
+- `workflow.py` — **纯** workflow state 转换 (无 side effect), 含 `_supervisor_instruction_from_study` 这类 compose 函数
+- `supervisor.py` — Supervisor 实例; `Supervisor.__init__` 用 `state.workflowConfig.supervisorInstruction` 初始化 (line 69)
+- `engine.py` — LiveKit 副作用层 (room metadata / 参与者属性 / RPC / barge-in)
+- `transcript.py` — 转写处理
+- `persistence/` — 仅 finalized artifact 通过 Function 单向落 Appwrite (per `architecture.md::Realtime ↔ persistence boundary`)
+
+`livekit-agents` 模块在 `agent/interview/` **必须 lazy import**, 否则 `pnpm test:py` 在没装 `--extra realtime` 时会炸 (per `architecture.md`)。
+
+### Instruction 字段链 — 谁写, 谁读 (容易栽跟头的一组)
+
+精确流向(按数据实际走向, 不是 README/spec 描述的最终目标态):
+
+1. **研究员在 `apps/web/components/studies/guide-editor.tsx` 写**:
+   - `Survey.title` / `Survey.flowConfig.{researchGoal, targetAudience, introScript}` / `Survey.moderatorInstruction` (Survey 级 tone / pacing / style 指引)
+   - `SurveySection.title` / `.description` / `.sectionInstruction` (section 可选指引)
+2. **`apps/web/lib/actions/survey.ts` 写入 Appwrite** Survey / SurveySection / QuestionBlock 行
+3. **`apps/functions/issueLivekitToken/src/survey-draft-mapper.ts::buildSurveyDraftFromDocs`** 把行映射成 `SurveyDraft`; `section.objective = section.description || section.sectionInstruction || ""`; `draft.moderatorInstruction = survey.moderatorInstruction ?? ""` (T16/T17 接通点 — 这一步漏一字段就会让研究员的 persona 整条链被静默丢掉)
+4. **`apps/functions/issueLivekitToken/src/deps.ts::createRoom`** 调 `buildInterviewRoomMetadataFromDraft` → 内部调 `buildInterviewWorkflowConfigFromDraft` (`@merism/contracts/src/api.ts`) — **TS 端在这里就把 `draft.moderatorInstruction` 前置到 operational base, 合成出最终 `workflowConfig.supervisorInstruction`**, 然后整个 `InterviewRoomMetadata` 经 `JSON.stringify` 塞进 LiveKit `RoomServiceClient.createRoom({metadata})`
+5. **Python `apps/agent/agent/interview/workflow.py::workflow_config_from_metadata`** 读 room metadata 时**优先消费已合成好的 `workflowConfig`** (TS 端产出); 仅当 metadata 只含 `runtimeStudy`、缺 `workflowConfig` 时, 才走 fallback `_supervisor_instruction_from_study(study)` — 该 fallback 用 `studyTitle / researchGoal / targetAudience / introScript` 从头 compose, **不消费 `moderatorInstruction`** (因为 Python 的 `InterviewRuntimeStudy` mirror 不含该字段; 这是约定: persona 合成由 TS 完成, Python 只消费)
+6. **`apps/agent/agent/interview/supervisor.py::Supervisor.__init__`** 用 `workflowConfig.supervisorInstruction` 初始化 LiveKit Supervisor (line 69)
+
+**Morris 与这条链的关系: 不写、不读、不参与**。
+
+- Morris **不写** `moderatorInstruction` (它在 survey editor 表单里, 由研究员手写)
+- Morris **不读** `supervisorInstruction` / `sectionInstruction` (那是 Python agent 进程的运行时输入, 在 LiveKit room metadata 流)
+- Morris `createStudyDraft` 工具的产出物是 `SurveyDraft` (供研究员复核), 不直接活化为活跃 `Survey` 行
+
+`grep -RIn 'moderatorInstruction\|supervisorInstruction' apps/web/lib/assistant` 应**全 0 命中** — 命中即漂移信号。
+
+### 跨链共享的数据 (仅通过 `packages/contracts` + Appwrite collections 间接耦合)
+
+两条链没有直接调用关系, 只通过这几个 governed artifact 间接关联:
+
+- `Survey` + `SurveySection` + `QuestionBlock`: 研究员通过 Morris (`createStudyDraft`, 要批准) 或 guide editor 创建; LiveKit Agent 读作访谈大纲
+- `InterviewSession` / `Recording` / `TranscriptSegment`: LiveKit Agent 写入; Morris 通过 `searchInterviewData` / `analyzeData` / `searchAcrossStudies` 读
+- `AnalysisReport`: `analyzeSession` / `analyzeSurvey` Function 写入 (session 结束后触发); Morris 读
+- `InterviewLink`: 仅 LiveKit 链使用 (anonymous interviewee 入场凭证, Function 签 JWT); Morris 不碰
+
+**唯一接触点是事后单向**: Morris 工具读取 LiveKit Agent 已经写好的 transcript / report。**反方向 (Morris → LiveKit Agent) 没有任何路径** —— Morris 不能影响一场正在进行的访谈; Morris 改了 Survey draft 也要等研究员发布 + 下一次 `issueLivekitToken` 才进入下一场访谈。
+
+### 禁混淆备忘 (binding)
+
+- "Morris 自动生成 `Survey.moderatorInstruction`" — 当前 Morris 工具中**没有这条路径**, 且 `moderatorInstruction` 是研究员要 own 的"研究意图定义", 不是机器生成。开这条路径要走 ADR + 新 Morris tool + `needsApproval` 二次确认。
+- "Morris 影响访谈实时过程" — 不存在的路径。
+- "LiveKit Agent 调 Morris 工具 / 读 Morris memory / 写 Conversation" — 不存在的路径。两条链的 LLM 观测 scope (`morris.*` vs `agent.*`) 也物理隔离。
+- "用 Vercel AI SDK 6 给 LiveKit Agent" 或 "把 Morris 改成 LiveKit Agents SDK" — 同时违反 ADR-0001 / ADR-0002。
+- "DeepSeek 是项目唯一 LLM" — **已不再准确**: Qwen-VL (per ADR-0011) 是 LiveKit Agent cascade 的 primary; DeepSeek 留作 dormant revert path。Morris 端仍用 DeepSeek。本文件下文若仍出现"DeepSeek is the only LLM" 措辞, 以 `.kiro/steering/errors-and-observability.md::Provider adapter rules` 为准 (steering 文件先于本文件 reflect ADR-0011)。
+
 ## Hard Architecture Rules
 
 - Keep modules low-coupled and high-cohesion. Do not let UI, Appwrite schema tooling, LiveKit agent workflow code, analysis code, and page-assistant tools bleed into each other.
@@ -84,7 +171,6 @@ The product is for qualitative voice interviews: survey design, anonymous interv
 Current gaps and known drifts:
 
 - `apps/web/components/studies/*`, `apps/web/lib/guide.ts`, `apps/web/lib/actions/studies.ts`, `apps/web/lib/db/*`, `apps/web/lib/actions/guide-ai.ts` — these implement the existing editor draft against Drizzle + Postgres. They will be replaced when the `survey-editor` sub-spec is written; the architectural target remains Appwrite as the only backend. The Drizzle `insight` table was removed by the `analysis-report` sub-spec (T8); only the `study` table remains in `lib/db/schema.ts`.
-- `apps/web/lib/mock-session.ts` is still used by `app/page.tsx` (root) and `lib/use-interview-session.ts` for the structured-question rendering preview. Out of scope for the `analysis-report` sub-spec; planned for the `interviewee-portal` sub-spec to consolidate with the live `useLiveInterview` hook.
 - `pnpm-lock.yaml` still pins `@copilotkit/*` packages. They are not imported by `apps/web/package.json` and will be removed on the next dependency refresh (see `docs/adr/0002-page-assistant-vercel-ai-sdk.md`).
 - Root `smoke` and `e2e` scripts reference planned files that may not exist yet.
 
@@ -407,6 +493,51 @@ The addyosmani/agent-skills library is installed under `~/.agents/skills/` and p
 - **REVIEW** → `code-review-and-quality`
 - **SHIP** → `shipping-and-launch`
 
+### Mandatory skill invocation
+
+The general lifecycle above is the default. The table below names **specific
+trigger conditions** where a skill MUST be loaded before the first non-trivial
+edit. These are the areas where prose-only nudging has historically failed —
+documenting them as a hard rule reduces drift. Borrowed in shape from
+`/home/jia/posthog/AGENTS.md` § Mandatory skill invocation; the trigger
+list is MerismV2-specific. Source spec:
+`.kiro/specs/robustness-hardening/` REQ-5.
+
+**Always invoke** before the first edit in a session that touches these paths:
+
+| Touch this | Invoke this skill |
+|---|---|
+| `packages/contracts/src/*.ts` | `spec-driven-development` + `pre-implementation` |
+| `apps/functions/*/src/handler.ts` | `incremental-implementation` + `test-driven-development` |
+| `apps/agent/agent/interview/{workflow,supervisor,engine}.py` | `debugging-and-error-recovery` (hot path; mistakes here break live interviews) |
+| `.github/workflows/*.yml` | `ci-cd-and-automation` |
+| `apps/web/lib/assistant/tools/*.ts` | `api-and-interface-design` (Morris tool surface is a public contract) |
+| `apps/web/lib/assistant/access-control.ts` | `security-and-hardening` (workspace ACL gate) |
+| `apps/web/components/**/*.tsx` (new component) | `frontend-ui-engineering` |
+| `docs/adr/*.md` (new ADR) | `documentation-and-adrs` |
+| `.semgrep/rules/*.yaml` (new rule) | `code-review-and-quality` (the rule IS a review rule) |
+
+**Invoke when in the area** (softer triggers — judgment call, but stated so the call is explicit):
+
+| Activity | Invoke this skill |
+|---|---|
+| Investigating a bug | `debugging-and-error-recovery` |
+| Reviewing a PR | `code-review-and-quality` |
+| Refactoring without behavior change | `code-simplification` |
+| Performance work | `performance-optimization` |
+| Pre-launch / deploy | `shipping-and-launch` |
+| Writing a new sub-spec | `spec-driven-development` |
+| Triaging a flaky test | `test-driven-development` + `debugging-and-error-recovery` |
+
+**Skill gaps** (referenced above but not present in `~/.agents/skills/` today
+— track here so we don't silently invent them):
+
+- (none currently — all skills above exist as of 2026-06-30)
+
+If a skill in the **Always invoke** table is not loaded before the change,
+the PR description's "Agent context" line MUST explain why. This is enforced
+in review, not by CI.
+
 ### Anti-rationalization
 
 The following thoughts are incorrect and must be ignored:
@@ -430,6 +561,7 @@ When enforcing a new convention, prefer the highest-strength tool that fits. Cli
    - `pnpm lint` (ESLint) for style
    - `pnpm scope-guard` for forbidden product-shape concepts
    - `pnpm schema:verify` for Appwrite drift
+   - `pnpm semgrep` (AST patterns) for binding steering rules — see `.semgrep/README.md`
    - Targeted `grep -RIn ...` rules in CI for the patterns documented in steering
 3. **Module AGENTS.md** (`packages/*/AGENTS.md`, `apps/*/AGENTS.md`). Per-module rules and gotchas that don't generalize. Loaded on demand, enforced by reviewer.
 4. **Sub-spec / ADR**. Architectural decisions that are too narrow for steering or change too rarely to live in CI.
