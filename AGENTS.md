@@ -517,6 +517,7 @@ list is MerismV2-specific. Source spec:
 | `apps/web/components/**/*.tsx` (new component) | `frontend-ui-engineering` |
 | `docs/adr/*.md` (new ADR) | `documentation-and-adrs` |
 | `.semgrep/rules/*.yaml` (new rule) | `code-review-and-quality` (the rule IS a review rule) |
+| `tests/evals/**` | `test-driven-development` + `code-review-and-quality` (corpus governance) |
 
 **Invoke when in the area** (softer triggers — judgment call, but stated so the call is explicit):
 

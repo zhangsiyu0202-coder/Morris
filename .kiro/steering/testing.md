@@ -14,8 +14,9 @@ Four-layer test model with mandatory property-based coverage. Tests ship in the 
 | **Property-based** | `tests/properties/*.test.ts`, `apps/agent/tests/properties/*.py` | Invariants, state machines, concurrency, secret leakage | every PR |
 | **Integration with fakes** | `*/tests/test_*.py` with fake repos / fake livekit | Cross-component flow without real infra | every PR |
 | **Live integration** | same files, gated by `MERISM_LIVE_TESTS=1` | Real Appwrite + LiveKit Docker stack | nightly + on-demand |
+| **LLM evals** | `tests/evals/`, gated by `MERISM_EVAL_TESTS=1` | LLM behavior regression — real provider call, deterministic + judge-rubric scorers | nightly + on-demand (see `.kiro/specs/ai-eval-suite/`) |
 
-A new feature ships with **at least Unit + Property** coverage in its first PR. Integration / live integration are added when the surface stabilizes — but never deferred more than one sub-spec cycle.
+A new feature ships with **at least Unit + Property** coverage in its first PR. Integration / live integration are added when the surface stabilizes — but never deferred more than one sub-spec cycle. LLM evals are added per-surface when an LLM call site lands; scenarios accumulate over time and run nightly.
 
 ## Property-based mandatory scenarios (binding)
 
