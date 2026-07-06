@@ -3,6 +3,7 @@
 import { Account, Users, Query, ID } from "node-appwrite";
 import { cookies } from "next/headers";
 import { ResearcherPrefsSchema, type ResearcherPrefs } from "@merism/contracts";
+import { createLogger } from "@merism/observability";
 import {
   publicClient,
   adminClient,
@@ -14,6 +15,7 @@ import {
   clearSessionCookie,
   appUrl,
 } from "./appwrite";
+import { sendResearcherWelcomeEmail } from "@/lib/server/email";
 
 /**
  * Researcher auth Server Actions, implemented entirely on top of Appwrite's
@@ -162,6 +164,13 @@ export async function signUp(input: {
       await verifyAccount.createVerification(appUrl("/auth/verify"));
     } catch {
       // swallow: researcher can resend from account settings
+    }
+    try {
+      await sendResearcherWelcomeEmail({ email, name });
+    } catch (error) {
+      createLogger("action.auth.signUp").warn("welcome email failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
     return { ok: true };
   } catch (err) {

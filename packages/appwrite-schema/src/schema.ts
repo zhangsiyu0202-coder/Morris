@@ -648,6 +648,30 @@ export const COLLECTIONS: CollectionDef[] = [
     indexes: [],
   },
   {
+    // Business email idempotency ledger. Deterministic $id from campaignKey;
+    // createDocument 409 means another send already claimed this campaign.
+    id: "email_deliveries",
+    name: "EmailDelivery",
+    permissions: SERVER_ONLY,
+    documentSecurity: true,
+    attributes: [
+      { key: "campaignKey", type: "string", size: 512, required: true },
+      { key: "templateName", type: "string", size: 128, required: false, default: "" },
+      { key: "status", type: "enum", elements: ["pending", "sent", "failed"], required: true },
+      { key: "recipientEmail", type: "string", size: 320, required: true },
+      { key: "messageId", type: "string", size: 512, required: false },
+      { key: "error", type: "string", size: 4000, required: false },
+      { key: "createdAt", type: "datetime", required: true },
+      { key: "updatedAt", type: "datetime", required: true },
+      { key: "sentAt", type: "datetime", required: false },
+    ],
+    indexes: [
+      { key: "campaign_unique", type: "unique", attributes: ["campaignKey"] },
+      { key: "by_status_updated", type: "key", attributes: ["status", "updatedAt"] },
+      { key: "by_template", type: "key", attributes: ["templateName"] },
+    ],
+  },
+  {
     // Morris page assistant conversation persistence
     // (per .kiro/specs/morris-conversation-persistence/).
     //
