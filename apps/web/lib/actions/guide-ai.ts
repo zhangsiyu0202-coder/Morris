@@ -53,6 +53,7 @@ function toGuideQuestion(q: z.infer<typeof aiQuestionSchema>): GuideQuestion {
     probeInstruction: q.probeInstruction ?? "",
     options: Array.isArray(q.options) ? q.options : [],
     allowSkip: false,
+    branchRules: [],
   };
 }
 

@@ -44,6 +44,7 @@ import {
   type Guide,
   type GuideSection,
   type GuideQuestion,
+  type GuideBranchRule,
   type QuestionType,
   type ProbeLevel,
 } from "@/lib/guide";
@@ -430,6 +431,7 @@ export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: Surv
             {selection.kind === "question" && selectedQuestion && selectedSection && (
               <QuestionOptions
                 question={selectedQuestion}
+                guide={guide}
                 onUpdate={(patch) =>
                   updateQuestion(selectedSection.id, selectedQuestion.id, patch)
                 }
@@ -920,10 +922,12 @@ function SectionOptions({
 /* ============ 右栏:问题设置 ============ */
 function QuestionOptions({
   question,
+  guide,
   onUpdate,
   onRemove,
 }: {
   question: GuideQuestion;
+  guide: Guide;
   onUpdate: (patch: Partial<GuideQuestion>) => void;
   onRemove: () => void;
 }) {
@@ -1046,6 +1050,13 @@ function QuestionOptions({
         />
       </Field>
 
+      <BranchRulesEditor
+        currentQuestionId={question.id}
+        rules={question.branchRules}
+        guide={guide}
+        onChange={(next) => onUpdate({ branchRules: next })}
+      />
+
       <ToggleRow
         label="允许主持人跳过此问题"
         checked={question.allowSkip}
@@ -1060,6 +1071,198 @@ function QuestionOptions({
 }
 
 /* ============ 复用小组件 ============ */
+
+/**
+ * 段落式分支规则编辑器。挂在每道题的编辑面板下方,让研究员用自然语言
+ * 描述"什么条件下跳到哪题"。AI 主持人访谈时会根据用户回答实时判断
+ * 条件是否成立;第一条命中即用,都不命中就走默认下一题。
+ *
+ * 设计借鉴 Retell AI 的 Prompt transition condition
+ * (docs.retellai.com/build/conversation-flow/transition-condition)。
+ * 数据契约见 `packages/contracts/src/api.ts::SurveyDraftBranchRuleSchema`
+ * 以及 flow-engine `ConditionStep` 消费逻辑。
+ */
+function BranchRulesEditor({
+  currentQuestionId,
+  rules,
+  guide,
+  onChange,
+}: {
+  currentQuestionId: string;
+  rules: GuideBranchRule[];
+  guide: Guide;
+  onChange: (rules: GuideBranchRule[]) => void;
+}) {
+  const [expanded, setExpanded] = useState<boolean>(rules.length > 0);
+
+  // 展平所有其它题(排除自己),供跳转目标下拉展示。
+  const targets = useMemo(() => {
+    const list: Array<{ id: string; label: string }> = [];
+    let n = 0;
+    for (const s of guide.sections) {
+      for (const q of s.questions) {
+        n += 1;
+        if (q.id === currentQuestionId) continue;
+        const text = q.questionText.trim() || "(未填写)";
+        list.push({
+          id: q.id,
+          label: `问题 ${n}: ${text.length > 40 ? text.slice(0, 40) + "…" : text}`,
+        });
+      }
+    }
+    return list;
+  }, [guide, currentQuestionId]);
+
+  const updateRule = (i: number, patch: Partial<GuideBranchRule>) => {
+    onChange(rules.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  };
+  const removeRule = (i: number) => {
+    onChange(rules.filter((_, idx) => idx !== i));
+  };
+  const addRule = () => {
+    onChange([
+      ...rules,
+      { condition: "", jumpToQuestionId: targets[0]?.id ?? "" },
+    ]);
+    setExpanded(true);
+  };
+
+  return (
+    <div className="rounded-md border border-ink-100">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className="flex w-full items-center justify-between px-3 py-2.5 text-left font-ui text-caption font-medium text-ink-600 transition-colors hover:bg-mauve-50"
+      >
+        <span className="inline-flex items-center gap-2">
+          <CornerDownRight
+            className={`size-3.5 shrink-0 text-mauve-400 transition-transform ${expanded ? "rotate-90" : ""}`}
+            strokeWidth={2}
+          />
+          分支规则{rules.length > 0 ? ` (${rules.length} 条)` : " (可选)"}
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-ink-100 px-3 py-3">
+          <p className="mb-3 font-ui text-caption text-ink-400 leading-5">
+            按顺序判断,第一条命中即用。AI 主持人在访谈中会根据用户回答
+            实时判断条件是否成立。
+          </p>
+
+          {rules.length === 0 && (
+            <p className="mb-3 rounded border border-dashed border-ink-200 px-3 py-3 font-ui text-caption text-ink-400">
+              还没有分支规则,访谈将按顺序进入下一题。
+            </p>
+          )}
+
+          <div className="flex flex-col gap-3">
+            {rules.map((rule, i) => (
+              <BranchRuleRow
+                key={i}
+                index={i}
+                rule={rule}
+                targets={targets}
+                onUpdate={(patch) => updateRule(i, patch)}
+                onRemove={() => removeRule(i)}
+              />
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={addRule}
+            disabled={targets.length === 0}
+            className="mt-3 inline-flex w-fit items-center gap-1 font-ui text-caption font-medium text-ink-900 transition-colors hover:text-ink-900 disabled:cursor-not-allowed disabled:text-ink-400"
+          >
+            <Plus className="size-3.5" strokeWidth={2} />
+            添加规则
+          </button>
+
+          {targets.length === 0 && (
+            <p className="mt-2 font-ui text-caption text-ink-400">
+              需要至少两道题才能配置跳转。
+            </p>
+          )}
+
+          <p className="mt-3 border-t border-ink-100 pt-3 font-ui text-caption text-ink-400">
+            否则 → 默认下一题
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BranchRuleRow({
+  index,
+  rule,
+  targets,
+  onUpdate,
+  onRemove,
+}: {
+  index: number;
+  rule: GuideBranchRule;
+  targets: Array<{ id: string; label: string }>;
+  onUpdate: (patch: Partial<GuideBranchRule>) => void;
+  onRemove: () => void;
+}) {
+  const targetKnown = targets.some((t) => t.id === rule.jumpToQuestionId);
+
+  return (
+    <div className="rounded border border-ink-200 bg-mauve-50 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="font-ui text-caption font-semibold text-ink-800">
+          规则 {index + 1}
+        </span>
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label="删除规则"
+          className="grid size-6 place-items-center rounded text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-600"
+        >
+          <X className="size-3.5" strokeWidth={2} />
+        </button>
+      </div>
+
+      <label className="mb-1 block font-ui text-caption text-ink-600">
+        如果:
+      </label>
+      <textarea
+        value={rule.condition}
+        onChange={(e) => onUpdate({ condition: e.target.value.slice(0, 500) })}
+        placeholder="例:用户明确说自己是全职学生"
+        rows={2}
+        className="mb-2 w-full resize-none rounded border border-ink-200 bg-ink-0 px-2.5 py-2 font-ui text-body-sm leading-6 text-ink-900 outline-none transition-colors placeholder:text-ink-400 focus:border-ink-400"
+      />
+
+      <label className="mb-1 block font-ui text-caption text-ink-600">
+        跳转到:
+      </label>
+      <select
+        value={rule.jumpToQuestionId}
+        onChange={(e) => onUpdate({ jumpToQuestionId: e.target.value })}
+        className="w-full rounded border border-ink-200 bg-ink-0 px-2 py-2 font-ui text-body-sm text-ink-900 outline-none transition-colors focus:border-ink-400"
+      >
+        {!targetKnown && (
+          // Target no longer exists (question was deleted). Show as an
+          // invalid placeholder so the researcher sees something is wrong;
+          // saving will fail zod validation until they pick a live target.
+          <option value={rule.jumpToQuestionId} disabled>
+            (已删除的题) — 请重新选择
+          </option>
+        )}
+        {targets.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function ToggleRow({
   label,
   checked,

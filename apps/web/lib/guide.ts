@@ -46,7 +46,33 @@ export const PROBE_LEVEL_LABELS: Record<ProbeLevel, string> = {
   deep: "深度追问",
 };
 
+/**
+ * A researcher-authored branch rule. When the interviewee's answer to the
+ * hosting question satisfies `condition` (evaluated by the AI moderator at
+ * runtime), the interview jumps to `jumpToQuestionId` instead of the next
+ * question in sequence.
+ *
+ * `jumpToQuestionId` references another question's `id` in the same guide
+ * (which becomes its `stableId` in the persisted SurveyDraft — one and the
+ * same identifier). Order matters: rules are evaluated top-to-bottom, first
+ * match wins.
+ *
+ * See `packages/contracts/src/api.ts::SurveyDraftBranchRuleSchema` for the
+ * contract-level definition + Retell-borrowed rationale.
+ */
+export const guideBranchRuleSchema = z.object({
+  condition: z.string().trim().min(1).max(500),
+  jumpToQuestionId: z.string().min(1),
+});
+
 export const guideQuestionSchema = z.object({
+  /**
+   * Editor-generated stable identifier. Doubles as the persistent
+   * `stableId` in the SurveyDraft — one field, one identity. Generated
+   * fresh via `crypto.randomUUID()` for new questions; preserved across
+   * saves so `branchRules[].jumpToQuestionId` references stay valid
+   * through drag-drop / renames.
+   */
   id: z.string(),
   questionText: z.string(),
   questionType: z.enum(QUESTION_TYPES),
@@ -56,6 +82,7 @@ export const guideQuestionSchema = z.object({
   // 是否允许主持人在访谈中跳过该问题(对应 Make 的 "Allow skip")。
   // 仅编辑态使用;若后续 agent 主持需要消费,再同步到 @merism/contracts。
   allowSkip: z.boolean().default(false),
+  branchRules: z.array(guideBranchRuleSchema).default([]),
 });
 
 export const guideSectionSchema = z.object({
@@ -70,6 +97,7 @@ export const guideSchema = z.object({
 });
 
 export type GuideQuestion = z.infer<typeof guideQuestionSchema>;
+export type GuideBranchRule = z.infer<typeof guideBranchRuleSchema>;
 export type GuideSection = z.infer<typeof guideSectionSchema>;
 export type Guide = z.infer<typeof guideSchema>;
 
@@ -88,16 +116,19 @@ export function localId(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
-/** 空白问题工厂。 */
+/** 空白问题工厂。id 用 crypto.randomUUID(),此 id 也是持久化的 stableId
+ *  (guideFromDraftSections / draftSectionsFromGuide 双向映射,保证跨保存
+ *  往返后 branchRules[].jumpToQuestionId 引用不会失效)。 */
 export function emptyQuestion(): GuideQuestion {
   return {
-    id: localId("q"),
+    id: crypto.randomUUID(),
     questionText: "",
     questionType: "open_ended",
     probeLevel: "standard",
     probeInstruction: "",
     options: [],
     allowSkip: false,
+    branchRules: [],
   };
 }
 
@@ -145,30 +176,40 @@ export function guideFromDraftSections(sections: SurveyDraft["sections"]): Guide
       title: s.title,
       objective: s.objective,
       questions: s.questions.map((q) => ({
-        id: localId("q"),
+        // Reuse the stableId from the persisted draft when present so
+        // branchRules[].jumpToQuestionId stays valid across load. When
+        // absent (legacy draft pre-branch-rules), generate a fresh UUID
+        // so the editor still has a stable id for React keys + drag-drop
+        // AND so newly-added branch rules from THIS session can reference
+        // the question after next save.
+        id: q.stableId ?? crypto.randomUUID(),
         questionText: q.questionText,
         questionType: q.questionType,
         probeLevel: q.probeLevel,
         probeInstruction: q.probeInstruction ?? "",
         options: q.options ?? [],
         allowSkip: q.allowSkip ?? false,
+        branchRules: q.branchRules ?? [],
       })),
     })),
   };
 }
 
-/** 把编辑态 `Guide` 转回 `SurveyDraft.sections`(剥离本地 id)。 */
+/** 把编辑态 `Guide` 转回 `SurveyDraft.sections`(剥离本地 section id,保留
+ *  question 的 stableId + branchRules)。 */
 export function draftSectionsFromGuide(guide: Guide): SurveyDraftSection[] {
   return guide.sections.map((s) => ({
     title: s.title,
     objective: s.objective,
     questions: s.questions.map((q) => ({
+      stableId: q.id,
       questionText: q.questionText,
       questionType: q.questionType,
       probeLevel: q.probeLevel,
       probeInstruction: q.probeInstruction,
       options: q.options,
       allowSkip: q.allowSkip,
+      branchRules: q.branchRules,
     })),
   }));
 }

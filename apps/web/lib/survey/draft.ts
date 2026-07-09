@@ -75,6 +75,9 @@ export function assembleSurveyDraft(
             options: configOptions(config),
             allowSkip: config.allowSkip === true,
             stimulus: block.stimulus,
+            // branch rules land here once the editor writes them; empty
+            // for legacy questions loaded from the current schema.
+            branchRules: [],
           };
         });
 
