@@ -6,6 +6,7 @@ import type {
   SurveyDraftQuestion,
   StudyQuestionType,
 } from "@merism/contracts";
+import { createLogger } from "@merism/observability";
 
 /**
  * 把 Appwrite 的规范化文档(`surveys` + `survey_sections` + `question_blocks`)
@@ -41,10 +42,13 @@ function flowString(flowConfig: Record<string, unknown>, key: string): string {
   return typeof v === "string" ? v : "";
 }
 
-function configOptions(config: Record<string, unknown>): string[] {
+function configOptions(config: Record<string, unknown> | undefined): string[] {
+  if (!config) return [];
   const v = config.options;
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 }
+
+const _log = createLogger("survey.assembleDraft");
 
 export function assembleSurveyDraft(
   survey: Survey,
@@ -66,36 +70,57 @@ export function assembleSurveyDraft(
         .filter((q) => q.sectionId === section.$id)
         .sort((a, b) => a.orderInSection - b.orderInSection)
         .map((block): SurveyDraftQuestion => {
-          const config = (block.config ?? {}) as Record<string, unknown>;
-          // `stableId` piggybacks on `config` bucket (see saveSurveyDraft);
-          // `branchRules` piggybacks on `skipLogic` bucket. Both are
-          // repurposed JSON buckets to avoid an Appwrite schema migration.
-          const skipLogic = (block.skipLogic ?? {}) as Record<string, unknown>;
-          const rawBranchRules = Array.isArray(skipLogic.branchRules)
-            ? (skipLogic.branchRules as Array<Record<string, unknown>>)
-            : [];
-          const branchRules = rawBranchRules
-            .filter(
-              (r) =>
-                typeof r?.condition === "string" &&
-                typeof r?.jumpToQuestionId === "string",
-            )
-            .map((r) => ({
-              condition: String(r.condition),
-              jumpToQuestionId: String(r.jumpToQuestionId),
-            }));
-          const stableId =
-            typeof config.stableId === "string" ? (config.stableId as string) : undefined;
+          // `config` and `skipLogic` are typed via QuestionBlockConfigSchema
+          // and QuestionBlockSkipLogicSchema (both .passthrough for legacy
+          // extra keys). Both go through Appwrite's stringified-JSON wire
+          // shape, decoded by the schema's jsonObject preprocess.
+          //
+          // The typed schemas validate presence + primitive types; the
+          // .safeParse in queries/studies.ts::parseQuestion is authoritative
+          // for accepting/rejecting the whole row. If a row's skipLogic
+          // contained items that failed the inner schema, that row would
+          // have been rejected there — so by the time we're here, everything
+          // is well-typed.
+          //
+          // The residual anomaly: pre-existing rows written before this
+          // schema tightening MAY have `skipLogic.branchRules` items with
+          // extra fields or missing fields. .passthrough allows the extras;
+          // missing required fields would fail schema parse upstream. Warn
+          // if we see an anomalous shape survive to this point (defensive).
+          const stableId = block.config?.stableId;
+          const branchRules = block.skipLogic?.branchRules ?? [];
+
+          // Defensive: even though schema validated, catch a schema-typed
+          // but semantically-empty rule that should never persist. A
+          // legacy row with a partial rule (e.g. condition="" after trim)
+          // would have failed .min(1) parse — so this warns on truly
+          // impossible cases, aiding forward-compat debugging.
+          const validBranchRules = branchRules.filter((r) => {
+            const valid =
+              typeof r.condition === "string" &&
+              r.condition.trim().length > 0 &&
+              typeof r.jumpToQuestionId === "string" &&
+              r.jumpToQuestionId.length > 0;
+            if (!valid) {
+              _log.warn("draft.branchRules.dropped_malformed", {
+                surveyId: survey.$id,
+                questionBlockId: block.$id,
+                rule: r,
+              });
+            }
+            return valid;
+          });
+
           return {
             stableId,
             questionText: block.prompt,
             questionType: toDraftQuestionType(block.type),
             probeLevel: block.probeConfig?.level ?? "standard",
             probeInstruction: block.probeConfig?.instruction ?? "",
-            options: configOptions(config),
-            allowSkip: config.allowSkip === true,
+            options: configOptions(block.config),
+            allowSkip: block.config?.allowSkip === true,
             stimulus: block.stimulus,
-            branchRules,
+            branchRules: validBranchRules,
           };
         });
 

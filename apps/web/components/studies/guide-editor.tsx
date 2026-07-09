@@ -16,6 +16,7 @@ import {
   ChevronRight,
   ChevronUp,
   ChevronDown,
+  AlertTriangle,
 } from "lucide-react";
 import {
   DndContext,
@@ -84,6 +85,7 @@ export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: Surv
   const [selection, setSelection] = useState<Selection>({ kind: "intro" });
   const [dirty, setDirty] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
@@ -93,6 +95,7 @@ export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: Surv
   // ---- 保存 ----
   const handleSave = useCallback(() => {
     setSaveState("saving");
+    setSaveError(null);
     startTransition(async () => {
       const nextDraft: SurveyDraft = {
         title: title.trim() || "未命名调研",
@@ -102,10 +105,26 @@ export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: Surv
         moderatorInstruction,
         sections: draftSectionsFromGuide(guide),
       };
-      await saveSurveyDraft(surveyId, nextDraft);
-      setDirty(false);
-      setSaveState("saved");
-      setTimeout(() => setSaveState("idle"), 1800);
+      try {
+        await saveSurveyDraft(surveyId, nextDraft);
+        setDirty(false);
+        setSaveState("saved");
+        setTimeout(() => setSaveState("idle"), 1800);
+      } catch (err) {
+        // Recover UI from the stuck "saving" state and surface the message.
+        // Errors reaching here include: zod SurveyDraftSchema.parse failures
+        // (e.g. new branchRules superRefine rejecting a rule with a jump
+        // target that no longer exists), Appwrite server errors, network
+        // failures. Without this catch the button spins forever and the
+        // researcher has no idea what went wrong.
+        console.error("saveSurveyDraft failed", err);
+        setSaveState("idle");
+        setSaveError(
+          err instanceof Error
+            ? err.message
+            : "保存失败,请稍后重试。",
+        );
+      }
     });
   }, [surveyId, title, researchGoal, targetAudience, introScript, moderatorInstruction, guide]);
 
@@ -289,6 +308,30 @@ export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: Surv
       {aiError && (
         <div className="shrink-0 border-b border-ink-200 bg-mauve-100 px-4 py-2">
           <p className="font-ui text-body-sm italic text-ink-900">{aiError}</p>
+        </div>
+      )}
+
+      {saveError && (
+        <div
+          role="alert"
+          className="flex shrink-0 items-start gap-2 border-b border-ink-200 bg-mauve-100 px-4 py-2"
+        >
+          <AlertTriangle
+            className="mt-0.5 size-4 shrink-0 text-ink-900"
+            strokeWidth={2}
+            aria-hidden="true"
+          />
+          <p className="font-ui text-body-sm text-ink-900">
+            <span className="font-medium">保存失败:</span> {saveError}
+          </p>
+          <button
+            type="button"
+            onClick={() => setSaveError(null)}
+            aria-label="关闭错误提示"
+            className="ml-auto grid size-6 place-items-center rounded text-ink-600 transition-colors hover:bg-mauve-200 hover:text-ink-900"
+          >
+            <X className="size-3.5" strokeWidth={2} aria-hidden="true" />
+          </button>
         </div>
       )}
 
@@ -1161,21 +1204,24 @@ function BranchRulesEditor({
         aria-controls="branch-rules-body"
         className="flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left font-ui text-caption font-medium text-ink-600 transition-colors hover:bg-mauve-50"
       >
-        <span className="inline-flex items-center gap-2">
-          <ChevronRight
-            className={`size-3.5 shrink-0 text-ink-400 transition-transform duration-150 ${expanded ? "rotate-90" : ""}`}
-            strokeWidth={2}
-            aria-hidden="true"
-          />
-          <span>
-            分支规则
-            {rules.length > 0 ? (
-              <span className="ml-1 text-ink-900">({rules.length})</span>
-            ) : (
-              <span className="ml-1 text-ink-400">(可选)</span>
-            )}
-          </span>
+        {/*
+         * Per design-system.md § Disclosure / row layout (binding): the
+         * trailing icon MUST sit flush against the right edge, never
+         * adjacent to the label. Label on the left, chevron flush right.
+         */}
+        <span>
+          分支规则
+          {rules.length > 0 ? (
+            <span className="ml-1 text-ink-900">({rules.length})</span>
+          ) : (
+            <span className="ml-1 text-ink-400">(可选)</span>
+          )}
         </span>
+        <ChevronRight
+          className={`size-3.5 shrink-0 text-ink-400 transition-transform duration-150 ${expanded ? "rotate-90" : ""}`}
+          strokeWidth={2}
+          aria-hidden="true"
+        />
       </button>
 
       {expanded && (
@@ -1276,7 +1322,14 @@ function BranchRuleRow({
   return (
     <div
       className={`rounded border p-3 ${
-        targetKnown ? "border-ink-200 bg-mauve-50" : "border-ink-400 bg-mauve-50"
+        // Per design-system.md § Status semantics: warning is
+        // `ink-900 text on mauve-100 surface, with triangle-alert icon`.
+        // No amber; no color-only signal. Target-deleted rules use the
+        // full warning treatment (bg-mauve-100 + AlertTriangle in the
+        // inline copy below); normal rules keep the muted mauve-50 card.
+        targetKnown
+          ? "border-ink-200 bg-mauve-50"
+          : "border-ink-900 bg-mauve-100"
       }`}
     >
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -1364,8 +1417,16 @@ function BranchRuleRow({
         ))}
       </select>
       {!targetKnown && (
-        <p className="mt-1 font-ui text-caption text-ink-900">
-          此规则原来的跳转目标已被删除,请重新选择目标。
+        <p
+          role="alert"
+          className="mt-1.5 flex items-start gap-1.5 font-ui text-caption text-ink-900"
+        >
+          <AlertTriangle
+            className="mt-0.5 size-3.5 shrink-0 text-ink-900"
+            strokeWidth={2}
+            aria-hidden="true"
+          />
+          <span>此规则原来的跳转目标已被删除,请重新选择目标。</span>
         </p>
       )}
     </div>

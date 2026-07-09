@@ -229,6 +229,51 @@ export const StimulusSchema = z.object({
   durationMs: z.number().int().positive().optional(),
 });
 
+/**
+ * `QuestionBlock.config` — narrow schema for the JSON-object bucket that
+ * survived the sunset (contracts.md § "JSON-shaped fields are temporary").
+ * Kept `.passthrough()` so pre-existing rows with unknown extra keys still
+ * parse: forward-compatible with legacy data, forward-tightenable as fields
+ * migrate to the top-level schema.
+ *
+ * Current fields (added by the branch-rules slice + earlier editor):
+ *   - options: the choice-question option labels
+ *   - allowSkip: whether the interviewee can decline this question
+ *   - stableId: the researcher-stable id used as `SurveyDraftQuestion.stableId`
+ *     and as the source of `q_<stableId>` step ids in the composed flowConfig
+ */
+export const QuestionBlockConfigSchema = z
+  .object({
+    options: z.array(z.string()).optional(),
+    allowSkip: z.boolean().optional(),
+    stableId: z.string().optional(),
+  })
+  .passthrough();
+
+/**
+ * `QuestionBlock.skipLogic` — narrow schema for the branch-rules bucket.
+ * Historically named `skipLogic` (typebot heritage — skip-forward rules);
+ * the branch-rules slice repurposes it to carry the Retell-style natural-
+ * language branch conditions. Field is `.passthrough()` for legacy rows.
+ *
+ * BranchRule inline shape mirrors `SurveyDraftBranchRuleSchema` in api.ts;
+ * duplicated here to avoid an entities.ts → api.ts import cycle. If the
+ * two ever diverge, `packages/contracts/test/branch-rules.test.ts` should
+ * be extended to catch the drift.
+ */
+export const QuestionBlockSkipLogicSchema = z
+  .object({
+    branchRules: z
+      .array(
+        z.object({
+          condition: z.string().trim().min(1).max(500),
+          jumpToQuestionId: z.string().min(1),
+        }),
+      )
+      .optional(),
+  })
+  .passthrough();
+
 export const QuestionBlockSchema = z.object({
   $id: z.string(),
   surveyId: z.string(),
@@ -237,7 +282,7 @@ export const QuestionBlockSchema = z.object({
   orderInSection: z.number().int().nonnegative(),
   type: QuestionType,
   prompt: z.string(),
-  config: json.default({}),
+  config: jsonObject(QuestionBlockConfigSchema).default({}),
   // Appwrite stores these JSON-object columns as stringified JSON, and returns
   // `null` for unset optional rows. jsonObject preprocesses both shapes through
   // the typed inner schema. TS callers / Functions / tests that pass parsed
@@ -245,7 +290,7 @@ export const QuestionBlockSchema = z.object({
   probeConfig: jsonObject(ProbeConfigSchema.optional()),
   stimulus: jsonObject(StimulusSchema.optional()),
   probingPolicy: json.default({}),
-  skipLogic: json.default({}),
+  skipLogic: jsonObject(QuestionBlockSkipLogicSchema).default({}),
 });
 
 export const InterviewLinkSchema = z.object({
@@ -528,6 +573,8 @@ export type ProbeConfig = z.infer<typeof ProbeConfigSchema>;
 export type StimulusType = z.infer<typeof StimulusType>;
 export type Stimulus = z.infer<typeof StimulusSchema>;
 export type QuestionBlock = z.infer<typeof QuestionBlockSchema>;
+export type QuestionBlockConfig = z.infer<typeof QuestionBlockConfigSchema>;
+export type QuestionBlockSkipLogic = z.infer<typeof QuestionBlockSkipLogicSchema>;
 export type InterviewLink = z.infer<typeof InterviewLinkSchema>;
 export type InterviewSession = z.infer<typeof InterviewSessionSchema>;
 export type TranscriptSegment = z.infer<typeof TranscriptSegmentSchema>;
