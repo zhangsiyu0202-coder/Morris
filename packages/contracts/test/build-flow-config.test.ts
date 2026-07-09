@@ -67,19 +67,19 @@ describe("buildInterviewFlowConfigFromDraft", () => {
     ]);
     expect(cfg.startStepId).toBe("q_question-1-1");
 
-    // Every non-terminal step has an outgoingEdgeId; the last step (p_question-1-2)
-    // has none (flow ends there).
+    // Traverse the graph structurally (edge id format is an internal detail,
+    // not part of the contract).
     const stepById = new Map(cfg.steps.map((s) => [s.stepId, s]));
-    expect(stepById.get("q_question-1-1")!.outgoingEdgeId).toBe("e_q_to_p_question-1-1");
-    expect(stepById.get("p_question-1-1")!.outgoingEdgeId).toBe("e_p_to_q_question-1-1");
-    expect(stepById.get("q_question-1-2")!.outgoingEdgeId).toBe("e_q_to_p_question-1-2");
-    expect(stepById.get("p_question-1-2")!.outgoingEdgeId).toBeNull();
-
-    // Edges wire the sequence.
-    const edgeMap = new Map(cfg.edges.map((e) => [e.id, e]));
-    expect(edgeMap.get("e_q_to_p_question-1-1")!.to.stepId).toBe("p_question-1-1");
-    expect(edgeMap.get("e_p_to_q_question-1-1")!.to.stepId).toBe("q_question-1-2");
-    expect(edgeMap.get("e_q_to_p_question-1-2")!.to.stepId).toBe("p_question-1-2");
+    const edgeById = new Map(cfg.edges.map((e) => [e.id, e]));
+    const targetOf = (stepId: string): string | null => {
+      const step = stepById.get(stepId);
+      if (!step?.outgoingEdgeId) return null;
+      return edgeById.get(step.outgoingEdgeId)?.to.stepId ?? null;
+    };
+    expect(targetOf("q_question-1-1")).toBe("p_question-1-1");
+    expect(targetOf("p_question-1-1")).toBe("q_question-1-2");
+    expect(targetOf("q_question-1-2")).toBe("p_question-1-2");
+    expect(targetOf("p_question-1-2")).toBe(null); // flow ends
   });
 
   it("expands legacy string options into FlowQuestionOption with stable optionIds", () => {

@@ -196,8 +196,41 @@ export const StudyQuestionTypeSchema = z.enum([
 // 1-3 rounds, `deep` probes more (up to its maxRounds ceiling).
 export const StudyProbeLevelSchema = z.enum(["standard", "deep"]);
 
+/**
+ * Branch rule attached to a question in a SurveyDraft.
+ *
+ * A rule is `{ condition, jumpToQuestionId }` — the researcher writes a
+ * natural-language `condition` (e.g. "用户明确说自己是全职学生") and picks
+ * the question to jump to when it matches. At runtime the flow-engine host
+ * evaluates the condition against the collected answer via LLM (YES/NO);
+ * the first rule to match wins; if none match, the flow continues to the
+ * next question.
+ *
+ * Design borrowed from Retell AI's Prompt transition condition
+ * (docs.retellai.com/build/conversation-flow/transition-condition). We
+ * intentionally rejected the earlier operator+value shape (equals /
+ * contains / startsWith) because voice replies rarely literally-match any
+ * researcher-authored string; see `packages/contracts/src/flow-engine.ts`
+ * for full rationale.
+ *
+ * Evolution path: to add other rule kinds later (e.g. equation-mode on
+ * pre-injected dynamic variables), turn this into a discriminated union —
+ * DO NOT extend the current shape with an operator field.
+ */
+export const SurveyDraftBranchRuleSchema = z.object({
+  condition: z.string().trim().min(1).max(500),
+  jumpToQuestionId: z.string().min(1),
+});
+
 export const SurveyDraftQuestionSchema = z
   .object({
+    /**
+     * Editor-generated stable identifier. Survives reordering (drag-drop) and
+     * section renames so `branchRules[].jumpToQuestionId` references stay
+     * valid. When absent (legacy draft with no branch rules), the composer
+     * synthesizes a position-based id.
+     */
+    stableId: z.string().min(1).optional(),
     // `.trim()` 归一化前后空白后再 `.min(1)`,纯空白串(" ")会被裁成 "" 并拒绝。
     // 借鉴 PostHog CreateUserInterviewTopicTool 对 topic/questions 的 strip 处理。
     questionText: z.string().trim().min(1),
@@ -207,6 +240,7 @@ export const SurveyDraftQuestionSchema = z
     options: z.array(z.string().trim().min(1)).default([]),
     allowSkip: z.boolean().default(false),
     stimulus: StimulusSchema.optional(),
+    branchRules: z.array(SurveyDraftBranchRuleSchema).default([]),
   })
   .superRefine((question, ctx) => {
     if (
@@ -219,6 +253,8 @@ export const SurveyDraftQuestionSchema = z
         path: ["options"],
       });
     }
+    // Cross-question target validity is enforced at the SurveyDraft level
+    // (needs the full draft to look up other questions by stableId).
   });
 
 export const SurveyDraftSectionSchema = z.object({
@@ -239,6 +275,35 @@ export const SurveyDraftSchema = z.object({
   // keeps existing drafts valid and means "use the operational default only".
   moderatorInstruction: z.string().trim().default(""),
   sections: z.array(SurveyDraftSectionSchema).min(1),
+}).superRefine((draft, ctx) => {
+  // Collect all stableIds in the draft; then verify every branchRule
+  // jumpToQuestionId references one that exists. Legacy drafts (no
+  // stableIds AND no branchRules) skip this check entirely.
+  const stableIds = new Set<string>();
+  let anyBranchRules = false;
+  for (const s of draft.sections) {
+    for (const q of s.questions) {
+      if (q.stableId) stableIds.add(q.stableId);
+      if (q.branchRules.length > 0) anyBranchRules = true;
+    }
+  }
+  if (!anyBranchRules) return;
+  for (let si = 0; si < draft.sections.length; si++) {
+    const section = draft.sections[si];
+    for (let qi = 0; qi < section.questions.length; qi++) {
+      const q = section.questions[qi];
+      for (let ri = 0; ri < q.branchRules.length; ri++) {
+        const target = q.branchRules[ri].jumpToQuestionId;
+        if (!stableIds.has(target)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `branchRule jumpToQuestionId "${target}" does not reference any question in the draft`,
+            path: ["sections", si, "questions", qi, "branchRules", ri, "jumpToQuestionId"],
+          });
+        }
+      }
+    }
+  }
 });
 
 export const InterviewResponseModeSchema = z.enum([
@@ -934,97 +999,156 @@ export function buildInterviewFlowConfigFromDraft(
     draft,
     moderatorInstruction: overrideModerator,
   } = BuildInterviewFlowConfigInputSchema.parse(input);
-  const runtimeStudy = buildInterviewRuntimeStudy({ surveyId, draft });
 
   // Persona composition mirrors buildInterviewWorkflowConfigFromDraft exactly.
-  const operationalInstruction = `Guide a qualitative interview for "${runtimeStudy.studyTitle}". Use the intro script, follow the section order, and use probe instructions when configured.`;
+  const operationalInstruction = `Guide a qualitative interview for "${draft.title}". Use the intro script, follow the section order, and use probe instructions when configured.`;
   const moderatorPersona = draft.moderatorInstruction?.trim();
   const composedInstruction = moderatorPersona
     ? `${moderatorPersona}\n\n${operationalInstruction}`
     : operationalInstruction;
   const finalModerator = overrideModerator ?? composedInstruction;
 
-  // Flatten sections → linear question sequence. Section is a UI-grouping
-  // concern; the flow engine has no notion of it.
-  const flatQuestions = runtimeStudy.sections.flatMap((s) => s.questions);
+  // Walk the draft directly (rather than via runtimeStudy) so we have access
+  // to `branchRules` and `stableId`. Section is a UI-grouping concern; the
+  // flow engine sees a flat step list.
+  type QRef = {
+    identifier: string; // stableId if present, else positional
+    question: (typeof draft.sections)[number]["questions"][number];
+  };
+  const flat: QRef[] = [];
+  draft.sections.forEach((section, sectionIndex) => {
+    section.questions.forEach((question, questionIndexInSection) => {
+      const identifier =
+        question.stableId ??
+        `question-${sectionIndex + 1}-${questionIndexInSection + 1}`;
+      flat.push({ identifier, question });
+    });
+  });
+
+  const stepIdFor = (identifier: string) => `q_${identifier}`;
 
   const steps: FlowStep[] = [];
   const edges: FlowEdge[] = [];
+  let edgeSeq = 0;
+  const mkEdgeId = (label: string) => `e_${label}_${edgeSeq++}`;
 
-  flatQuestions.forEach((question, i) => {
-    const isLast = i === flatQuestions.length - 1;
-    const probeMaxRounds = PROBE_DEFAULT_MAX_ROUNDS[question.probeLevel];
+  flat.forEach((q, i) => {
+    const identifier = q.identifier;
+    const questionStepId = stepIdFor(identifier);
+    const probeMaxRounds = PROBE_DEFAULT_MAX_ROUNDS[q.question.probeLevel];
     const hasProbe = probeMaxRounds > 0;
+    const rules = q.question.branchRules;
 
-    const questionStepId = `q_${question.questionId}`;
-    const probeStepId = hasProbe ? `p_${question.questionId}` : null;
-    const nextQuestionStepId = isLast
-      ? null
-      : `q_${flatQuestions[i + 1].questionId}`;
+    // ConditionStep is inserted after the question IFF there are branch
+    // rules. Its default outgoingEdgeId restores the backbone (probe if
+    // present, else next question).
+    const conditionStepId = rules.length > 0 ? `c_${identifier}` : null;
 
-    let questionOutgoingEdgeId: string | null = null;
-    let probeOutgoingEdgeId: string | null = null;
-
-    if (hasProbe) {
-      questionOutgoingEdgeId = `e_q_to_p_${question.questionId}`;
+    // Question's own default outgoingEdgeId — routes to the condition step
+    // (if any), else to the probe (if any), else to the next question,
+    // else null (last question in flow).
+    const questionDefaultTarget: string | null = (() => {
+      if (conditionStepId) return conditionStepId;
+      if (hasProbe) return `p_${identifier}`;
+      return flat[i + 1] ? stepIdFor(flat[i + 1].identifier) : null;
+    })();
+    const questionOutgoingEdgeId = questionDefaultTarget
+      ? mkEdgeId(`q_${identifier}_default`)
+      : null;
+    if (questionOutgoingEdgeId && questionDefaultTarget) {
       edges.push({
         id: questionOutgoingEdgeId,
         from: { stepId: questionStepId },
-        to: { stepId: probeStepId! },
-      });
-      if (nextQuestionStepId) {
-        probeOutgoingEdgeId = `e_p_to_q_${question.questionId}`;
-        edges.push({
-          id: probeOutgoingEdgeId,
-          from: { stepId: probeStepId! },
-          to: { stepId: nextQuestionStepId },
-        });
-      }
-    } else if (nextQuestionStepId) {
-      questionOutgoingEdgeId = `e_q_to_q_${question.questionId}`;
-      edges.push({
-        id: questionOutgoingEdgeId,
-        from: { stepId: questionStepId },
-        to: { stepId: nextQuestionStepId },
+        to: { stepId: questionDefaultTarget },
       });
     }
 
     steps.push({
       stepId: questionStepId,
       kind: "question",
-      questionType: question.questionType,
-      content: question.questionText,
-      // Convert legacy `options: string[]` into flow-engine
-      // `FlowQuestionOption[]`. Stable slug-like ids so downstream `edges`
-      // that reference them (once the editor emits per-option edges) survive
-      // draft round-trips.
-      options: question.options.map((opt, oi) => ({
+      questionType: q.question.questionType,
+      content: q.question.questionText,
+      options: q.question.options.map((opt, oi) => ({
         optionId: `opt-${oi + 1}`,
         content: opt,
-        outgoingEdgeId: null,
+        outgoingEdgeId: null,  // option-level branching removed with slice A' redesign
       })),
-      stimulus: question.stimulus ?? undefined,
+      stimulus: q.question.stimulus ?? undefined,
       outgoingEdgeId: questionOutgoingEdgeId,
     });
 
-    if (hasProbe) {
+    // ConditionStep (if any branch rules) — one item per rule, in
+    // declared order. Each item's predicate carries the researcher's
+    // natural-language `condition` string, evaluated at runtime by the
+    // host's LLM.
+    if (conditionStepId) {
+      const conditionDefaultTarget: string | null = hasProbe
+        ? `p_${identifier}`
+        : flat[i + 1]
+          ? stepIdFor(flat[i + 1].identifier)
+          : null;
+      const conditionDefaultEdgeId = conditionDefaultTarget
+        ? mkEdgeId(`c_${identifier}_default`)
+        : null;
+      if (conditionDefaultEdgeId && conditionDefaultTarget) {
+        edges.push({
+          id: conditionDefaultEdgeId,
+          from: { stepId: conditionStepId },
+          to: { stepId: conditionDefaultTarget },
+        });
+      }
+      const items = rules.map((rule, ri) => {
+        const eid = mkEdgeId(`c_${identifier}_item${ri}`);
+        edges.push({
+          id: eid,
+          from: { stepId: conditionStepId },
+          to: { stepId: stepIdFor(rule.jumpToQuestionId) },
+        });
+        return {
+          itemId: `item-${ri + 1}`,
+          predicate: {
+            sourceStepId: questionStepId,
+            condition: rule.condition,
+          },
+          outgoingEdgeId: eid,
+        };
+      });
       steps.push({
-        stepId: probeStepId!,
+        stepId: conditionStepId,
+        kind: "condition",
+        items,
+        outgoingEdgeId: conditionDefaultEdgeId,
+      });
+    }
+
+    // ProbeStep on backbone (if configured for this question).
+    if (hasProbe) {
+      const probeStepId = `p_${identifier}`;
+      const probeSuccessor = flat[i + 1] ? stepIdFor(flat[i + 1].identifier) : null;
+      const probeOutgoingEdgeId = probeSuccessor
+        ? mkEdgeId(`p_${identifier}_default`)
+        : null;
+      if (probeOutgoingEdgeId && probeSuccessor) {
+        edges.push({
+          id: probeOutgoingEdgeId,
+          from: { stepId: probeStepId },
+          to: { stepId: probeSuccessor },
+        });
+      }
+      steps.push({
+        stepId: probeStepId,
         kind: "probe",
         forQuestionStepId: questionStepId,
-        instruction: question.probeInstruction,
-        level: question.probeLevel,
+        instruction: q.question.probeInstruction,
+        level: q.question.probeLevel,
         maxRounds: probeMaxRounds,
         outgoingEdgeId: probeOutgoingEdgeId,
       });
     }
   });
 
-  // Handle the degenerate "no questions" case so the schema (which requires
-  // steps.length >= 1) parses. Realistic drafts always have at least one
-  // question — SurveyDraftSchema enforces min 1 section with min 1 question —
-  // so this branch is only hit by malformed test inputs. Kept for parity with
-  // the Python fallback.
+  // Degenerate "no questions" fallback — SurveyDraftSchema forbids this at
+  // parse time; kept as a defensive rail for malformed test fixtures.
   if (steps.length === 0) {
     steps.push({
       stepId: "__empty__",
@@ -1054,6 +1178,7 @@ export type AnalyzeSessionResponse = z.infer<typeof AnalyzeSessionResponseSchema
 export type StudyQuestionType = z.infer<typeof StudyQuestionTypeSchema>;
 export type StudyProbeLevel = z.infer<typeof StudyProbeLevelSchema>;
 export type SurveyDraftQuestion = z.infer<typeof SurveyDraftQuestionSchema>;
+export type SurveyDraftBranchRule = z.infer<typeof SurveyDraftBranchRuleSchema>;
 export type SurveyDraftSection = z.infer<typeof SurveyDraftSectionSchema>;
 export type SurveyDraft = z.infer<typeof SurveyDraftSchema>;
 export type InterviewResponseMode = z.infer<typeof InterviewResponseModeSchema>;
