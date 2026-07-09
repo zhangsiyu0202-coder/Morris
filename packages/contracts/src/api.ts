@@ -11,7 +11,12 @@ import {
   DashboardWidgetType,
   VisualAnalysisJobStatus,
 } from "./entities.js";
-import { InterviewFlowConfigSchema } from "./flow-engine.js";
+import {
+  InterviewFlowConfigSchema,
+  type FlowEdge,
+  type FlowStep,
+  type InterviewFlowConfig,
+} from "./flow-engine.js";
 
 // issueLivekitToken (§6.2)
 export const IssueLivekitTokenRequestSchema = z.object({
@@ -462,6 +467,19 @@ export const BuildInterviewWorkflowConfigInputSchema = z.object({
   supervisorInstruction: z.string().min(1).optional(),
 });
 
+export const BuildInterviewFlowConfigInputSchema = z.object({
+  surveyId: z.string().min(1),
+  sessionId: z.string().min(1),
+  draft: SurveyDraftSchema,
+  /**
+   * Optional pre-composed moderator instruction. When absent, the composer
+   * builds one from `draft.moderatorInstruction` (researcher persona) +
+   * an operational base string, matching `buildInterviewWorkflowConfigFromDraft`
+   * behavior so the two paths stay in lockstep.
+   */
+  moderatorInstruction: z.string().min(1).optional(),
+});
+
 export const BuildInterviewRoomMetadataInputSchema = z.object({
   surveyId: z.string().min(1),
   sessionId: z.string().min(1),
@@ -870,12 +888,162 @@ export function buildInterviewRoomMetadataFromDraft(
     draft,
     supervisorInstruction,
   });
+  // Flow-engine config is included alongside legacy runtimeStudy/workflowConfig
+  // so the Python agent can pick the shape it prefers. Precedence on the agent
+  // side (per `agent.flow_engine.metadata.flow_config_from_metadata`):
+  //   flowConfig > runtimeStudy fallback conversion.
+  const flowConfig = buildInterviewFlowConfigFromDraft({
+    surveyId,
+    sessionId,
+    draft,
+    // Reuse the composed moderator persona from the workflowConfig path so
+    // the two shapes carry byte-identical instructions.
+    moderatorInstruction: workflowConfig.supervisorInstruction,
+  });
 
   return InterviewRoomMetadataSchema.parse({
     sessionId,
     surveyId,
     runtimeStudy,
     workflowConfig,
+    flowConfig,
+  });
+}
+
+/**
+ * Compose a flow-engine `InterviewFlowConfig` from a validated `SurveyDraft`.
+ *
+ * Layout: flatten sections/questions into a linear flow. Each question becomes
+ * a `QuestionStep`; if `PROBE_DEFAULT_MAX_ROUNDS[probeLevel] > 0` the question
+ * is followed by a `ProbeStep` whose `outgoingEdgeId` points at the next
+ * question. This is the same shape the Python agent's fallback path
+ * (`agent.flow_engine.metadata.flow_config_from_runtime_study`) produces, so
+ * a Python-only fallback and this TS composer stay behavior-identical on any
+ * `SurveyDraft` the researcher publishes.
+ *
+ * The web editor slice (P4) later extends this with per-option `outgoingEdgeId`
+ * on question options and standalone `ConditionStep`s. Those additions layer
+ * on top; nothing here needs to be rewritten.
+ */
+export function buildInterviewFlowConfigFromDraft(
+  input: BuildInterviewFlowConfigInput,
+): InterviewFlowConfig {
+  const {
+    surveyId,
+    sessionId,
+    draft,
+    moderatorInstruction: overrideModerator,
+  } = BuildInterviewFlowConfigInputSchema.parse(input);
+  const runtimeStudy = buildInterviewRuntimeStudy({ surveyId, draft });
+
+  // Persona composition mirrors buildInterviewWorkflowConfigFromDraft exactly.
+  const operationalInstruction = `Guide a qualitative interview for "${runtimeStudy.studyTitle}". Use the intro script, follow the section order, and use probe instructions when configured.`;
+  const moderatorPersona = draft.moderatorInstruction?.trim();
+  const composedInstruction = moderatorPersona
+    ? `${moderatorPersona}\n\n${operationalInstruction}`
+    : operationalInstruction;
+  const finalModerator = overrideModerator ?? composedInstruction;
+
+  // Flatten sections → linear question sequence. Section is a UI-grouping
+  // concern; the flow engine has no notion of it.
+  const flatQuestions = runtimeStudy.sections.flatMap((s) => s.questions);
+
+  const steps: FlowStep[] = [];
+  const edges: FlowEdge[] = [];
+
+  flatQuestions.forEach((question, i) => {
+    const isLast = i === flatQuestions.length - 1;
+    const probeMaxRounds = PROBE_DEFAULT_MAX_ROUNDS[question.probeLevel];
+    const hasProbe = probeMaxRounds > 0;
+
+    const questionStepId = `q_${question.questionId}`;
+    const probeStepId = hasProbe ? `p_${question.questionId}` : null;
+    const nextQuestionStepId = isLast
+      ? null
+      : `q_${flatQuestions[i + 1].questionId}`;
+
+    let questionOutgoingEdgeId: string | null = null;
+    let probeOutgoingEdgeId: string | null = null;
+
+    if (hasProbe) {
+      questionOutgoingEdgeId = `e_q_to_p_${question.questionId}`;
+      edges.push({
+        id: questionOutgoingEdgeId,
+        from: { stepId: questionStepId },
+        to: { stepId: probeStepId! },
+      });
+      if (nextQuestionStepId) {
+        probeOutgoingEdgeId = `e_p_to_q_${question.questionId}`;
+        edges.push({
+          id: probeOutgoingEdgeId,
+          from: { stepId: probeStepId! },
+          to: { stepId: nextQuestionStepId },
+        });
+      }
+    } else if (nextQuestionStepId) {
+      questionOutgoingEdgeId = `e_q_to_q_${question.questionId}`;
+      edges.push({
+        id: questionOutgoingEdgeId,
+        from: { stepId: questionStepId },
+        to: { stepId: nextQuestionStepId },
+      });
+    }
+
+    steps.push({
+      stepId: questionStepId,
+      kind: "question",
+      questionType: question.questionType,
+      content: question.questionText,
+      // Convert legacy `options: string[]` into flow-engine
+      // `FlowQuestionOption[]`. Stable slug-like ids so downstream `edges`
+      // that reference them (once the editor emits per-option edges) survive
+      // draft round-trips.
+      options: question.options.map((opt, oi) => ({
+        optionId: `opt-${oi + 1}`,
+        content: opt,
+        outgoingEdgeId: null,
+      })),
+      stimulus: question.stimulus ?? undefined,
+      outgoingEdgeId: questionOutgoingEdgeId,
+    });
+
+    if (hasProbe) {
+      steps.push({
+        stepId: probeStepId!,
+        kind: "probe",
+        forQuestionStepId: questionStepId,
+        instruction: question.probeInstruction,
+        level: question.probeLevel,
+        maxRounds: probeMaxRounds,
+        outgoingEdgeId: probeOutgoingEdgeId,
+      });
+    }
+  });
+
+  // Handle the degenerate "no questions" case so the schema (which requires
+  // steps.length >= 1) parses. Realistic drafts always have at least one
+  // question — SurveyDraftSchema enforces min 1 section with min 1 question —
+  // so this branch is only hit by malformed test inputs. Kept for parity with
+  // the Python fallback.
+  if (steps.length === 0) {
+    steps.push({
+      stepId: "__empty__",
+      kind: "question",
+      questionType: "open_ended",
+      content: "(no questions configured)",
+      options: [],
+      stimulus: undefined,
+      outgoingEdgeId: null,
+    });
+  }
+
+  return InterviewFlowConfigSchema.parse({
+    surveyId,
+    sessionId,
+    moderatorInstruction: finalModerator,
+    startStepId: steps[0].stepId,
+    steps,
+    edges,
   });
 }
 
@@ -904,6 +1072,7 @@ export type SubmitInterviewAnswerRpcResponse = z.infer<
 >;
 export type BuildInterviewRuntimeStudyInput = z.infer<typeof BuildInterviewRuntimeStudyInputSchema>;
 export type BuildInterviewWorkflowConfigInput = z.infer<typeof BuildInterviewWorkflowConfigInputSchema>;
+export type BuildInterviewFlowConfigInput = z.infer<typeof BuildInterviewFlowConfigInputSchema>;
 export type BuildInterviewRoomMetadataInput = z.infer<
   typeof BuildInterviewRoomMetadataInputSchema
 >;
