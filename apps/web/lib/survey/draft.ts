@@ -67,7 +67,27 @@ export function assembleSurveyDraft(
         .sort((a, b) => a.orderInSection - b.orderInSection)
         .map((block): SurveyDraftQuestion => {
           const config = (block.config ?? {}) as Record<string, unknown>;
+          // `stableId` piggybacks on `config` bucket (see saveSurveyDraft);
+          // `branchRules` piggybacks on `skipLogic` bucket. Both are
+          // repurposed JSON buckets to avoid an Appwrite schema migration.
+          const skipLogic = (block.skipLogic ?? {}) as Record<string, unknown>;
+          const rawBranchRules = Array.isArray(skipLogic.branchRules)
+            ? (skipLogic.branchRules as Array<Record<string, unknown>>)
+            : [];
+          const branchRules = rawBranchRules
+            .filter(
+              (r) =>
+                typeof r?.condition === "string" &&
+                typeof r?.jumpToQuestionId === "string",
+            )
+            .map((r) => ({
+              condition: String(r.condition),
+              jumpToQuestionId: String(r.jumpToQuestionId),
+            }));
+          const stableId =
+            typeof config.stableId === "string" ? (config.stableId as string) : undefined;
           return {
+            stableId,
             questionText: block.prompt,
             questionType: toDraftQuestionType(block.type),
             probeLevel: block.probeConfig?.level ?? "standard",
@@ -75,9 +95,7 @@ export function assembleSurveyDraft(
             options: configOptions(config),
             allowSkip: config.allowSkip === true,
             stimulus: block.stimulus,
-            // branch rules land here once the editor writes them; empty
-            // for legacy questions loaded from the current schema.
-            branchRules: [],
+            branchRules,
           };
         });
 

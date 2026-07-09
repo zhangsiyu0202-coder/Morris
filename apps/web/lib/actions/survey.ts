@@ -161,7 +161,14 @@ export async function saveSurveyDraft(surveyId: string, draftInput: SurveyDraft)
         orderInSection: qi,
         type: q.questionType,
         prompt: q.questionText,
-        config: JSON.stringify({ options: q.options, allowSkip: q.allowSkip }),
+        // `stableId` piggybacks on `config` (existing JSON bucket) so
+        // branchRules[].jumpToQuestionId references survive save round-trip
+        // without adding an Appwrite schema attribute.
+        config: JSON.stringify({
+          options: q.options,
+          allowSkip: q.allowSkip,
+          stableId: q.stableId,
+        }),
         probeConfig: JSON.stringify({
           level: q.probeLevel,
           instruction: q.probeInstruction,
@@ -169,7 +176,11 @@ export async function saveSurveyDraft(surveyId: string, draftInput: SurveyDraft)
         }),
         stimulus: q.stimulus ? JSON.stringify(q.stimulus) : undefined,
         probingPolicy: JSON.stringify({}),
-        skipLogic: JSON.stringify({}),
+        // `branchRules` piggybacks on `skipLogic` (existing JSON bucket).
+        // The bucket was originally reserved for typebot-style skip logic;
+        // repurposing it here is the cheapest path to persistence and
+        // matches its intent (branch/skip routing metadata).
+        skipLogic: JSON.stringify({ branchRules: q.branchRules }),
       });
     }
   }

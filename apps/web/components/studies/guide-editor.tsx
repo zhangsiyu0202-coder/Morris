@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useCallback, useMemo } from "react";
+import { useState, useTransition, useCallback, useMemo, useRef, useEffect } from "react";
 import {
   Plus,
   Trash2,
@@ -13,6 +13,9 @@ import {
   AlignLeft,
   X,
   CornerDownRight,
+  ChevronRight,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import {
   DndContext,
@@ -1095,6 +1098,18 @@ function BranchRulesEditor({
 }) {
   const [expanded, setExpanded] = useState<boolean>(rules.length > 0);
 
+  // Auto-focus the newly-added rule's condition textarea. `focusPendingRef`
+  // is a one-shot flag flipped in addRule, consumed by the effect when the
+  // controlled `rules` prop has actually grown (React re-render committed).
+  const focusPendingRef = useRef(false);
+  const lastRuleTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    if (focusPendingRef.current && lastRuleTextareaRef.current) {
+      lastRuleTextareaRef.current.focus();
+      focusPendingRef.current = false;
+    }
+  }, [rules.length]);
+
   // 展平所有其它题(排除自己),供跳转目标下拉展示。
   const targets = useMemo(() => {
     const list: Array<{ id: string; label: string }> = [];
@@ -1119,7 +1134,15 @@ function BranchRulesEditor({
   const removeRule = (i: number) => {
     onChange(rules.filter((_, idx) => idx !== i));
   };
+  const moveRule = (i: number, delta: -1 | 1) => {
+    const target = i + delta;
+    if (target < 0 || target >= rules.length) return;
+    const next = rules.slice();
+    [next[i], next[target]] = [next[target], next[i]];
+    onChange(next);
+  };
   const addRule = () => {
+    focusPendingRef.current = true;
     onChange([
       ...rules,
       { condition: "", jumpToQuestionId: targets[0]?.id ?? "" },
@@ -1127,34 +1150,49 @@ function BranchRulesEditor({
     setExpanded(true);
   };
 
+  const hasTargets = targets.length > 0;
+
   return (
     <div className="rounded-md border border-ink-100">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
-        className="flex w-full items-center justify-between px-3 py-2.5 text-left font-ui text-caption font-medium text-ink-600 transition-colors hover:bg-mauve-50"
+        aria-controls="branch-rules-body"
+        className="flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left font-ui text-caption font-medium text-ink-600 transition-colors hover:bg-mauve-50"
       >
         <span className="inline-flex items-center gap-2">
-          <CornerDownRight
-            className={`size-3.5 shrink-0 text-mauve-400 transition-transform ${expanded ? "rotate-90" : ""}`}
+          <ChevronRight
+            className={`size-3.5 shrink-0 text-ink-400 transition-transform duration-150 ${expanded ? "rotate-90" : ""}`}
             strokeWidth={2}
+            aria-hidden="true"
           />
-          分支规则{rules.length > 0 ? ` (${rules.length} 条)` : " (可选)"}
+          <span>
+            分支规则
+            {rules.length > 0 ? (
+              <span className="ml-1 text-ink-900">({rules.length})</span>
+            ) : (
+              <span className="ml-1 text-ink-400">(可选)</span>
+            )}
+          </span>
         </span>
       </button>
 
       {expanded && (
-        <div className="border-t border-ink-100 px-3 py-3">
+        <div id="branch-rules-body" className="border-t border-ink-100 px-3 py-3">
           <p className="mb-3 font-ui text-caption text-ink-400 leading-5">
-            按顺序判断,第一条命中即用。AI 主持人在访谈中会根据用户回答
-            实时判断条件是否成立。
+            按顺序判断,第一条命中即用。AI 主持人会根据用户回答实时判断条件是否成立。
           </p>
 
           {rules.length === 0 && (
-            <p className="mb-3 rounded border border-dashed border-ink-200 px-3 py-3 font-ui text-caption text-ink-400">
-              还没有分支规则,访谈将按顺序进入下一题。
-            </p>
+            <div className="mb-3 rounded border border-dashed border-ink-200 px-3 py-4 text-center">
+              <p className="font-ui text-caption text-ink-400">
+                还没有分支规则
+              </p>
+              <p className="mt-0.5 font-ui text-caption text-ink-400">
+                访谈将按顺序进入下一题
+              </p>
+            </div>
           )}
 
           <div className="flex flex-col gap-3">
@@ -1162,10 +1200,14 @@ function BranchRulesEditor({
               <BranchRuleRow
                 key={i}
                 index={i}
+                total={rules.length}
                 rule={rule}
                 targets={targets}
+                textareaRef={i === rules.length - 1 ? lastRuleTextareaRef : undefined}
                 onUpdate={(patch) => updateRule(i, patch)}
                 onRemove={() => removeRule(i)}
+                onMoveUp={() => moveRule(i, -1)}
+                onMoveDown={() => moveRule(i, 1)}
               />
             ))}
           </div>
@@ -1173,22 +1215,29 @@ function BranchRulesEditor({
           <button
             type="button"
             onClick={addRule}
-            disabled={targets.length === 0}
-            className="mt-3 inline-flex w-fit items-center gap-1 font-ui text-caption font-medium text-ink-900 transition-colors hover:text-ink-900 disabled:cursor-not-allowed disabled:text-ink-400"
+            disabled={!hasTargets}
+            className="mt-3 inline-flex w-fit items-center gap-1 rounded font-ui text-caption font-medium text-ink-900 transition-colors hover:text-ink-900 disabled:cursor-not-allowed disabled:text-ink-400"
           >
-            <Plus className="size-3.5" strokeWidth={2} />
+            <Plus className="size-3.5" strokeWidth={2} aria-hidden="true" />
             添加规则
           </button>
 
-          {targets.length === 0 && (
+          {!hasTargets && (
             <p className="mt-2 font-ui text-caption text-ink-400">
               需要至少两道题才能配置跳转。
             </p>
           )}
 
-          <p className="mt-3 border-t border-ink-100 pt-3 font-ui text-caption text-ink-400">
-            否则 → 默认下一题
-          </p>
+          <div className="mt-3 flex items-center gap-2 rounded bg-mauve-50 px-3 py-2">
+            <CornerDownRight
+              className="size-3.5 shrink-0 text-mauve-400"
+              strokeWidth={2}
+              aria-hidden="true"
+            />
+            <p className="font-ui text-caption text-ink-600">
+              都未命中时 → 默认进入下一题
+            </p>
+          </div>
         </div>
       )}
     </div>
@@ -1197,58 +1246,113 @@ function BranchRulesEditor({
 
 function BranchRuleRow({
   index,
+  total,
   rule,
   targets,
+  textareaRef,
   onUpdate,
   onRemove,
+  onMoveUp,
+  onMoveDown,
 }: {
   index: number;
+  total: number;
   rule: GuideBranchRule;
   targets: Array<{ id: string; label: string }>;
+  textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
   onUpdate: (patch: Partial<GuideBranchRule>) => void;
   onRemove: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
 }) {
   const targetKnown = targets.some((t) => t.id === rule.jumpToQuestionId);
+  const charCount = rule.condition.length;
+  const showCount = charCount > 400;
+  const conditionOverLimit = charCount >= 500;
+
+  const canMoveUp = index > 0;
+  const canMoveDown = index < total - 1;
 
   return (
-    <div className="rounded border border-ink-200 bg-mauve-50 p-3">
-      <div className="mb-2 flex items-center justify-between">
+    <div
+      className={`rounded border p-3 ${
+        targetKnown ? "border-ink-200 bg-mauve-50" : "border-ink-400 bg-mauve-50"
+      }`}
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
         <span className="font-ui text-caption font-semibold text-ink-800">
           规则 {index + 1}
         </span>
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label="删除规则"
-          className="grid size-6 place-items-center rounded text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-600"
-        >
-          <X className="size-3.5" strokeWidth={2} />
-        </button>
+        <div className="inline-flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={onMoveUp}
+            disabled={!canMoveUp}
+            aria-label={`将规则 ${index + 1} 上移`}
+            className="grid size-7 place-items-center rounded text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-800 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-ink-200 disabled:text-ink-200"
+          >
+            <ChevronUp className="size-3.5" strokeWidth={2} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={onMoveDown}
+            disabled={!canMoveDown}
+            aria-label={`将规则 ${index + 1} 下移`}
+            className="grid size-7 place-items-center rounded text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-800 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-ink-200 disabled:text-ink-200"
+          >
+            <ChevronDown className="size-3.5" strokeWidth={2} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={onRemove}
+            aria-label={`删除规则 ${index + 1}`}
+            className="ml-1 grid size-7 place-items-center rounded text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-800"
+          >
+            <X className="size-3.5" strokeWidth={2} aria-hidden="true" />
+          </button>
+        </div>
       </div>
 
-      <label className="mb-1 block font-ui text-caption text-ink-600">
-        如果:
+      <label
+        htmlFor={`branch-condition-${index}`}
+        className="mb-1 flex items-baseline justify-between font-ui text-caption text-ink-600"
+      >
+        <span>如果:</span>
+        {showCount && (
+          <span
+            className={`font-ui text-caption tabular-nums ${
+              conditionOverLimit ? "text-ink-900" : "text-ink-400"
+            }`}
+          >
+            {charCount}/500
+          </span>
+        )}
       </label>
       <textarea
+        id={`branch-condition-${index}`}
+        ref={textareaRef}
         value={rule.condition}
         onChange={(e) => onUpdate({ condition: e.target.value.slice(0, 500) })}
-        placeholder="例:用户明确说自己是全职学生"
-        rows={2}
-        className="mb-2 w-full resize-none rounded border border-ink-200 bg-ink-0 px-2.5 py-2 font-ui text-body-sm leading-6 text-ink-900 outline-none transition-colors placeholder:text-ink-400 focus:border-ink-400"
+        placeholder="例:用户明确说自己在使用 Slack 且表达了不满"
+        rows={3}
+        className="mb-2 w-full resize-y rounded border border-ink-200 bg-ink-0 px-2.5 py-2 font-ui text-body-sm leading-6 text-ink-900 outline-none transition-colors placeholder:text-ink-400 focus:border-ink-400"
       />
 
-      <label className="mb-1 block font-ui text-caption text-ink-600">
+      <label
+        htmlFor={`branch-target-${index}`}
+        className="mb-1 block font-ui text-caption text-ink-600"
+      >
         跳转到:
       </label>
       <select
+        id={`branch-target-${index}`}
         value={rule.jumpToQuestionId}
         onChange={(e) => onUpdate({ jumpToQuestionId: e.target.value })}
-        className="w-full rounded border border-ink-200 bg-ink-0 px-2 py-2 font-ui text-body-sm text-ink-900 outline-none transition-colors focus:border-ink-400"
+        className={`w-full rounded border bg-ink-0 px-2 py-2 font-ui text-body-sm outline-none transition-colors focus:border-ink-400 ${
+          targetKnown ? "border-ink-200 text-ink-900" : "border-ink-400 text-ink-900"
+        }`}
       >
         {!targetKnown && (
-          // Target no longer exists (question was deleted). Show as an
-          // invalid placeholder so the researcher sees something is wrong;
-          // saving will fail zod validation until they pick a live target.
           <option value={rule.jumpToQuestionId} disabled>
             (已删除的题) — 请重新选择
           </option>
@@ -1259,6 +1363,11 @@ function BranchRuleRow({
           </option>
         ))}
       </select>
+      {!targetKnown && (
+        <p className="mt-1 font-ui text-caption text-ink-900">
+          此规则原来的跳转目标已被删除,请重新选择目标。
+        </p>
+      )}
     </div>
   );
 }
