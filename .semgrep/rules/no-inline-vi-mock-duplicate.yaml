@@ -1,0 +1,50 @@
+rules:
+  - id: no-inline-vi-mock-duplicate
+    message: |
+      Repeated inline `vi.mock(path, () => ({ ... }))` factories drift quickly.
+      For the known shared Morris test doubles, use the centralized fixture
+      exports from `apps/web/lib/assistant/__tests__/fixtures/install-mocks.ts`
+      instead of pasting another inline object factory.
+
+      First-cut scope: the repeated module paths we already centralized
+      (`@/lib/queries`, `@/lib/server/notebooks`,
+      `@/lib/server/embedder-qwen`, `@/lib/actions/survey`, `node-appwrite`).
+
+      See `.kiro/steering/testing.md` § Test double pattern.
+      Companion: `.kiro/specs/robustness-hardening/` REQ-1.
+    severity: ERROR
+    languages: [typescript]
+    paths:
+      include:
+        - "apps/web/lib/assistant/**/*.test.ts"
+        - "apps/web/lib/assistant/**/*.test.tsx"
+        - "apps/web/lib/assistant/**/__tests__/**/*.ts"
+        - "apps/web/lib/assistant/**/__tests__/**/*.tsx"
+      exclude:
+        - "**/fixtures/**"
+        - "**/.semgrep/**"
+    pattern-either:
+      - pattern: |
+          vi.mock("@/lib/queries", () => ({ ... }))
+      - pattern: |
+          vi.mock("@/lib/queries", async () => ({ ... }))
+      - pattern: |
+          vi.mock("@/lib/server/notebooks", () => ({ ... }))
+      - pattern: |
+          vi.mock("@/lib/server/notebooks", async () => ({ ... }))
+      - pattern: |
+          vi.mock("@/lib/server/embedder-qwen", () => ({ ... }))
+      - pattern: |
+          vi.mock("@/lib/server/embedder-qwen", async () => ({ ... }))
+      - pattern: |
+          vi.mock("@/lib/actions/survey", () => ({ ... }))
+      - pattern: |
+          vi.mock("@/lib/actions/survey", async () => ({ ... }))
+      - pattern: |
+          vi.mock("node-appwrite", () => ({ ... }))
+      - pattern: |
+          vi.mock("node-appwrite", async () => ({ ... }))
+    metadata:
+      docs: ".kiro/steering/testing.md#test-double-pattern-binding"
+      category: testing
+      owner: platform

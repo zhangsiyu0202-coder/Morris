@@ -1,0 +1,44 @@
+# Controlled vocabulary for eval corpus scenario tags.
+#
+# Every scenario in `tests/evals/corpus/**/*.jsonl` MUST carry exactly
+# one of these tags. The runner aggregates pass-rate per tag in the
+# report so we can spot whether (e.g.) refusal scenarios are
+# regressing independently of happy-path scenarios.
+#
+# Adding a tag requires a PR that updates this file AND documents the
+# semantic. See `.kiro/specs/ai-eval-suite/design.md` § Q2 for the
+# scenario governance rules.
+
+tags:
+  happy-path:
+    description: |
+      Baseline: input the model is expected to handle well. The bulk of
+      every surface's corpus. Pass rate on this set is the headline
+      regression signal.
+
+  error-handling:
+    description: |
+      Input shape is valid (parses against contract schema) but the
+      content asks for something the model should decline structurally
+      (e.g., asks createStudyDraft to generate billing terms — out of
+      product scope but technically valid input). Model should refuse
+      politely + cite scope rather than hallucinate.
+
+  out-of-scope:
+    description: |
+      Input is well-formed but asks for something explicitly excluded
+      by `.kiro/steering/scope.md` permanent exclusions. Model MUST
+      refuse. Failure to refuse = high-severity regression.
+
+  boundary:
+    description: |
+      Edge-case input shapes — empty fields, maximum-length strings,
+      unicode-heavy content, multi-language. Tests model robustness
+      to surface inputs that pass schema validation but are unusual.
+
+  regression-<issue-id>:
+    description: |
+      Pinned reproductions of real bugs. Tag format is
+      `regression-<github-issue-id>` or `regression-<one-line-slug>`.
+      Each PR introducing a regression scenario MUST cite the
+      originating issue / report in its description.

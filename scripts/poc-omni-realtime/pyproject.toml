@@ -1,0 +1,18 @@
+[project]
+name = "poc-omni-realtime"
+version = "0.0.0"
+description = "Throw-away PoC for Qwen-Omni-Realtime + Qwen-TTS-Realtime hybrid in LiveKit"
+requires-python = ">=3.12"
+dependencies = [
+    # Phase 0a (我直接跑) 只用 dashscope SDK
+    "dashscope>=1.25.23",
+    "python-dotenv>=1.2.0",
+    # Phase 0b (用户跑 LiveKit 端到端) 需要的:
+    "livekit-agents[openai]~=1.6",
+    "livekit-plugins-silero",
+    "numpy",
+]
+
+[tool.uv]
+managed = true
+package = false

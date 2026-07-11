@@ -1,0 +1,66 @@
+version: 2
+updates:
+  # JS / TS workspace
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      types:
+        patterns: ["@types/*"]
+      dev-tools:
+        patterns:
+          - "eslint*"
+          - "prettier*"
+          - "vitest*"
+          - "@vitest/*"
+          - "typescript"
+          - "tsx"
+      next:
+        patterns:
+          - "next"
+          - "@next/*"
+          - "eslint-config-next"
+      shadcn:
+        patterns:
+          - "@radix-ui/*"
+          - "lucide-react"
+          - "class-variance-authority"
+          - "clsx"
+          - "tailwind-merge"
+      livekit:
+        patterns:
+          - "livekit-*"
+          - "@livekit/*"
+      appwrite:
+        patterns:
+          - "appwrite"
+          - "node-appwrite"
+      ai-sdk:
+        patterns:
+          - "ai"
+          - "@ai-sdk/*"
+    # Avoid noisy version-pin churn on every release; merge majors manually.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # Python agent
+  - package-ecosystem: pip
+    directory: /apps/agent
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # GitHub Actions themselves
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3

@@ -1,0 +1,215 @@
+"use server";
+
+import { ID, Permission, Role } from "node-appwrite";
+import {
+  SurveyDraftSchema,
+  canTransitionSurveyStatus,
+  type SurveyDraft,
+  type SurveyStatus,
+} from "@merism/contracts";
+import { getServerClient, DATABASE_ID, Query } from "@/lib/queries/client";
+import { requireOwnerUserId } from "@/lib/auth/owner";
+import { getCurrentWorkspaceId } from "@/lib/auth/workspace";
+
+/**
+ * 编辑器写路径(Appwrite)。把编辑态 `SurveyDraft` 规范化落到
+ * `surveys` + `survey_sections` + `question_blocks` 三表。
+ *
+ * 设计见 survey-editor design §5：边界用 `SurveyDraftSchema` 校验;每个操作经
+ * `requireOwnerUserId()` + 所有权闸门;保存采用「全量替换」(删旧建新),天然满足
+ * draft↔persisted 往返无损(P-DATA-01)。JSON 字段以字符串存储(schema 为
+ * string 属性),写时 `JSON.stringify`。
+ */
+
+const SURVEYS = "surveys";
+const SECTIONS = "survey_sections";
+const QUESTIONS = "question_blocks";
+const DEFAULT_PROJECT = "default";
+
+type EditorStatus = "draft" | "live" | "paused" | "closed" | "archived";
+
+function toAppwriteStatus(s: EditorStatus): SurveyStatus {
+  if (s === "live") return "published";
+  if (s === "closed") return "closed";
+  if (s === "paused") return "paused";
+  if (s === "archived") return "archived";
+  return "draft";
+}
+
+function db() {
+  return getServerClient().databases;
+}
+
+/** 读取并校验 survey 可被当前 caller 写(作者本人);不是作者则抛错(P-SEC-04 / ADR-0006 D3 写私有)。 */
+async function assertOwned(
+  surveyId: string,
+): Promise<{ ownerUserId: string; version: number; currentStatus: SurveyStatus }> {
+  const owner = await requireOwnerUserId();
+  const doc = await db().getDocument(DATABASE_ID, SURVEYS, surveyId);
+  const d = doc as { ownerUserId?: string; authorId?: string };
+  // ADR-0006 D3: edit/delete is author-private. authorId is the creator; fall
+  // back to ownerUserId for rows written before the authorId recast.
+  const isAuthor = d.authorId === owner || d.ownerUserId === owner;
+  if (!isAuthor) {
+    throw new Error("survey_not_owned");
+  }
+  const rawStatus = String((doc as { status?: string }).status ?? "draft");
+  const currentStatus: SurveyStatus =
+    rawStatus === "published" ||
+    rawStatus === "paused" ||
+    rawStatus === "closed" ||
+    rawStatus === "archived"
+      ? rawStatus
+      : "draft";
+  return {
+    ownerUserId: owner,
+    version: Number((doc as { version?: number }).version ?? 1),
+    currentStatus,
+  };
+}
+
+/** 新建空白调研,返回其 $id。 */
+export async function createSurvey(title: string): Promise<string> {
+  const owner = await requireOwnerUserId();
+  const workspaceId = await getCurrentWorkspaceId();
+  // ADR-0006 D3: in a workspace the whole team can read, only the author edits/
+  // deletes; solo (no workspace) is owner-only. Server reads use the API key, so
+  // tenant isolation is also enforced in-code via tenantFilter; these doc
+  // permissions are the declarative mirror + defense for any client read.
+  const permissions = workspaceId
+    ? [
+        Permission.read(Role.team(workspaceId)),
+        Permission.update(Role.user(owner)),
+        Permission.delete(Role.user(owner)),
+      ]
+    : [
+        Permission.read(Role.user(owner)),
+        Permission.update(Role.user(owner)),
+        Permission.delete(Role.user(owner)),
+      ];
+  const doc = await db().createDocument(
+    DATABASE_ID,
+    SURVEYS,
+    ID.unique(),
+    {
+      ownerUserId: owner,
+      authorId: owner,
+      ...(workspaceId ? { workspaceId } : {}),
+      projectId: DEFAULT_PROJECT,
+      title: title.trim() || "未命名调研",
+      status: "draft",
+      flowConfig: JSON.stringify({}),
+      moderatorInstruction: "",
+      version: 1,
+      updatedAt: new Date().toISOString(),
+    },
+    permissions,
+  );
+  return doc.$id;
+}
+
+async function deleteChildren(surveyId: string): Promise<void> {
+  const database = db();
+  const [sections, questions] = await Promise.all([
+    database.listDocuments(DATABASE_ID, SECTIONS, [Query.equal("surveyId", surveyId), Query.limit(500)]),
+    database.listDocuments(DATABASE_ID, QUESTIONS, [Query.equal("surveyId", surveyId), Query.limit(2000)]),
+  ]);
+  // Questions first (they reference sections), then sections.
+  await Promise.all(
+    questions.documents.map((d) => database.deleteDocument(DATABASE_ID, QUESTIONS, d.$id)),
+  );
+  await Promise.all(
+    sections.documents.map((d) => database.deleteDocument(DATABASE_ID, SECTIONS, d.$id)),
+  );
+}
+
+/** 保存提纲:全量替换 sections/questions,并更新 meta 与 version。 */
+export async function saveSurveyDraft(surveyId: string, draftInput: SurveyDraft): Promise<void> {
+  const draft = SurveyDraftSchema.parse(draftInput);
+  const { version } = await assertOwned(surveyId);
+  const database = db();
+
+  await database.updateDocument(DATABASE_ID, SURVEYS, surveyId, {
+    title: draft.title,
+    flowConfig: JSON.stringify({
+      researchGoal: draft.researchGoal,
+      targetAudience: draft.targetAudience,
+      introScript: draft.introScript,
+    }),
+    moderatorInstruction: draft.moderatorInstruction,
+    version: version + 1,
+    updatedAt: new Date().toISOString(),
+  });
+
+  await deleteChildren(surveyId);
+
+  let globalOrder = 0;
+  for (let si = 0; si < draft.sections.length; si++) {
+    const section = draft.sections[si];
+    const sectionDoc = await database.createDocument(DATABASE_ID, SECTIONS, ID.unique(), {
+      surveyId,
+      title: section.title,
+      description: section.objective,
+      order: si,
+    });
+    for (let qi = 0; qi < section.questions.length; qi++) {
+      const q = section.questions[qi];
+        await database.createDocument(DATABASE_ID, QUESTIONS, ID.unique(), {
+        surveyId,
+        sectionId: sectionDoc.$id,
+        order: globalOrder++,
+        orderInSection: qi,
+        type: q.questionType,
+        prompt: q.questionText,
+        config: JSON.stringify({ options: q.options }),
+        probeConfig: JSON.stringify({
+          level: q.probeLevel,
+          instruction: q.probeInstruction,
+          maxRounds: q.probeLevel === "deep" ? 5 : 3,
+        }),
+        stimulus: q.stimulus ? JSON.stringify(q.stimulus) : undefined,
+        probingPolicy: JSON.stringify({}),
+        skipLogic: JSON.stringify({}),
+      });
+    }
+  }
+}
+
+/**
+ * 从一份完整 `SurveyDraft` 一步创建调研:建空 survey + 全量保存提纲。
+ *
+ * 给 Morris `createStudyDraft` 工具的「批准后落库」路径用(approval confirm 端点),
+ * 也可被编辑器复用。两步都经 `requireOwnerUserId()`(在 createSurvey / saveSurveyDraft
+ * 内部),未登录直接抛 `not_authenticated`,不会留下半截 survey。
+ *
+ * 边界用 `SurveyDraftSchema.parse` 校验(含 choice 题至少两选项等 superRefine 不变量),
+ * 校验失败在创建任何文档前抛出。
+ */
+export async function createSurveyFromDraft(
+  draftInput: SurveyDraft,
+): Promise<{ surveyId: string; url: string }> {
+  const draft = SurveyDraftSchema.parse(draftInput);
+  const surveyId = await createSurvey(draft.title);
+  await saveSurveyDraft(surveyId, draft);
+  return { surveyId, url: `/studies/${surveyId}` };
+}
+
+/** 切换调研状态;通过 canTransitionSurveyStatus 守卫非法迁移。 */
+export async function updateSurveyStatus(surveyId: string, status: EditorStatus): Promise<void> {
+  const { currentStatus } = await assertOwned(surveyId);
+  const targetStatus = toAppwriteStatus(status);
+  if (!canTransitionSurveyStatus(currentStatus, targetStatus)) {
+    throw new Error(`invalid_transition:${currentStatus}→${targetStatus}`);
+  }
+  await db().updateDocument(DATABASE_ID, SURVEYS, surveyId, {
+    status: targetStatus,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+/** 删除调研及其分节/问题。 */
+export async function deleteSurvey(surveyId: string): Promise<void> {
+  await assertOwned(surveyId);
+  await deleteChildren(surveyId);
+  await db().deleteDocument(DATABASE_ID, SURVEYS, surveyId);
+}

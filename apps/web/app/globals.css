@@ -1,0 +1,99 @@
+@import "tailwindcss";
+
+/* Streamdown — Vercel 官方 AI 流式 markdown 组件。让 Tailwind 4 扫到
+ * streamdown 内部默认样式用到的 utility class (markdown 元素 default
+ * renderer 走 streamdown 的 className, 即便我们的 components map 覆盖了
+ * 大多数, 还有少量 prose 元素走默认路径)。
+ * 参 https://streamdown.ai/docs/migrate#7-configure-tailwind-css */
+@source "../node_modules/streamdown/dist/*.js";
+@source "../node_modules/@streamdown/code/dist/*.js";
+@source "../node_modules/@streamdown/cjk/dist/*.js";
+
+/*
+ * Mauve Quiet design system tokens.
+ * Source of truth: .kiro/steering/design-system.md
+ * Tailwind v4 CSS-first theme — generates bg-mauve-200, text-ink-600,
+ * font-ui, text-body-sm, rounded-lg, shadow-sm, etc.
+ */
+@theme {
+  /* Mauve surface palette */
+  --color-mauve-50: #f9f6f6;
+  --color-mauve-100: #eae3ec;
+  --color-mauve-200: #d7cfd9;
+  --color-mauve-400: #a78585;
+
+  /* Ink palette */
+  --color-ink-0: #ffffff;
+  --color-ink-100: #f1f5f9;
+  --color-ink-200: #e2e8f0;
+  --color-ink-400: #64748b;
+  --color-ink-600: #475569;
+  --color-ink-800: #1e293b;
+  --color-ink-900: #0f172a;
+
+  /* Semantic font roles */
+  --font-display: var(--font-inclusive), ui-sans-serif, system-ui, sans-serif;
+  --font-reading: var(--font-inclusive), ui-sans-serif, system-ui, sans-serif;
+  --font-ui: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-data: var(--font-istok), ui-sans-serif, system-ui, sans-serif;
+  --font-decor: var(--font-inika), ui-serif, Georgia, serif;
+  --font-doc-link: var(--font-inknut), ui-serif, Georgia, serif;
+
+  /* Type scale (size + paired line-height + tracking) */
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-caption--letter-spacing: 0.05px;
+  --text-body-sm: 14px;
+  --text-body-sm--line-height: 24px;
+  --text-body: 16px;
+  --text-body--line-height: 24px;
+  --text-body-lg: 20px;
+  --text-body-lg--line-height: 28px;
+  --text-display-md: 20px;
+  --text-display-md--line-height: 28px;
+  --text-display-lg: 24px;
+  --text-display-lg--line-height: 32px;
+  --text-display-lg--letter-spacing: -0.15px;
+  --text-display-xl: 30px;
+  --text-display-xl--line-height: 36px;
+  --text-display-xl--letter-spacing: -0.225px;
+
+  /* Corner radii */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  /* Mauve-tinted elevation (never pure black) */
+  --shadow-xs: 0 1px 1px rgba(167, 133, 133, 0.06);
+  --shadow-sm: 0 2px 4px rgba(167, 133, 133, 0.08);
+  --shadow: 0 4px 8px rgba(167, 133, 133, 0.1);
+  --shadow-md: 0 8px 16px rgba(167, 133, 133, 0.12);
+  --shadow-lg: 0 16px 32px rgba(167, 133, 133, 0.14);
+  --shadow-popover: 0 4px 24px rgba(167, 133, 133, 0.18);
+
+  /* Chart palette — ink/mauve monochrome ramp for neutral distributions.
+   * Kept quiet to match the design system; only sentiment introduces hue. */
+  --color-chart-1: #1e293b; /* ink-800 — primary series */
+  --color-chart-2: #a78585; /* mauve-400 — secondary series */
+  --color-chart-3: #64748b; /* ink-400 — tertiary series */
+  --color-chart-4: #475569; /* ink-600 — quaternary series */
+  --color-chart-5: #d7cfd9; /* mauve-200 — faint series */
+
+  /* Sentiment / NPS semantics — low-saturation so they read calm. */
+  --color-positive: #4f9d8b; /* muted teal-green */
+  --color-neutral: #a78585; /* mauve-400 */
+  --color-negative: #c0744f; /* muted terracotta */
+}
+
+html {
+  background-color: var(--color-mauve-50);
+}
+
+body {
+  color: var(--color-ink-900);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}

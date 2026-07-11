@@ -1,0 +1,296 @@
+import { describe, it, expect } from "vitest";
+import { COLLECTIONS, BUCKETS } from "../src/schema.js";
+
+// ADR 0006 narrowed this: workspaces/billing/plans/seats/quota/usage metering are
+// now in-scope (governed by ADR 0006). Collaboration concepts stay forbidden.
+const FORBIDDEN = /share|comment|collaborat|marketplace/i;
+
+describe("appwrite schema declaration", () => {
+  it("declares all 26 collections (researcher identity is Appwrite Account, no users collection)", () => {
+    const ids = COLLECTIONS.map((c) => c.id).sort();
+    expect(ids).not.toContain("users");
+    expect(ids).not.toContain("insights"); // Wave F: removed (renamed to notebooks)
+    expect(ids).toEqual(
+      [
+        "analysis_reports",
+        "conversations",
+        "morris_memories",
+        "plans",
+        "subscriptions",
+        "stripe_events",
+        "usage_counters",
+        "usage_events",
+        "workspace_memberships",
+        "workspace_quota",
+        "bookmarks",
+        "dashboard_tiles",
+        "dashboard_widgets",
+        "dashboards",
+        "email_deliveries",
+        "interview_links",
+        "interview_sessions",
+        "notebook_publish_tokens",
+        "notebooks",
+        "projects",
+        "question_blocks",
+        "recordings",
+        "surveys",
+        "survey_sections",
+        "transcripts",
+        "visual_analysis_jobs",
+      ].sort(),
+    );
+  });
+
+  it("enables document security on every collection", () => {
+    for (const c of COLLECTIONS) expect(c.documentSecurity).toBe(true);
+  });
+
+  it("interview_links exposes no client permissions (server-only)", () => {
+    const link = COLLECTIONS.find((c) => c.id === "interview_links")!;
+    expect(link.permissions).toEqual([]);
+  });
+
+  it("interview_links carries a kind attribute (production|test) defaulting to production", () => {
+    const link = COLLECTIONS.find((c) => c.id === "interview_links")!;
+    const kind = link.attributes.find((a) => a.key === "kind")!;
+    expect(kind).toBeDefined();
+    expect(kind.type).toBe("enum");
+    expect(kind.elements).toEqual(["production", "test"]);
+    expect(kind.required).toBe(false);
+    expect(kind.default).toBe("production");
+  });
+
+  it("server-write collections grant no client create", () => {
+    for (const id of ["interview_sessions", "transcripts", "recordings"]) {
+      expect(COLLECTIONS.find((c) => c.id === id)!.permissions).toEqual([]);
+    }
+  });
+
+  it("declares the three storage buckets", () => {
+    expect(BUCKETS.map((b) => b.id).sort()).toEqual(["recordings", "reports", "survey-assets"]);
+  });
+
+  it("contains no out-of-scope field names (Req 9.2)", () => {
+    for (const c of COLLECTIONS) {
+      for (const a of c.attributes) {
+        expect(a.key, `${c.id}.${a.key}`).not.toMatch(FORBIDDEN);
+      }
+    }
+  });
+
+  it("surveys.status enum includes closed between paused and archived", () => {
+    const surveys = COLLECTIONS.find((c) => c.id === "surveys")!;
+    const status = surveys.attributes.find((a) => a.key === "status")!;
+    expect(status.elements).toEqual(["draft", "published", "paused", "closed", "archived"]);
+  });
+
+  it("models sections and section-scoped question ordering", () => {
+    const sections = COLLECTIONS.find((c) => c.id === "survey_sections")!;
+    const questions = COLLECTIONS.find((c) => c.id === "question_blocks")!;
+
+    expect(sections.attributes.map((a) => a.key)).toContain("sectionInstruction");
+    expect(questions.attributes.map((a) => a.key)).toContain("sectionId");
+    expect(questions.attributes.map((a) => a.key)).toContain("orderInSection");
+    expect(questions.indexes.some((idx) => idx.key === "section_order_unique")).toBe(true);
+  });
+});
+
+describe("appwrite schema: analysis-report sub-spec (T2)", () => {
+  it("AnalysisReport.sessionId is optional and ownerUserId is required", () => {
+    const ar = COLLECTIONS.find((c) => c.id === "analysis_reports")!;
+    const sessionId = ar.attributes.find((a) => a.key === "sessionId")!;
+    const ownerUserId = ar.attributes.find((a) => a.key === "ownerUserId")!;
+    expect(sessionId.required).toBe(false);
+    expect(ownerUserId.required).toBe(true);
+  });
+
+  it("AnalysisReport carries the indexes the analyze Functions need", () => {
+    const ar = COLLECTIONS.find((c) => c.id === "analysis_reports")!;
+    const idxKeys = ar.indexes.map((i) => i.key);
+    for (const expected of ["by_session", "by_survey", "by_scope_session", "by_scope_survey", "by_owner"]) {
+      expect(idxKeys, `missing index ${expected}`).toContain(expected);
+    }
+  });
+
+  it("Notebook collection is owner-scoped with the expected attributes (Wave F: legacy `insights` removed)", () => {
+    const nb = COLLECTIONS.find((c) => c.id === "notebooks")!;
+    expect(nb.permissions).toContain('create("users")');
+    expect(nb.documentSecurity).toBe(true);
+    const keys = nb.attributes.map((a) => a.key).sort();
+    expect(keys).toEqual(
+      [
+        "confidence",
+        "content",
+        "createdAt",
+        "embedding",
+        "embeddingModel",
+        "authorId",
+        "workspaceId",
+        "headline",
+        "ownerUserId",
+        "question",
+        "sampleSize",
+        "shortId",
+        "studyId",
+        "studyTitle",
+        "summary",
+        "textContent",
+        "visibility",
+      ].sort(),
+    );
+    const confidence = nb.attributes.find((a) => a.key === "confidence")!;
+    expect(confidence.type).toBe("enum");
+    expect(confidence.elements).toEqual(["high", "medium", "low"]);
+    // Wave F (T48): legacy `report` attribute is removed
+    expect(keys).not.toContain("report");
+    // Wave B/F: shortId is unique within owner
+    const idxKeys = nb.indexes.map((i) => i.key);
+    expect(idxKeys).toContain("by_owner_short");
+    expect(idxKeys).toContain("by_text_search");
+  });
+
+  it("Recording collection carries ownerUserId and video formats", () => {
+    const rec = COLLECTIONS.find((c) => c.id === "recordings")!;
+    expect(rec.attributes.map((a) => a.key)).toContain("ownerUserId");
+    const format = rec.attributes.find((a) => a.key === "format")!;
+    expect(format.elements).toEqual(["mp3", "opus", "wav", "mp4", "webm"]);
+  });
+
+  it("Bookmark collection is owner-scoped with expected attributes", () => {
+    const bm = COLLECTIONS.find((c) => c.id === "bookmarks")!;
+    expect(bm.permissions).toContain('create("users")');
+    expect(bm.documentSecurity).toBe(true);
+    const keys = bm.attributes.map((a) => a.key).sort();
+    expect(keys).toEqual(
+      [
+        "createdAt",
+        "ownerUserId",
+        "quote",
+        "respondent",
+        "authorId",
+        "workspaceId",
+        "segmentIndex",
+        "startMs",
+        "note",
+        "tags",
+        "sessionId",
+        "source",
+        "surveyId",
+      ].sort(),
+    );
+    expect(bm.indexes.map((i) => i.key)).toContain("by_owner_created");
+  });
+
+  it("Dashboard collections model study-scoped widget tiles", () => {
+    const dashboard = COLLECTIONS.find((c) => c.id === "dashboards")!;
+    const widget = COLLECTIONS.find((c) => c.id === "dashboard_widgets")!;
+    const tile = COLLECTIONS.find((c) => c.id === "dashboard_tiles")!;
+
+    expect(dashboard.permissions).toContain('create("users")');
+    expect(widget.permissions).toContain('create("users")');
+    expect(tile.permissions).toContain('create("users")');
+    expect(dashboard.attributes.find((a) => a.key === "scope")?.elements).toEqual(["study"]);
+    expect(widget.attributes.find((a) => a.key === "widgetType")?.elements).toContain("visual_moments");
+    expect(tile.attributes.map((a) => a.key)).toContain("layout");
+    expect(tile.indexes.map((i) => i.key)).toContain("by_dashboard_order");
+  });
+
+  it("recordings bucket allows video extensions", () => {
+    const bucket = BUCKETS.find((b) => b.id === "recordings")!;
+    expect(bucket?.allowedFileExtensions).toEqual(["mp4", "webm", "mp3", "opus", "wav"]);
+  });
+});
+
+describe("visual_analysis_jobs collection (ADR 0005)", () => {
+  const job = COLLECTIONS.find((c) => c.id === "visual_analysis_jobs")!;
+
+  it("is declared", () => {
+    expect(job).toBeDefined();
+  });
+
+  it("is server-write only with document security (owner-read pinned at creation)", () => {
+    expect(job.permissions).toEqual([]);
+    expect(job.documentSecurity).toBe(true);
+  });
+
+  it("carries the sweep scan index on status + geminiUploadedAt", () => {
+    const idx = job.indexes.find((i) => i.key === "by_status_uploaded");
+    expect(idx).toBeDefined();
+    expect(idx!.attributes).toEqual(["status", "geminiUploadedAt"]);
+  });
+
+  it("status enum mirrors the contract", () => {
+    const status = job.attributes.find((a) => a.key === "status")!;
+    expect(status.type).toBe("enum");
+    expect(status.elements).toEqual([
+      "queued",
+      "uploading",
+      "analyzing",
+      "consolidating",
+      "succeeded",
+      "failed",
+    ]);
+  });
+
+  it("tracks geminiFileName as an optional string (null until upload)", () => {
+    const f = job.attributes.find((a) => a.key === "geminiFileName")!;
+    expect(f.type).toBe("string");
+    expect(f.required).toBe(false);
+  });
+});
+
+describe("workspaces-billing collections (ADR 0006)", () => {
+  const byId = (id: string) => COLLECTIONS.find((c) => c.id === id)!;
+
+  it("declares the six workspace/billing collections, all server-only with doc security", () => {
+    for (const id of ["plans", "subscriptions", "usage_events", "usage_counters", "workspace_quota", "workspace_memberships"]) {
+      const c = byId(id);
+      expect(c, id).toBeDefined();
+      expect(c.permissions, id).toEqual([]);
+      expect(c.documentSecurity, id).toBe(true);
+    }
+  });
+
+  it("usage_events is idempotent on sessionId (unique index)", () => {
+    const ue = byId("usage_events");
+    expect(
+      ue.indexes.some((i) => i.key === "session_unique" && i.type === "unique" && i.attributes.join() === "sessionId"),
+    ).toBe(true);
+  });
+
+  it("subscriptions + workspace_quota are one-per-workspace (unique workspaceId)", () => {
+    for (const id of ["subscriptions", "workspace_quota"]) {
+      const c = byId(id);
+      expect(c.indexes.some((i) => i.type === "unique" && i.attributes.join() === "workspaceId"), id).toBe(true);
+    }
+  });
+
+  it("membership role enum is owner/admin/member; plan key enum is plus/pro", () => {
+    expect(byId("workspace_memberships").attributes.find((a) => a.key === "role")!.elements).toEqual([
+      "owner", "admin", "member",
+    ]);
+    expect(byId("plans").attributes.find((a) => a.key === "key")!.elements).toEqual(["plus", "pro"]);
+  });
+});
+
+describe("tenancy attributes on existing collections (ADR 0006 M2-b)", () => {
+  it("owner-scoped collections gain optional workspaceId + authorId", () => {
+    for (const id of ["projects", "surveys", "recordings", "analysis_reports", "bookmarks", "dashboards", "notebooks"]) {
+      const c = COLLECTIONS.find((x) => x.id === id)!;
+      const ws = c.attributes.find((a) => a.key === "workspaceId");
+      const au = c.attributes.find((a) => a.key === "authorId");
+      expect(ws, `${id}.workspaceId`).toBeDefined();
+      expect(ws!.required).toBe(false);
+      expect(au, `${id}.authorId`).toBeDefined();
+      expect(au!.required).toBe(false);
+    }
+  });
+
+  it("interview_sessions carries workspaceId + a by_workspace index (no authorId — interviewee-facing)", () => {
+    const s = COLLECTIONS.find((c) => c.id === "interview_sessions")!;
+    expect(s.attributes.find((a) => a.key === "workspaceId")).toBeDefined();
+    expect(s.attributes.find((a) => a.key === "authorId")).toBeUndefined();
+    expect(s.indexes.some((i) => i.key === "by_workspace")).toBe(true);
+  });
+});

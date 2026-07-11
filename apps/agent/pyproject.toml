@@ -1,0 +1,43 @@
+[project]
+name = "merism-agent"
+version = "0.0.0"
+description = "MerismV2 LiveKit Agent Worker (Supervisor/TaskGroup host)"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.9",
+    "httpx>=0.27",
+    "appwrite>=6.0",
+    "opencc-python-reimplemented>=0.1.7",
+]
+
+# Heavy realtime deps are an extra so the foundation/tests stay fast to install.
+# Install with: uv sync --extra realtime  (required to actually run the agent).
+[project.optional-dependencies]
+realtime = [
+    "livekit-agents>=1.6,<1.7",
+    "livekit-api>=1.0.2,<2",
+    # Generic OpenAI-protocol client plugin. NOT used against OpenAI's service:
+    # it is pointed at Qwen-VL/DashScope (LLM) and DashScope/Qwen (ASR/TTS) base URLs.
+    "livekit-plugins-openai>=1.6,<1.7",
+    # Gemini Live realtime option (ADR-0007), opt-in via MERISM_GEMINI_LIVE=1.
+    "livekit-plugins-google>=1.6,<1.7",
+    # Voice activity detection for AgentSession turn-taking.
+    "livekit-plugins-silero>=1.6,<1.7",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "hypothesis>=6.100",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["*_test.py", "test_*.py"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agent"]

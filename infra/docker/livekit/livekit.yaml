@@ -1,0 +1,14 @@
+# LiveKit Server config for local dev. Mounted at /etc/livekit.yaml inside the
+# container. The redis block is what makes room-composite egress work: egress
+# registers itself via redis pub/sub, and Server dispatches StartEgress
+# requests through the same channel. Without it (`--dev` mode is standalone),
+# every egress call returns TwirpError(503 unavailable).
+port: 7880
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: false
+keys:
+  devkey: devsecret-change-me-min-32-chars-long
+redis:
+  address: redis:6379

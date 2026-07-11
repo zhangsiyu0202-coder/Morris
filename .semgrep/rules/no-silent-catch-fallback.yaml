@@ -1,0 +1,43 @@
+rules:
+  - id: no-silent-catch-fallback
+    message: |
+      Silently returning `null` / `undefined` / `[]` from a `catch` block hides
+      failures. Either re-throw, log + propagate, or translate to a typed result
+      (`{ ok: false, error: "..." }`).
+
+      If silent continuation is genuinely correct (best-effort cleanup, idempotent
+      retry), annotate the offending line with
+      `// nosemgrep: no-silent-catch-fallback (reason)`. semgrep's standard inline
+      disable comment is enough — keep the reason readable.
+
+      See `.kiro/steering/errors-and-observability.md` § try/catch matrix.
+      Companion: `.kiro/specs/robustness-hardening/` REQ-1.
+    severity: ERROR
+    languages: [typescript]
+    paths:
+      include:
+        - "apps/**/*.ts"
+        - "apps/**/*.tsx"
+        - "packages/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+        - "**/.semgrep/**"
+    pattern-either:
+      - pattern: |
+          try { ... } catch { return null; }
+      - pattern: |
+          try { ... } catch ($E) { return null; }
+      - pattern: |
+          try { ... } catch { return undefined; }
+      - pattern: |
+          try { ... } catch ($E) { return undefined; }
+      - pattern: |
+          try { ... } catch { return []; }
+      - pattern: |
+          try { ... } catch ($E) { return []; }
+    metadata:
+      docs: ".kiro/steering/errors-and-observability.md#trycatch-matrix-binding"
+      category: error-handling
+      owner: platform

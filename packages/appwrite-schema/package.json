@@ -1,0 +1,18 @@
+{
+  "name": "@merism/appwrite-schema",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "apply": "tsx src/apply-schema.ts",
+    "verify": "tsx src/verify-schema.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "node-appwrite": "^14.1.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
