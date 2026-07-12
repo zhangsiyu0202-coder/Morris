@@ -1,0 +1,156 @@
+{
+  "surveyId": "surv-branch",
+  "sessionId": "sess-branch",
+  "moderatorInstruction": "Guide a qualitative interview for \"Occupation Study\". Use the intro script, follow the section order, and use probe instructions when configured.",
+  "startStepId": "q_s1",
+  "steps": [
+    {
+      "stepId": "q_s1",
+      "outgoingEdgeId": "e_q_s1_default_0",
+      "kind": "question",
+      "questionType": "open_ended",
+      "content": "你的日常状态是什么?",
+      "options": []
+    },
+    {
+      "stepId": "c_s1",
+      "outgoingEdgeId": "e_c_s1_default_1",
+      "kind": "condition",
+      "items": [
+        {
+          "itemId": "item-1",
+          "predicate": {
+            "sourceStepId": "q_s1",
+            "condition": "用户是全职学生"
+          },
+          "outgoingEdgeId": "e_c_s1_item0_2"
+        },
+        {
+          "itemId": "item-2",
+          "predicate": {
+            "sourceStepId": "q_s1",
+            "condition": "用户在工作或创业"
+          },
+          "outgoingEdgeId": "e_c_s1_item1_3"
+        }
+      ]
+    },
+    {
+      "stepId": "p_s1",
+      "outgoingEdgeId": "e_p_s1_default_4",
+      "kind": "probe",
+      "forQuestionStepId": "q_s1",
+      "instruction": "",
+      "level": "standard",
+      "maxRounds": 3
+    },
+    {
+      "stepId": "q_s2",
+      "outgoingEdgeId": "e_q_s2_default_5",
+      "kind": "question",
+      "questionType": "open_ended",
+      "content": "你的专业是什么?",
+      "options": []
+    },
+    {
+      "stepId": "p_s2",
+      "outgoingEdgeId": "e_p_s2_default_6",
+      "kind": "probe",
+      "forQuestionStepId": "q_s2",
+      "instruction": "",
+      "level": "standard",
+      "maxRounds": 3
+    },
+    {
+      "stepId": "q_s3",
+      "outgoingEdgeId": "e_q_s3_default_7",
+      "kind": "question",
+      "questionType": "open_ended",
+      "content": "你从事什么工作?",
+      "options": []
+    },
+    {
+      "stepId": "p_s3",
+      "outgoingEdgeId": null,
+      "kind": "probe",
+      "forQuestionStepId": "q_s3",
+      "instruction": "",
+      "level": "standard",
+      "maxRounds": 3
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_q_s1_default_0",
+      "from": {
+        "stepId": "q_s1"
+      },
+      "to": {
+        "stepId": "c_s1"
+      }
+    },
+    {
+      "id": "e_c_s1_default_1",
+      "from": {
+        "stepId": "c_s1"
+      },
+      "to": {
+        "stepId": "p_s1"
+      }
+    },
+    {
+      "id": "e_c_s1_item0_2",
+      "from": {
+        "stepId": "c_s1"
+      },
+      "to": {
+        "stepId": "q_s2"
+      }
+    },
+    {
+      "id": "e_c_s1_item1_3",
+      "from": {
+        "stepId": "c_s1"
+      },
+      "to": {
+        "stepId": "q_s3"
+      }
+    },
+    {
+      "id": "e_p_s1_default_4",
+      "from": {
+        "stepId": "p_s1"
+      },
+      "to": {
+        "stepId": "q_s2"
+      }
+    },
+    {
+      "id": "e_q_s2_default_5",
+      "from": {
+        "stepId": "q_s2"
+      },
+      "to": {
+        "stepId": "p_s2"
+      }
+    },
+    {
+      "id": "e_p_s2_default_6",
+      "from": {
+        "stepId": "p_s2"
+      },
+      "to": {
+        "stepId": "q_s3"
+      }
+    },
+    {
+      "id": "e_q_s3_default_7",
+      "from": {
+        "stepId": "q_s3"
+      },
+      "to": {
+        "stepId": "p_s3"
+      }
+    }
+  ]
+}
