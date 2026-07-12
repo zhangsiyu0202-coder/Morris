@@ -70,6 +70,11 @@ export class InterviewStatePublisher {
       await this.#room.localParticipant?.setAttributes({
         [INTERVIEW_STATE_ATTRIBUTE]: JSON.stringify(parsed.data),
       });
+      this.#log.info("interview state published", {
+        status: args.status,
+        currentSectionId: args.currentSectionId ?? null,
+        currentQuestionId: args.currentQuestionId ?? null,
+      });
     } catch (error) {
       // Best-effort publish; a failed set_attributes should not tear down
       // the whole session. Log at warn so an operator can trace via traceId.

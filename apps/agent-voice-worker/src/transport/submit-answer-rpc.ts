@@ -55,6 +55,9 @@ export function registerSubmitAnswerRpc(args: SubmitAnswerHandlerArgs): void {
   const { room, log, getCurrentQuestionId, hasActiveTask, onAcceptedAnswer } = args;
 
   const handler = async (data: RpcInvocationData): Promise<string> => {
+    log.info("submit_answer rpc: handler invoked", {
+      payloadLen: data.payload?.length ?? 0,
+    });
     const reject = (accepted: boolean): string => {
       const response: SubmitInterviewAnswerRpcResponse = {
         ok: true,
@@ -84,10 +87,16 @@ export function registerSubmitAnswerRpc(args: SubmitAnswerHandlerArgs): void {
 
     const request = parsed.data;
     const currentId = getCurrentQuestionId();
+    const hasTask = hasActiveTask();
+    log.info("submit_answer rpc: parsed", {
+      submittedQuestionId: request.answer.questionId,
+      currentQuestionId: currentId ?? null,
+      hasActiveTask: hasTask,
+    });
     const accept = shouldAcceptUiAnswer({
       submittedQuestionId: request.answer.questionId,
       currentQuestionId: currentId,
-      hasActiveTask: hasActiveTask(),
+      hasActiveTask: hasTask,
     });
 
     if (!accept) {
