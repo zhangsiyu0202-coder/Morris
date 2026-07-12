@@ -13,27 +13,36 @@ sub-specs (see [Sub-spec roadmap](#sub-spec-roadmap)).
 
 - **Backend (single source of truth):** self-hosted **Appwrite** — Auth, Database,
   Storage, Realtime, Functions.
-- **Realtime media:** self-hosted **LiveKit** + a Python **LiveKit Agent Worker**
-  hosting a LiveKit **Supervisor / TaskGroup / AgentTask** interview workflow.
-  Media/turn state never routes through Appwrite. Per-session recording
-  uses LiveKit `ParticipantEgressRequest` (server-side ffmpeg, no Chromium
-  re-render); see `docs/adr/0008-participant-egress-for-interview-recording.md`.
+- **Realtime media:** self-hosted **LiveKit** + a TypeScript **LiveKit Agent Worker**
+  (`apps/agent-voice-worker`) built on **`@mastra/livekit`** + Mastra `Agent`.
+  A session-scoped orchestrator (`src/interview/orchestrator.ts`) walks
+  Section → Question with probe gating and first-writer-wins between voice
+  and UI submission. Per-session recording uses LiveKit
+  `ParticipantEgressRequest` (server-side ffmpeg, no Chromium re-render);
+  see `docs/adr/0008-participant-egress-for-interview-recording.md`. Post
+  ADR-0013 this is the only interview worker; the Python worker in
+  `apps/agent/` has been deleted.
 - **Functions:** four Appwrite Functions deployed via OpenRuntimes
   (`issueLivekitToken`, `analyzeSession`, `analyzeSurvey`,
   `analyzeSessionVisual`). Local-stack deploy steps in
   `docs/dev/deploy-functions.md`.
 - **Web:** Next.js 15 (App Router) + TypeScript + Tailwind + shadcn/ui, with a
-  **Vercel AI SDK 6 `ToolLoopAgent`** ("Morris") page assistant — sidebar dock
-  + standalone `/assistant` page, model = DeepSeek. See
-  `docs/adr/0002-page-assistant-vercel-ai-sdk.md`.
-- **Contracts:** `packages/contracts` (zod) is the cross-module boundary; Python
-  mirrors the needed subset in `apps/agent/agent/contracts.py`.
+  **Mastra `Agent`** ("Morris") page assistant — sidebar dock + standalone
+  `/assistant` page, model = DeepSeek. See
+  `docs/adr/0013-migrate-realtime-and-page-assistant-to-mastra.md`
+  (supersedes ADR-0002). Migration to Mastra is in-flight; some code still
+  references Vercel AI SDK 6 `ToolLoopAgent` in `apps/web/lib/assistant/` —
+  those files are being swapped in the same wave.
+- **Contracts:** `packages/contracts` (zod) is the cross-module boundary and
+  the only definition of interview shapes. Post ADR-0013 there is no Python
+  mirror.
 
 See `.kiro/specs/foundation-setup/design.md` for the full architecture.
 
 ## Prerequisites
 
-Node 22 + pnpm 10, Python 3.11 + [uv](https://docs.astral.sh/uv/), Docker.
+Node 22 + pnpm 10, Docker. (Post ADR-0013 there is no Python worker in this
+repo; Python + uv are no longer required.)
 
 ## Quickstart
 
@@ -53,7 +62,6 @@ pnpm smoke                  # end-to-end: researcher -> survey -> link -> token
 | `pnpm build` / `pnpm typecheck` / `pnpm lint` | Build / typecheck / lint all packages |
 | `pnpm test` | Vitest (unit + property) across the workspace |
 | `pnpm test:properties` | Property-based tests in `tests/properties/` |
-| `pnpm test:py` | Python (pytest + hypothesis) suites |
 | `pnpm e2e` | Playwright E2E (web) |
 | `pnpm stack:up` / `stack:down` / `stack:reset` | Local stack lifecycle |
 | `pnpm schema:apply` / `schema:verify` | Apply / diff Appwrite schema |
@@ -63,14 +71,26 @@ pnpm smoke                  # end-to-end: researcher -> survey -> link -> token
 Run live integration tests (permission matrix etc.) with a running stack:
 `MERISM_LIVE_TESTS=1 pnpm test:properties`.
 
+## Backup recovery
+
+The main workspace has a remote emergency snapshot branch recorded in
+[`docs/dev/git-backup-and-restore.md`](docs/dev/git-backup-and-restore.md).
+Use it if later TS migration work goes wrong and you need to recover the
+2026-07-11 pre-migration file tree.
+
 ## Structure
 
 ```
 apps/
   web/                     Next.js 15 (App Router) — researcher UI, page assistant
                            Morris (/assistant), interviewee landing (/interview)
-  agent/                   Python LiveKit Agent Worker — Supervisor / TaskGroup /
-                           AgentTask workflow + DeepSeek LLM + Qwen ASR/TTS
+  agent-voice-worker/      TypeScript LiveKit Agent Worker (@mastra/livekit + Mastra
+                           Agent) — the ONLY production interview worker post
+                           ADR-0013. Runs a session-scoped orchestrator (Section →
+                           Question walk + probe gate + first-writer-wins) with
+                           DashScope Qwen LLM + FunASR realtime STT + Qwen realtime
+                           TTS. Registered as agent name merism-mastra-voice-worker;
+                           dispatched by issueLivekitToken on every token issuance.
   functions/
     issueLivekitToken/     Appwrite Function: validate link, create session, sign JWT
 packages/

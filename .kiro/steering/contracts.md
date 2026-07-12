@@ -4,7 +4,7 @@ inclusion: always
 
 # Contracts (binding)
 
-`packages/contracts` (zod) is the single source of truth for every cross-module shape. Python mirrors a strict subset in `apps/agent/agent/contracts.py`. This file defines the schema-first workflow, the TS↔Python mirror discipline, the invariant placement rules, and the deprecation pattern. Read together with `architecture.md` Cross-module change order.
+`packages/contracts` (zod) is the single source of truth for every cross-module shape. Post ADR-0013 there is no Python mirror — `apps/agent/agent/contracts.py` has been deleted with the Python worker. This file defines the schema-first workflow, the invariant placement rules, and the deprecation pattern. Read together with `architecture.md` Cross-module change order.
 
 ## Source-of-truth rule (binding)
 
@@ -22,7 +22,7 @@ If a hit looks like a domain shape, lift it into `packages/contracts`.
 
 ## Naming and primitive choices (binding)
 
-- camelCase field names, including in Python mirror (Python keeps camelCase; do NOT snake_case).
+- camelCase field names throughout. No snake_case for cross-module shapes.
 - Appwrite document id is `$id: z.string()` and is passed through unchanged.
 - Owner of an owner-scoped collection is `ownerUserId: z.string()` (the Appwrite Account `$id`). Never `userId`, `owner`, `createdBy`, etc.
 - Timestamps use `z.string().datetime()` (ISO 8601 with `Z` suffix). Persisted helper: `new Date().toISOString()`.
@@ -45,27 +45,16 @@ Rules:
 - Validation logic MUST NOT live in the calling Function, the agent, or the UI. Calling code only does `Schema.safeParse(input)` and reacts to `success: false`.
 - If an invariant cannot be expressed in zod (e.g. requires DB lookup), define a typed predicate in `packages/contracts` (pure function, no I/O) and have callers invoke it explicitly.
 
-## TS → Python mirror discipline (binding)
+## Historical Python mirror (removed 2026-07-12)
 
-`apps/agent/agent/contracts.py` contains pydantic models that mirror **only** the contracts the agent actually uses.
+The `apps/agent/agent/contracts.py` pydantic mirror was deleted together with
+the Python worker per ADR-0013. Every cross-module shape now lives in
+`packages/contracts` (zod) only. There is no `pnpm test:py` and no
+`--extra realtime` gating.
 
-- Field names MUST be byte-identical to the TS definition. No `snake_case` conversion.
-- The mirror is added in the SAME PR as the TS schema, not a follow-up.
-- The mirror is allowed to be a strict subset (omitting fields the agent does not need), but every mirrored field MUST exist in TS.
-- Enum values are mirrored as `Literal[...]` types or `Enum` classes with identical string values.
-- Verification:
-
-```bash
-pnpm -F @merism/contracts typecheck
-pnpm test:py   # contract round-trip tests in apps/agent/tests/test_contracts.py
-```
-
-Adding a new field that the agent does NOT need yet:
-- Skip the Python mirror.
-- Leave a comment in `contracts.py` near the related model: `# NOTE: TS schema FooSchema also has bar; mirror when agent needs it.`
-
-Adding a new field that the agent DOES need:
-- Mirror immediately. Do not split across PRs.
+If a future ADR re-introduces a non-TypeScript runtime that consumes these
+contracts, define the mirror discipline in that ADR — do not reintroduce
+this section without an ADR.
 
 ## JSON-shaped fields are temporary (binding)
 
@@ -84,7 +73,6 @@ Removing a schema or field that has shipped MUST follow this pattern (see `UserS
 1. Add `@deprecated` JSDoc explaining: why deprecated, what replaces it, where the migration is recorded (sub-spec / ADR).
 2. Keep the schema/field exported and parsed for at least one sub-spec cycle so consumers can migrate incrementally.
 3. Remove only after no callers remain (`pnpm -F @merism/contracts typecheck` + `pnpm typecheck` clean).
-4. Update `apps/agent/agent/contracts.py` mirror in the same PR as removal.
 
 NEVER:
 - Delete a shipped schema in the same PR that introduces its replacement.
@@ -110,10 +98,8 @@ When `packages/contracts/test/contracts.test.ts` exceeds ~600 lines, split into 
 pnpm -F @merism/contracts typecheck
 # run contract tests (round-trip + invariant)
 pnpm -F @merism/contracts test
-# verify Python mirror parses the same payloads
-pnpm test:py
 # diff between schema declaration and live Appwrite stack
 pnpm schema:verify
 ```
 
-A contract change that does not pass all four cleanly is not ready to merge.
+A contract change that does not pass all three cleanly is not ready to merge.

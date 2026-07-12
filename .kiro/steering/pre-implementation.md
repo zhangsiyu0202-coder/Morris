@@ -29,10 +29,11 @@ Before writing the first line of code for any non-trivial feature, the agent MUS
 
 - Reading one component file and editing it without checking the upstream server action and the downstream schema.
 - Modifying a contract without using LSP to find every consumer (grep is insufficient because it misses re-exports and string-based imports).
+- Modifying a zod schema without running `pnpm -F @merism/contracts test` and the full workspace `pnpm typecheck`.
 - Modifying a Function handler without checking that the agent does not depend on the same room metadata or RPC shape.
-- Modifying a zod schema without running `pnpm -F @merism/contracts test` and `pnpm test:py`.
+- Modifying a zod schema without running `pnpm -F @merism/contracts test`.
 - Reinventing a decision because the relevant ADR was not read (canonical reinvention: proposing LangGraph as the realtime controller, which ADR-0001 explicitly rejects).
-- Renaming or repurposing a field that is mirrored in `apps/agent/agent/contracts.py` without updating the mirror in the same PR.
+- Renaming or repurposing a field that a downstream Function or Mastra worker consumes without updating both in the same PR.
 
 ## GitHub reference research (binding)
 

@@ -16,12 +16,11 @@ Module boundaries, Function shape, agent realtime↔persistence boundary, concur
 | Module | Path | Owns | MUST NOT |
 |---|---|---|---|
 | Contracts | `packages/contracts` | zod schemas + TS types for every cross-module shape | runtime logic, I/O, network calls |
-| Contracts mirror | `apps/agent/agent/contracts.py` | pydantic mirror of agent-needed contracts | fields not in TS; snake_case rename |
 | Observability | `packages/observability` | `createLogger`, `withRetry`, `withErrorBoundary`, `maskSecret`, `traceId` | business logic, provider calls |
 | Appwrite schema | `packages/appwrite-schema` | declarative collections + permissions + buckets, `apply` / `verify` | runtime data writes |
 | Functions | `apps/functions/<name>` | request → response surfaces; pure core in `handler.ts`, SDK wrapper in `main.ts` | shared state across invocations; SDK imports in `handler.ts` |
-| Agent | `apps/agent` | LiveKit Supervisor / TaskGroup / AgentTask realtime workflow | Appwrite writes for turn-by-turn state; LangGraph control flow |
-| Web | `apps/web` | Next.js: researcher UI, Morris, interviewee surfaces, analysis surfaces | domain logic that belongs in a Function; client-side writes for anonymous interviewees |
+| Agent | `apps/agent-voice-worker` | Mastra `Agent` + `@mastra/livekit` realtime interview worker; session-scoped orchestrator (`src/interview/orchestrator.ts`) owns section/question cursor + probe gate + first-writer-wins | Appwrite writes for turn-by-turn state; LangGraph / second controller framework; static greeting on unknown metadata |
+| Web | `apps/web` | Next.js: researcher UI, Morris (Mastra `Agent`, post ADR-0013), interviewee surfaces, analysis surfaces | domain logic that belongs in a Function; client-side writes for anonymous interviewees; `@mastra/livekit` / `@livekit/agents` / `@livekit/rtc-node` imports (realtime worker boundary) |
 
 Cross-module data flows ONLY through `packages/contracts`. Cross-module side effects flow ONLY through Functions or the agent. There is no shared mutable singleton anywhere.
 
@@ -56,7 +55,7 @@ grep -RIn 'from "node-appwrite"\|from "appwrite"\|from "livekit-server-sdk"' app
 
 ## Agent realtime ↔ persistence boundary (binding)
 
-Per ADR-0001 the realtime interview is **LiveKit Supervisor + ordered TaskGroups + focused AgentTasks**. No LangGraph, no custom state machines, no second controller framework.
+Per ADR-0013 (supersedes ADR-0001) the realtime interview is a **session-scoped orchestrator class** owning ordered Section walks + one QuestionRunner per configured question + probe-gate + first-writer-wins, hosted on **Mastra `Agent` + `@mastra/livekit`** inside `apps/agent-voice-worker/src/interview/orchestrator.ts`. No LangGraph, no second controller framework, no letting the LLM prompt drive section/question order.
 
 Stays inside the LiveKit room (room metadata + participant attributes + RPC):
 - Turn-by-turn conversation state
@@ -75,9 +74,10 @@ NEVER:
 - Round-trip "next question" through Appwrite
 - Persist partial / streaming transcript per turn
 - Share mutable state across sessions on the agent worker process
-- Top-level import of livekit modules in `agent/interview/` — they MUST stay lazy so `pnpm test:py` runs without `--extra realtime`
 
-Pure workflow logic (state transitions, advancement, completion check) lives in `apps/agent/agent/interview/workflow.py` and is side-effect free. Side effects (livekit calls, Appwrite writes, attribute publish) live in `engine.py` / `supervisor.py` and delegate every state transition to `workflow.py`.
+Pure workflow logic (state transitions, advancement, completion check) lives in `apps/agent-voice-worker/src/interview/workflow-state.ts` and is side-effect free. Side effects (LiveKit calls, Appwrite Function invocations, attribute publish, RPC handler) live in `orchestrator.ts` + `transport/*.ts` + `persistence/finalize-client.ts` and delegate every state transition to `workflow-state.ts`.
+
+Lazy loading is no longer relevant post-ADR-0013 — the worker is TypeScript and runs on the workspace's normal `pnpm test` matrix; no `--extra realtime` opt-in.
 
 ## Concurrency contract (binding)
 
@@ -95,14 +95,12 @@ In-memory locks, mutexes, atomic counters, or "time-window" deduplication are NO
 Changing any cross-module shape (entity field, RPC payload, room metadata) MUST be done in this order, **in a single PR**:
 
 1. Update zod schema in `packages/contracts/src/{entities,api,state,notebook}.ts`. Add `superRefine` for any new invariant.
-2. If the agent uses the shape: mirror to `apps/agent/agent/contracts.py` with identical field names.
-3. Update consumers in dependency order: contracts → functions → agent → web.
-4. Update / add tests at the same time (property tests for the new invariant, unit tests for new behaviour).
-5. If the schema changes the database surface: update `packages/appwrite-schema/src/schema.ts` AND run `pnpm schema:verify` against local stack.
+2. Update consumers in dependency order: contracts → functions → agent → web.
+3. Update / add tests at the same time (property tests for the new invariant, unit tests for new behaviour).
+4. If the schema changes the database surface: update `packages/appwrite-schema/src/schema.ts` AND run `pnpm schema:verify` against local stack.
 
 NEVER:
 - Merge a contract change ahead of consumer updates.
-- Skip the Python mirror because "the agent doesn't use it yet" (it will, and the next PR will be ambiguous).
 - Add a new field to a Function response without first updating the schema.
 
 ## Globally forbidden
@@ -124,7 +122,7 @@ NEVER:
 | Reusable observability helper | `packages/observability/src/` |
 | Appwrite collection / index / bucket declaration | `packages/appwrite-schema/src/schema.ts` |
 | Server-side request/response surface | `apps/functions/<name>/` (pure core + SDK wrapper) |
-| Realtime interview behaviour | `apps/agent/agent/interview/{workflow,supervisor,engine}.py` |
+| Realtime interview behaviour | `apps/agent-voice-worker/src/interview/{workflow-state,orchestrator,question-runner}.ts` + `apps/agent-voice-worker/src/transport/*.ts` |
 | Researcher UI scene | `apps/web/app/<route>/` + `apps/web/components/<feature>/` |
 | LLM 调用观测 (任何新加的 generateText/streamText) | 走 `packages/observability::withLLMCall` (调用点可见) 或 `wrapLanguageModel({middleware: llmObservabilityMiddleware(...)})` (调用点不可见). scope 命名规范 `morris.*` / `function.*` / `action.*`. 参 `.kiro/specs/morris-llm-observability/` |
 | Morris 长期记忆 (跨对话 user-级事实 + manageMemories 工具) | `apps/web/lib/memories/{server,actions,embed}.ts` + `apps/web/lib/assistant/tools/manage-memories.ts`. embedding 复用 Qwen text-embedding-v3 (与 Notebook 同), cosine 检索 + fulltext fallback. 不引入 LangGraph onboarding flow. 参 `.kiro/specs/morris-memory/` |

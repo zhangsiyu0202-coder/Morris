@@ -4,7 +4,7 @@ inclusion: always
 
 # Errors & Observability (binding)
 
-`packages/observability` is the only allowed primitive for logging, retry, error boundaries, and secret masking. `apps/agent/agent/logging.py` and `apps/agent/agent/retry.py` mirror the same shape on the Python side. This file is the operational rulebook for `try/catch` discipline, structured logging, error codes, secret handling, and `traceId` propagation. Read together with `architecture.md` Function shape.
+`packages/observability` is the only allowed primitive for logging, retry, error boundaries, and secret masking. Post ADR-0013 there is no Python mirror in this repo — the Python worker (`apps/agent/`) and its `agent/logging.py` / `agent/retry.py` have been deleted; the `apps/agent-voice-worker` TS worker reads the same `@merism/observability` package directly. This file is the operational rulebook for `try/catch` discipline, structured logging, error codes, secret handling, and `traceId` propagation. Read together with `architecture.md` Function shape.
 
 ## try/catch matrix (binding)
 
@@ -56,7 +56,7 @@ Logger is the only entry point for diagnostic output.
 Rules:
 
 - One logger per Function invocation / agent session. NEVER a module-level singleton — each invocation gets its own `traceId`.
-- `console.log` / `print` are NOT allowed in `apps/`, `packages/`, or `apps/agent/agent/`. (Test output and one-off scripts in `scripts/` may use them.)
+- `console.log` is NOT allowed in `apps/` or `packages/`. (Test output and one-off scripts in `scripts/` may use them.)
 - Log entries are JSON. Required fields: `timestamp`, `level`, `traceId`, `scope`, `message`. Optional: `sessionId`, `surveyId`, plus any structured fields the call passes.
 - Pass the logger explicitly to inner functions; do not import a global.
 
@@ -128,8 +128,6 @@ A non-`.env.example` hit is a defect.
 - Backoff and jitter are configured at the call site (`withRetry(fn, { maxAttempts, baseDelayMs })`), not inside the adapter.
 - Adapters classify errors into `TransientProviderError` vs `PermanentProviderError` and let the call site decide retry policy.
 
-Python mirror: `agent.retry.with_retry` follows the same shape (`TransientProviderError` / `PermanentProviderError`).
-
 ## traceId propagation (binding)
 
 - Every Function entry point creates a `traceId` via `createLogger(scope)`.
@@ -150,7 +148,7 @@ Python mirror: `agent.retry.with_retry` follows the same shape (`TransientProvid
 ## Provider adapter rules (binding)
 
 - Qwen-VL is the primary cascade LLM (per ADR-0011; DeepSeek is a dormant secondary). Qwen is reserved for ASR/TTS. Adding a different provider for either role requires a new ADR in `docs/adr/`.
-- Adapters live in `apps/agent/agent/providers/<vendor>.py` (Python) or `apps/web/lib/assistant/providers/<vendor>.ts` (page-assistant TS).
+- Adapters live in `apps/agent-voice-worker/src/mastra/providers/<vendor>.ts` (voice worker / realtime interview) or `apps/web/lib/assistant/providers/<vendor>.ts` (Morris page assistant).
 - An adapter implements one provider behind a narrow interface. Swapping providers means writing a new adapter, not editing call sites.
 - Adapters MUST classify failures into `TransientProviderError` vs `PermanentProviderError` so `withRetry` can act.
 - Adapters MUST NOT log raw prompts, raw completions, or raw audio at `info`. Debug-level logging is allowed only when explicitly gated by `MERISM_DEBUG_PROVIDERS=1` and disabled by default.
@@ -241,7 +239,7 @@ LLM 调用全部走 `llmGate` (p-limit 包装), default 最多 8 并发, env `ME
 | `MERISM_LIVE_TESTS` | bool | 严格 `"1"` 启用 | Layer 4 live integration tests (需 Appwrite Docker stack) | `tests/properties/foundation-setup/permission-matrix.test.ts` |
 | `MERISM_FAKE_PROVIDERS` | bool | 严格 `"1"` 启用 (规划中, 未实现) | 替换真 LLM/ASR/TTS provider 为 deterministic fake (live tests 用) | (规划) |
 | `GEMINI_VISUAL_ANALYSIS_ENABLED` | bool | 严格 `"true"` 启用 (ADR-0005) | analyzeSessionVisual Function 是否实际调用 Gemini | `apps/functions/analyzeSessionVisual/src/main.ts` |
-| `MERISM_GEMINI_LIVE` | bool | 严格 `"1"` 启用 (ADR-0007) | 实时访谈层用 Gemini Live (ASR+LLM, 出文本) + Qwen TTS 替代 DeepSeek+Qwen cascade;unset → 维持现状 | `apps/agent/agent/providers/settings.py` |
+| `MERISM_GEMINI_LIVE` | bool | 严格 `"1"` 启用 (ADR-0007) | 实时访谈层用 Gemini Live (ASR+LLM, 出文本) + Qwen TTS 替代 DeepSeek+Qwen cascade;unset → 维持现状。ADR-0013 后此 flag 需在 `apps/agent-voice-worker/src/mastra/dashscope-config.ts` 侧重新落地(iteration 4 处理);未 port 前该 flag 无效 | (待重新落地) |
 
 ### 不一致点 (历史保留, 不重构)
 

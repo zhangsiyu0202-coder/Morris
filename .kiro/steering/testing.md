@@ -10,9 +10,9 @@ Four-layer test model with mandatory property-based coverage. Tests ship in the 
 
 | Layer | Where | What it covers | Runs in CI |
 |---|---|---|---|
-| **Unit** | `*.test.ts` next to source, `tests/test_*.py` | Pure functions, schemas, pure-core handlers with in-memory deps | every PR |
-| **Property-based** | `tests/properties/*.test.ts`, `apps/agent/tests/properties/*.py` | Invariants, state machines, concurrency, secret leakage | every PR |
-| **Integration with fakes** | `*/tests/test_*.py` with fake repos / fake livekit | Cross-component flow without real infra | every PR |
+| **Unit** | `*.test.ts` next to source | Pure functions, schemas, pure-core handlers with in-memory deps | every PR |
+| **Property-based** | `tests/properties/*.test.ts` | Invariants, state machines, concurrency, secret leakage | every PR |
+| **Integration with fakes** | `**/tests/*.test.ts` with fake repos / fake livekit | Cross-component flow without real infra | every PR |
 | **Live integration** | same files, gated by `MERISM_LIVE_TESTS=1` | Real Appwrite + LiveKit Docker stack | nightly + on-demand |
 | **LLM evals** | `tests/evals/`, gated by `MERISM_EVAL_TESTS=1` | LLM behavior regression — real provider call, deterministic + judge-rubric scorers | nightly + on-demand (see `.kiro/specs/ai-eval-suite/`) |
 
@@ -35,12 +35,12 @@ For every Function, agent workflow component, and contract change, the following
 
 The property tests for each Function live next to the unit tests (`apps/functions/<name>/tests/`). The cross-cutting ones (permission, secret leakage) live in the workspace root `tests/properties/`.
 
-Reference templates already in the repo: `tests/properties/`, `apps/agent/tests/properties/`. New property tests follow the same fast-check / hypothesis style.
+Reference templates already in the repo: `tests/properties/`, `apps/agent-voice-worker/tests/properties/` (pending — port from the deleted Python suite as part of the ADR-0013 rollout wave). New property tests follow the same fast-check style.
 
 ## Live integration gating (binding)
 
-- Live integration tests MUST be gated by `MERISM_LIVE_TESTS=1`. The default `pnpm test` / `pnpm test:py` run MUST pass without any Docker dependency.
-- The `--extra realtime` Python deps are also gated: foundation tests MUST run with plain `uv sync` (no realtime extra). Tests that require livekit-agents are tagged and skipped when the import fails.
+- Live integration tests MUST be gated by `MERISM_LIVE_TESTS=1`. The default `pnpm test` run MUST pass without any Docker dependency.
+- Post ADR-0013 there is no `pnpm test:py` and no `--extra realtime` gating — the interview worker is TypeScript and runs on the workspace's normal `pnpm test` matrix.
 - Live integration test scripts:
   ```bash
   pnpm stack:up                                  # Appwrite + LiveKit via Docker
@@ -61,7 +61,7 @@ Reference templates already in the repo: `tests/properties/`, `apps/agent/tests/
 
 - Pure-core handlers (`apps/functions/*/src/handler.ts`): **100%** branch coverage. Tested via in-memory `Deps`.
 - zod schemas with `superRefine`: every clause has at least one positive test (input that passes) and one negative test (input that fails with the expected issue path).
-- Workflow state functions in `apps/agent/agent/interview/workflow.py`: every transition function has unit + property test.
+- Workflow state functions in `apps/agent-voice-worker/src/interview/workflow-state.ts`: every transition function has unit + property test.
 - SDK wrappers (`main.ts`, `appwrite_repository.py` `from_env`): integration tested only — no need for branch coverage on the env wiring.
 
 ## Test double pattern (binding)
@@ -136,18 +136,16 @@ vi.mock("node-appwrite", async () => (await import("./fixtures/install-mocks")).
 # Workspace
 pnpm test                              # vitest across the workspace
 pnpm test:properties                   # fast-check property suites
-pnpm test:py                           # pytest in apps/agent
 pnpm typecheck                         # tsc --noEmit
 pnpm lint                              # eslint
 
 # Per-package
 pnpm -F @merism/contracts test
 pnpm -F @merism/observability test
-cd apps/agent && uv run pytest
 
 # Live (requires running stack)
 MERISM_LIVE_TESTS=1 pnpm test:properties
 pnpm smoke
 ```
 
-A PR that does not pass `pnpm test && pnpm typecheck && pnpm test:py` is not ready to merge.
+A PR that does not pass `pnpm test && pnpm typecheck` is not ready to merge.

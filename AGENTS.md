@@ -22,11 +22,11 @@
 MerismV2 is an AI-driven voice interview qualitative research platform. The intended architecture is:
 
 - Researcher web app: Next.js App Router + TypeScript + Tailwind + shadcn/ui (`apps/web`, present).
-- Realtime interview layer: LiveKit server + Python LiveKit Agent Worker (`apps/agent`).
-- Interview orchestration: LiveKit Supervisor / TaskGroup / AgentTask workflow hosted inside the agent worker. LangGraph is no longer the primary controller for the realtime voice interview module.
-- Page assistant ("Morris"): Vercel AI SDK 6 `ToolLoopAgent` + DeepSeek for sidebar/standalone researcher workflows. See `docs/adr/0002-page-assistant-vercel-ai-sdk.md`.
+- Realtime interview layer: LiveKit server + TypeScript LiveKit Agent Worker (`apps/agent-voice-worker`, `@mastra/livekit` + Mastra Agent). Post ADR-0013 this is the ONLY interview worker; the Python worker (`apps/agent`) has been deleted.
+- Interview orchestration: session-scoped orchestrator class in `apps/agent-voice-worker/src/interview/orchestrator.ts` walks Sections → Questions with probe-gate + first-writer-wins between voice and UI submission. Mastra `Agent` is the LLM adapter, not the orchestrator; LangGraph and any second controller framework remain forbidden.
+- Page assistant ("Morris"): Mastra `Agent` + DeepSeek for sidebar/standalone researcher workflows. See `docs/adr/0013-migrate-realtime-and-page-assistant-to-mastra.md` (supersedes ADR-0002). During iteration-2 of the migration Morris still ships the Vercel AI SDK 6 `ToolLoopAgent` code in `apps/web/lib/assistant/agent.ts`; the swap is executed in the same migration wave.
 - Backend single source of truth: self-hosted Appwrite for Auth, Database, Storage, Realtime, and Functions.
-- Shared contracts: `packages/contracts` is the TypeScript/zod source for cross-module API and data shapes; Python mirrors only the agent-needed subset in `apps/agent/agent/contracts.py`.
+- Shared contracts: `packages/contracts` is the TypeScript/zod source for cross-module API and data shapes. Post ADR-0013 there is no Python mirror; `apps/agent/agent/contracts.py` has been deleted.
 
 The product is for qualitative voice interviews: survey design, anonymous interview links, realtime AI voice interviews, transcripts/recordings, and structured analysis reports.
 
@@ -37,10 +37,10 @@ MerismV2 拥有**两条彼此独立的 LLM 链路**。它们不是同一个 agen
 | 维度 | **Morris** (页面助理) | **LiveKit Agent** (语音访谈主持人) |
 |---|---|---|
 | 责任 | 帮研究员**操作 Merism 数据**(起草 study / 检索访谈 / 触发分析 / 长期记忆) | 在 LiveKit room 内**与匿名 interviewee 实时语音交谈**, 按 Survey 推进访谈 |
-| 进程 | Next.js Node runtime (`apps/web`) | 独立 Python 进程 (`apps/agent`) |
-| 启动方式 | 随 `apps/web` Next.js 进程; 用户访问 `/assistant` 或侧边栏 dock | `cd apps/agent && uv sync --extra realtime && uv run python -m agent.main dev` |
-| 入口 | `apps/web/app/assistant/` (standalone) + `apps/web/components/assistant/*` (sidebar dock) + `apps/web/app/api/assistant/route.ts` (POST chat endpoint) | `apps/functions/issueLivekitToken` 发 short-lived JWT → interviewee join LiveKit room → agent worker 同 room join |
-| 框架 | Vercel AI SDK 6 `ToolLoopAgent` (per ADR-0002) | LiveKit Supervisor + ordered TaskGroup + focused AgentTask (per ADR-0001) — **不是 LangGraph** |
+| 进程 | Next.js Node runtime (`apps/web`) | 独立 Node.js 进程 (`apps/agent-voice-worker`) |
+| 启动方式 | 随 `apps/web` Next.js 进程; 用户访问 `/assistant` 或侧边栏 dock | `cd apps/agent-voice-worker && pnpm dev` (Mastra HTTP) + `pnpm dev:worker` (LiveKit worker 进程) |
+| 入口 | `apps/web/app/assistant/` (standalone) + `apps/web/components/assistant/*` (sidebar dock) + `apps/web/app/api/assistant/route.ts` (POST chat endpoint) | `apps/functions/issueLivekitToken` 发 short-lived JWT + 显式 dispatch `merism-mastra-voice-worker` → interviewee join LiveKit room → agent worker 同 room join |
+| 框架 | Mastra `Agent` (per ADR-0013; supersedes ADR-0002 Vercel AI SDK 6 `ToolLoopAgent` — migration in-flight) | Mastra `Agent` + `@mastra/livekit` `createLiveKitWorker`,访谈 orchestrator 由 `src/interview/orchestrator.ts` 拥有 (per ADR-0013; supersedes ADR-0001 Python LiveKit Supervisor + TaskGroup + AgentTask) — **不是 LangGraph** |
 | LLM provider | DeepSeek (`apps/web/lib/assistant/model.ts::CHAT_MODEL`/`REASONING_MODEL`) | Qwen-VL primary cascade (per ADR-0011); DeepSeek dormant secondary |
 | ASR / TTS | — (纯文本聊天) | Qwen (DashScope) |
 | 使用者 | 登录态研究员 (Appwrite Account) | 匿名 interviewee (**无账号**, 凭 `InterviewLink` 拿 JWT) |
@@ -67,16 +67,34 @@ MerismV2 拥有**两条彼此独立的 LLM 链路**。它们不是同一个 agen
 
 新增 Morris 工具必须自证"为什么归 Morris 而不是 server action / Function"(per `scope.md::borrow-or-build`), 并同步在 `tool-metadata.ts` 登记 + `tool-enrich-urls.ts` 同步(per `morris-tool-metadata` sub-spec)。
 
-### LiveKit Agent 关键代码点 (`apps/agent/agent/interview/`)
+### LiveKit Agent 单一 worker 实现 (post ADR-0013, binding)
 
-- `workflow.py` — **纯** workflow state 转换 (无 side effect), 含 `_supervisor_instruction_from_study` 这类 compose 函数
-- `supervisor.py` — Supervisor 实例; `Supervisor.__init__` 用 `state.workflowConfig.supervisorInstruction` 初始化 (line 69)
-- `engine.py` — LiveKit 副作用层 (room metadata / 参与者属性 / RPC / barge-in)
-- `transcript.py` — 转写处理
-- `tasks/question.py::LiveKitQuestionTask` — 每个 question 一个 task 实例; `record_probe_round` 按 `question.probeConfig.maxRounds > 0` **conditional 注册**(不挂时 LLM 看不到该 tool, 不在 `tools=[]` 列表里), `confirmation_heard: bool` self-reporting 参数在 false 时拒绝记账。**改回静态 `@function_tool()` 装饰器或移除 `confirmation_heard` 参数会破坏 `apps/agent/tests/properties/test_probe_tool_gate.py` 的 P-FLOW-06 / P-FLOW-07 property test**。详 `.kiro/specs/interview-probe-task-hardening/`。
-- `persistence/` — 仅 finalized artifact 通过 Function 单向落 Appwrite (per `architecture.md::Realtime ↔ persistence boundary`)
+"LiveKit Agent" 这条链目前**只有一个** worker 进程 (`apps/agent-voice-worker`, TypeScript + Mastra), 消费 `InterviewRoomMetadata`。历史的 Python worker (`apps/agent/`) 在 ADR-0013 中被删除;`issueLivekitToken` 无条件显式 dispatch `merism-mastra-voice-worker` 名字。
 
-`livekit-agents` 模块在 `agent/interview/` **必须 lazy import**, 否则 `pnpm test:py` 在没装 `--extra realtime` 时会炸 (per `architecture.md`)。
+| 维度 | TS worker (`apps/agent-voice-worker`) |
+|---|---|
+| 框架 | `@mastra/livekit` `createLiveKitWorker` + Mastra `Agent`;访谈状态机由 `src/interview/orchestrator.ts` 拥有(不由 LLM prompt 驱动) |
+| 启动 | `cd apps/agent-voice-worker && pnpm dev` (Mastra HTTP) + `pnpm dev:worker` (LiveKit worker 进程) |
+| LLM | Qwen compat (`qwen-plus` via DashScope OpenAI-compatible HTTP) — Qwen-VL cascade primary (per ADR-0011) |
+| ASR/TTS | FunASR websocket ASR (`paraformer-realtime-v2`) + Qwen realtime TTS (DashScope 原生 websocket, 非 OpenAI-compatible 路由) |
+| 端到端判停 | `inference.TurnDetector({ version: "v1-mini" })` — pin 到本地模型, 跳过需要 LiveKit Cloud 账号的 `v1` 云端尝试(自托管 LiveKit 环境下 `v1` 会 401)|
+| 房间 dispatch | `issueLivekitToken` 总是显式 dispatch `MERISM_TS_VOICE_AGENT_NAME` (默认 `merism-mastra-voice-worker`) — no auto-dispatch, no fan-out |
+| Workflow config 来源 | `src/mastra/merism-room-metadata.ts::workflowConfigFromMerismRoomMetadata` — 优先消费 TS 端合成好的 `workflowConfig`, fallback 到 `runtimeStudy` compose |
+| Contracts 依赖 | `@merism/contracts` (workspace 包,直接消费 TS 类型;无 Python mirror) |
+| 持久化 | 通过 `apps/functions/finalizeInterviewSession` Function 单向落 Appwrite(one-way append-only, per `architecture.md::Realtime ↔ persistence boundary`)|
+
+### LiveKit Agent 关键代码点 (`apps/agent-voice-worker/src/`)
+
+- `mastra/voice-worker.ts` — worker entrypoint;`createLiveKitWorker` 挂 `onSessionStart` / `onCallEnd` 两个 hook;fail-closed on bad metadata;无静态 greeting
+- `mastra/merism-room-metadata.ts` — metadata 解析(`parseMerismRoomMetadata` 返回 discriminated result — 不再静默 catch)+ per-session Mastra `Agent` 工厂
+- `interview/workflow-state.ts` — **纯** workflow state 转换(无 side effect);`shouldAcceptUiAnswer` / `formatUiAnswer` / `findNextCursor` / `collectedAnswersMap` — port from `apps/agent/agent/interview/workflow.py`
+- `interview/question-runner.ts` — 每个 question 一个 runner 实例;`recordProbeRound` 按 `question.probeConfig.maxRounds > 0` **conditional 暴露**给 LLM(orchestrator 组装 tools 时 skip 它,不注入 tool schema),`confirmationHeard: boolean` self-reporting 参数在 false 时拒绝记账。**改回静态 tool 或移除 `confirmationHeard` 参数会破坏(即将迁移的)P-FLOW-06 / P-FLOW-07 property test**。详 `.kiro/specs/interview-probe-task-hardening/`(仍然 binding, 迁到 TS 实现)。
+- `interview/orchestrator.ts` — session-scoped orchestrator;拥有 workflow state / runner map / attribute publisher;订阅 `submit_answer` RPC;finalize on `onCallEnd`
+- `transport/attribute-publisher.ts` — 发布 `merism.interviewState`
+- `transport/submit-answer-rpc.ts` — 注册 `merism.submit_answer` RPC handler
+- `persistence/finalize-client.ts` — 唯一 Appwrite 出口:调 `apps/functions/finalizeInterviewSession` Function
+
+Mastra 与 LiveKit 相关 import (`@mastra/livekit`, `@livekit/agents`, `@livekit/rtc-node`) **禁止在 `apps/web`** 出现 — 属实时 worker 边界。
 
 ### Instruction 字段链 — 谁写, 谁读 (容易栽跟头的一组)
 
@@ -88,13 +106,13 @@ MerismV2 拥有**两条彼此独立的 LLM 链路**。它们不是同一个 agen
 2. **`apps/web/lib/actions/survey.ts` 写入 Appwrite** Survey / SurveySection / QuestionBlock 行
 3. **`apps/functions/issueLivekitToken/src/survey-draft-mapper.ts::buildSurveyDraftFromDocs`** 把行映射成 `SurveyDraft`; `section.objective = section.description || section.sectionInstruction || ""`; `draft.moderatorInstruction = survey.moderatorInstruction ?? ""` (T16/T17 接通点 — 这一步漏一字段就会让研究员的 persona 整条链被静默丢掉)
 4. **`apps/functions/issueLivekitToken/src/deps.ts::createRoom`** 调 `buildInterviewRoomMetadataFromDraft` → 内部调 `buildInterviewWorkflowConfigFromDraft` (`@merism/contracts/src/api.ts`) — **TS 端在这里就把 `draft.moderatorInstruction` 前置到 operational base, 合成出最终 `workflowConfig.supervisorInstruction`**, 然后整个 `InterviewRoomMetadata` 经 `JSON.stringify` 塞进 LiveKit `RoomServiceClient.createRoom({metadata})`
-5. **Python `apps/agent/agent/interview/workflow.py::workflow_config_from_metadata`** 读 room metadata 时**优先消费已合成好的 `workflowConfig`** (TS 端产出); 仅当 metadata 只含 `runtimeStudy`、缺 `workflowConfig` 时, 才走 fallback `_supervisor_instruction_from_study(study)` — 该 fallback 用 `studyTitle / researchGoal / targetAudience / introScript` 从头 compose, **不消费 `moderatorInstruction`** (因为 Python 的 `InterviewRuntimeStudy` mirror 不含该字段; 这是约定: persona 合成由 TS 完成, Python 只消费)
-6. **`apps/agent/agent/interview/supervisor.py::Supervisor.__init__`** 用 `workflowConfig.supervisorInstruction` 初始化 LiveKit Supervisor (line 69)
+5. **`apps/agent-voice-worker/src/mastra/merism-room-metadata.ts::workflowConfigFromMerismRoomMetadata`** 读 room metadata 时**优先消费已合成好的 `workflowConfig`** (TS 端产出); 仅当 metadata 只含 `runtimeStudy`、缺 `workflowConfig` 时, 才走 fallback `buildWorkflowConfigFromRuntimeStudy(study, sessionId)` — 该 fallback 用 `studyTitle / researchGoal / targetAudience / introScript` 从头 compose, **不消费 `moderatorInstruction`** (persona 合成由 TS Function 边完成, worker 只消费)
+6. **`apps/agent-voice-worker/src/mastra/merism-room-metadata.ts::buildMerismVoiceAgent`** 用 `workflowConfig.supervisorInstruction` 初始化 Mastra `Agent` 的 `instructions`
 
 **Morris 与这条链的关系: 不写、不读、不参与**。
 
 - Morris **不写** `moderatorInstruction` (它在 survey editor 表单里, 由研究员手写)
-- Morris **不读** `supervisorInstruction` / `sectionInstruction` (那是 Python agent 进程的运行时输入, 在 LiveKit room metadata 流)
+- Morris **不读** `supervisorInstruction` / `sectionInstruction` (那是 LiveKit worker 进程的运行时输入, 在 LiveKit room metadata 流)
 - Morris `createStudyDraft` 工具的产出物是 `SurveyDraft` (供研究员复核), 不直接活化为活跃 `Survey` 行
 
 `grep -RIn 'moderatorInstruction\|supervisorInstruction' apps/web/lib/assistant` 应**全 0 命中** — 命中即漂移信号。
@@ -160,7 +178,7 @@ MerismV2 拥有**两条彼此独立的 LLM 链路**。它们不是同一个 agen
 - `packages/contracts`: zod schemas and TypeScript types for entities, API contracts, and shared interview workflow state.
 - `packages/observability`: TypeScript logger, retry, and function error-boundary helpers.
 - `packages/appwrite-schema`: declarative Appwrite schema (collections, attributes, indexes, permissions, storage buckets) with `apply` / `verify` tooling under `src/`.
-- `apps/agent`: Python LiveKit Agent Worker. Contains the realtime interview implementation: `agent/interview/{engine,supervisor,workflow,transcript}.py` (LiveKit Supervisor + ordered TaskGroups + AgentTasks), `agent/persistence/` (Appwrite repository + pure serializers), `agent/providers/` (DeepSeek LLM + Qwen ASR/TTS adapters), and the contracts mirror in `agent/contracts.py`. Realtime deps are an opt-in extra (`uv sync --extra realtime`).
+- `apps/agent-voice-worker`: TypeScript LiveKit Agent Worker (post ADR-0013 唯一 interview worker). `src/mastra/` 挂 `@mastra/livekit` `createLiveKitWorker` + Mastra `Agent` + DashScope Qwen LLM / FunASR realtime STT / Qwen realtime TTS. `src/interview/` 拥有访谈 orchestrator + section/question 状态机 + probe gate. `src/transport/` 发布 `merism.interviewState` 与注册 `merism.submit_answer` RPC. `src/persistence/finalize-client.ts` 调 `apps/functions/finalizeInterviewSession` Function 单向落 Appwrite. `src/health.ts` 挂 `/_livez` / `/_readyz` + SIGTERM drain.
 - `apps/functions/issueLivekitToken`: example Appwrite Function with pure-core / SDK-wrapper split.
 - `apps/web`: Next.js 15 (App Router) researcher web app. Hosts the page assistant Morris (`app/api/assistant/route.ts` + `lib/assistant/*` + `components/assistant/*` + standalone `/assistant`), the interviewee surfaces (`/interview` + `components/interview/*`; UI follows the *Design Interviewer Page* prototype — pre-interview flow, camera self-view + screen share, two-pane room, per `docs/design/multimodal-interview-and-structured-rendering.md §9`), the editor surfaces (`/home`, `/studies/[id]`, `components/studies/*`), and the analysis surfaces (`/insights`, `/insights/[id]`, `/report`). The current editor is a v0-generated draft slated for redesign; do not treat its persistence layer (Drizzle/Postgres) as the architectural target.
 - `docs/adr/`: architecture decision records. `0001` (interview controller), `0002` (page assistant stack), `0003` (analysis report), `0004`/`0005` (Gemini visual analysis + durability), `0006` (workspaces / billing), `0007` (Gemini Live), `0008` (ParticipantEgress for recording).
@@ -182,13 +200,11 @@ Current gaps and known drifts:
 - Typecheck all packages with typecheck scripts: `pnpm typecheck`.
 - Run TypeScript tests: `pnpm test`.
 - Run property tests: `pnpm test:properties`.
-- Run Python agent tests from root: `pnpm test:py`.
-- Run Python tests directly: `cd apps/agent && uv run pytest`.
 - Start local infra: `pnpm stack:up`.
 - **Local researcher login (manual QA):** see `docs/dev/local-researcher-account.md` (`researcher@merism.local` / pre-created on local Appwrite).
 - Stop local infra without deleting volumes: `pnpm stack:down`.
 - Reset local infra volumes: `pnpm stack:reset`.
-- Run agent with realtime deps: `cd apps/agent && uv sync --extra realtime && uv run python -m agent.main dev`.
+- Run TS agent voice worker (dev): `cd apps/agent-voice-worker && pnpm dev` (Mastra HTTP) + `pnpm dev:worker` (LiveKit worker).
 
 Before running commands that require Docker, network access, or dependency downloads, expect that sandbox approval may be needed.
 
