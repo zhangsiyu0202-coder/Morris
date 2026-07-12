@@ -75,12 +75,25 @@ export function AssistantDock() {
           >
             <header className="flex items-center justify-between border-b border-mauve-200 bg-ink-0 px-4 py-3">
               <div className="flex items-center gap-2">
-                <span className="flex size-7 items-center justify-center rounded-full bg-mauve-100 text-ink-600">
-                  <Sparkles size={15} />
+                {/*
+                 * Alignment: avatar is size-8 (32px) so its outer box matches
+                 * the size-8 icon buttons in the header actions on the right.
+                 * The inner Sparkles icon (size=16) mirrors the History /
+                 * Plus / Maximize2 / X icon sizes used on the right side, so
+                 * both header halves sit on the same visual baseline.
+                 */}
+                <span className="flex size-8 items-center justify-center rounded-full bg-mauve-100 text-ink-600">
+                  <Sparkles size={16} />
                 </span>
                 <span className="font-display text-body-lg text-ink-900">研究助手</span>
               </div>
-              <div className="flex items-center gap-1">
+              {/*
+               * Alignment: gap-1.5 (6px) matches the header-action gap used by
+               * assistant-scene-shell's left/right buttons. gap-1 (4px) here
+               * felt visually cramped and inconsistent with the standalone
+               * page header.
+               */}
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => setHistoryOpen((v) => !v)}

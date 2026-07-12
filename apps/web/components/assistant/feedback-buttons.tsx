@@ -78,7 +78,14 @@ export function FeedbackButtons({ conversationId, messageId }: FeedbackButtonsPr
     return (
       <div
         data-testid="feedback-down-text"
-        className="mt-1 flex items-end gap-2 rounded-sm border border-mauve-200 bg-mauve-50 p-2"
+        // Alignment: the row contains a rows=2 textarea (~48px tall) plus two
+        // 28×28 (h-7 / size-7) action buttons. `items-end` used to make the
+        // buttons "sink" flush with the textarea's bottom edge, leaving a
+        // ~20px gap above them and a jagged top edge across the row. Using
+        // `items-center` keeps the buttons visually centered against the
+        // textarea, which reads as one control row instead of a shorter
+        // control attached to a taller one.
+        className="mt-1 flex items-center gap-2 rounded-sm border border-mauve-200 bg-mauve-50 p-2"
       >
         <textarea
           aria-label="反馈内容 (可选)"

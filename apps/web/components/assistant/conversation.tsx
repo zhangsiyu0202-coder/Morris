@@ -670,7 +670,14 @@ export function Conversation({
               }}
               rows={1}
               placeholder="问我任何关于你调研的问题…"
-              className="max-h-32 w-full resize-none rounded-md border border-mauve-200 bg-ink-0 px-3.5 py-2.5 font-ui text-body-sm leading-6 text-ink-900 shadow-xs outline-none transition-colors placeholder:text-ink-400 focus:border-mauve-400"
+              // Alignment: `h-10` locks the single-line height to 40px = send/stop
+              // button `size-10`. `ring-1` replaces `border-1` so the outline does
+              // not add 2px to the layout box (border would push the textarea to
+              // 42px and leave the button visually 2px shorter on the same row).
+              // On multi-line growth (auto-expand up to `max-h-32`), the container
+              // uses `items-end` so the button stays flush with the textarea's
+              // bottom edge instead of drifting up the taller box.
+              className="h-10 max-h-32 w-full resize-none rounded-md bg-ink-0 px-3.5 py-2 font-ui text-body-sm leading-6 text-ink-900 shadow-xs outline-none ring-1 ring-mauve-200 transition-colors placeholder:text-ink-400 focus:ring-mauve-400"
             />
           </div>
           {isBusy ? (
