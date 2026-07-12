@@ -121,23 +121,23 @@ export class LiveKitFlowHost implements FlowEngineHost {
   // -------------------------------------------------------------------------
 
   async askQuestion(step: QuestionStep, _ctx: HostContext): Promise<QuestionRunResult> {
-    // Publish the current stepId so the UI renders the structured control
-    // for this step. `onStepEnter` also publishes but only on the engine's
-    // first enter — `askQuestion` re-publishes to be idempotent on retries.
-    // The publisher already dedupes on identical payloads.
+    // Race-free order: register the pending-answer slot FIRST, then publish
+    // "collecting". If we publish before registering, a fast-clicking
+    // interviewee can race the RPC in before the slot exists — the RPC
+    // handler sees `hasActiveTask=false` and rejects. Constructing the
+    // deferred outside the Promise executor lets us set `#pendingAnswer`
+    // BEFORE the first attribute event reaches the room.
+    let resolveFn!: (result: QuestionRunResult) => void;
+    const promise = new Promise<QuestionRunResult>((resolve) => {
+      resolveFn = resolve;
+    });
+    this.#pendingAnswer = { stepId: step.stepId, resolve: resolveFn };
+
     await this.#publisher.publish({
       status: "collecting",
       currentQuestionId: step.stepId,
     });
-
-    return new Promise<QuestionRunResult>((resolve) => {
-      this.#pendingAnswer = { stepId: step.stepId, resolve };
-      // NOTE: no LLM utterance here — the Mastra Agent that carries the
-      // system prompt for the interview will speak the question when it
-      // sees the flow reach this step (the outline in the agent's
-      // `instructions` names each step). Explicit prompt fire will land
-      // when the voice-completion tool loop is implemented.
-    });
+    return promise;
   }
 
   async runProbe(step: ProbeStep, ctx: HostContext): Promise<ProbeRunResult> {
@@ -242,10 +242,16 @@ export class LiveKitFlowHost implements FlowEngineHost {
   }
 
   async onStepEnter(stepId: string, _ctx: HostContext): Promise<void> {
-    await this.#publisher.publish({
-      status: "collecting",
-      currentQuestionId: stepId,
-    });
+    // Intentionally does not publish. Publishing "collecting" here would
+    // race the executor: for a QuestionStep, `askQuestion` publishes the
+    // same state AFTER registering the pending-answer slot; a client
+    // observing the pre-slot publish and racing `merism.submit_answer`
+    // would be rejected. Executors publish when they have a slot to receive
+    // the answer:
+    //   - QuestionStep: `askQuestion` publishes status=collecting
+    //   - ProbeStep: `runProbe`'s internal `askAndWait` (future)
+    //   - ConditionStep: no publish (LLM eval is short-lived)
+    void stepId;
   }
 
   async onFlowCompleted(_ctx: HostContext): Promise<void> {
