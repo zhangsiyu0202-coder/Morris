@@ -11,6 +11,7 @@ import {
   DashboardWidgetType,
   VisualAnalysisJobStatus,
 } from "./entities.js";
+import { InterviewFlowConfigSchema } from "./flow-engine.js";
 
 // issueLivekitToken (§6.2)
 export const IssueLivekitTokenRequestSchema = z.object({
@@ -310,6 +311,11 @@ export const InterviewRoomMetadataSchema = z.object({
   surveyId: z.string(),
   runtimeStudy: InterviewRuntimeStudySchema.optional(),
   workflowConfig: z.lazy(() => InterviewWorkflowConfigSchema).optional(),
+  // Flow-engine config: new (steps + edges) shape consumed by the Python
+  // flow_engine. When present, this OVERRIDES `runtimeStudy` / `workflowConfig`
+  // on the agent side. Kept optional so issueLivekitToken can migrate over in
+  // a follow-up slice without breaking existing in-flight sessions.
+  flowConfig: z.lazy(() => InterviewFlowConfigSchema).optional(),
 });
 
 export const SubmitInterviewAnswerRpcRequestSchema = z.object({
