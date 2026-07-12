@@ -113,6 +113,15 @@ export const COLLECTIONS: CollectionDef[] = [
       // survey-editor moderator-instruction increment: dedicated long-text column
       // (not flowConfig) for the AI moderator delivery directives.
       { key: "moderatorInstruction", type: "string", size: TEXT_SIZE, required: false, default: "" },
+      // instruction-as-context-doc (ADR-0015): single free-form markdown
+      // document that carries the full AI moderator operating manual —
+      // "what this study is about / notes / research goal", CLAUDE.md
+      // style. Once populated, it supersedes the four legacy fields
+      // (moderatorInstruction + flowConfig.{researchGoal, targetAudience,
+      // introScript}) which stay for one deprecation cycle then sunset.
+      // The mapper reads this field first and only falls back to the
+      // legacy composed string when this column is empty (legacy row).
+      { key: "instruction", type: "string", size: TEXT_SIZE, required: false, default: "" },
       { key: "version", type: "integer", required: false, default: 1 },
       { key: "updatedAt", type: "datetime", required: true },
     ],

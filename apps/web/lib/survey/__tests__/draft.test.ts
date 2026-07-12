@@ -13,6 +13,7 @@ const survey: Survey = {
     introScript: "你好,感谢参与",
   },
   moderatorInstruction: "语气温和,允许停顿",
+  instruction: "",
   version: 1,
   updatedAt: "2024-12-03T00:00:00.000Z",
 };

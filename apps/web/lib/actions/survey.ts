@@ -100,6 +100,10 @@ export async function createSurvey(title: string): Promise<string> {
       status: "draft",
       flowConfig: JSON.stringify({}),
       moderatorInstruction: "",
+      // ADR-0015 primary field, initialized empty. Populated later when
+      // the researcher clicks "generate baseline" (Wave 2) or edits by
+      // hand in guide-editor.
+      instruction: "",
       version: 1,
       updatedAt: new Date().toISOString(),
     },
@@ -137,6 +141,15 @@ export async function saveSurveyDraft(surveyId: string, draftInput: SurveyDraft)
       introScript: draft.introScript,
     }),
     moderatorInstruction: draft.moderatorInstruction,
+    // ADR-0015 (instruction-as-context-document) primary column. During
+    // the Wave 1 rollout the guide-editor UI still writes the four legacy
+    // fields, so `draft.instruction` will typically arrive as "" for
+    // researchers who have not yet clicked a future "generate baseline"
+    // action. Empty is legal — the composer's fallback rebuilds from the
+    // legacy fields in that case. Once the UI migrates (Wave 2), this
+    // becomes the primary write and the four legacy fields become
+    // read-only fallbacks for pre-migration rows.
+    instruction: draft.instruction,
     version: version + 1,
     updatedAt: new Date().toISOString(),
   });

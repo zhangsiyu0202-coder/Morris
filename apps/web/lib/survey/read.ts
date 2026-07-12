@@ -69,6 +69,11 @@ export async function loadSurveyDraft(surveyId: string): Promise<LoadedSurvey | 
     status: (doc.status as Survey["status"]) ?? "draft",
     flowConfig: parseJson<Record<string, unknown>>(doc.flowConfig, {}),
     moderatorInstruction: String(doc.moderatorInstruction ?? ""),
+    // ADR-0015 primary field. Legacy rows return "" (Appwrite default);
+    // the composer's fallback path in buildInterviewFlowConfigFromDraft
+    // reconstructs a supervisor instruction from the four legacy fields
+    // when this is empty.
+    instruction: String(doc.instruction ?? ""),
     version: Number(doc.version ?? 1),
     updatedAt: String(doc.updatedAt ?? new Date().toISOString()),
   };

@@ -274,6 +274,27 @@ export const SurveyDraftSchema = z.object({
   // into InterviewWorkflowConfig.supervisorInstruction at build time. Default ""
   // keeps existing drafts valid and means "use the operational default only".
   moderatorInstruction: z.string().trim().default(""),
+  /**
+   * `instruction` — the CLAUDE.md-style single free-form markdown document
+   * that carries the full AI moderator operating manual for this study:
+   * "what this study is about / notes / research goal / who is being
+   * interviewed / how to open / how to close". Consumed by the interview
+   * agent (as `agent.instructions`), analyzeSession, analyzeSurvey,
+   * Notebook, and Morris analysis tools — **one source of truth for
+   * the study-wide research intent**.
+   *
+   * ADR-0015 (instruction-as-context-document) supersedes the four
+   * legacy fields (`moderatorInstruction`, `researchGoal`,
+   * `targetAudience`, `introScript`) which are being sunset over one
+   * deprecation cycle. During the migration:
+   *   - `instruction` is optional (default "") so legacy drafts still
+   *     validate — the composer's fallback path (see
+   *     `buildInterviewFlowConfigFromDraft`) reconstructs a supervisor
+   *     instruction from the four legacy fields when this one is empty.
+   *   - New drafts populated by the guide editor / Morris (post-Wave 2)
+   *     set this field directly with the researcher-approved markdown.
+   */
+  instruction: z.string().default(""),
   sections: z.array(SurveyDraftSectionSchema).min(1),
 }).superRefine((draft, ctx) => {
   // Collect all stableIds in the draft; then verify every branchRule
@@ -1000,13 +1021,28 @@ export function buildInterviewFlowConfigFromDraft(
     moderatorInstruction: overrideModerator,
   } = BuildInterviewFlowConfigInputSchema.parse(input);
 
-  // Persona composition mirrors buildInterviewWorkflowConfigFromDraft exactly.
+  // Persona composition. Preference order per ADR-0015
+  // (instruction-as-context-document):
+  //   1. Explicit override (composer caller has already prepared a string,
+  //      e.g. buildInterviewRoomMetadataFromDraft reusing the workflowConfig
+  //      composed instruction to keep the two shapes byte-identical during
+  //      the workflowConfig sunset window).
+  //   2. `draft.instruction` — the CLAUDE.md-style single markdown document
+  //      that supersedes the four legacy fields. When non-empty, use it as
+  //      the full agent operating manual verbatim; no compositional wrapping.
+  //   3. Legacy compose path — for pre-Wave-2 rows that only carry the four
+  //      legacy fields (`moderatorInstruction` / `researchGoal` etc.), fall
+  //      back to the same string the old `buildInterviewWorkflowConfigFromDraft`
+  //      would build. Keeps existing surveys working through the deprecation
+  //      cycle.
   const operationalInstruction = `Guide a qualitative interview for "${draft.title}". Use the intro script, follow the section order, and use probe instructions when configured.`;
   const moderatorPersona = draft.moderatorInstruction?.trim();
   const composedInstruction = moderatorPersona
     ? `${moderatorPersona}\n\n${operationalInstruction}`
     : operationalInstruction;
-  const finalModerator = overrideModerator ?? composedInstruction;
+  const trimmedInstruction = draft.instruction?.trim() ?? "";
+  const finalModerator = overrideModerator
+    ?? (trimmedInstruction.length > 0 ? trimmedInstruction : composedInstruction);
 
   // Walk the draft directly (rather than via runtimeStudy) so we have access
   // to `branchRules` and `stableId`. Section is a UI-grouping concern; the

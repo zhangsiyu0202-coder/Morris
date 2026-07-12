@@ -81,6 +81,11 @@ export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: Surv
   const [targetAudience, setTargetAudience] = useState(draft.targetAudience);
   const [introScript, setIntroScript] = useState(draft.introScript);
   const [moderatorInstruction, setModeratorInstruction] = useState(draft.moderatorInstruction);
+  // ADR-0015 primary field. Wave 1: no UI, just pass-through so a save
+  // does not overwrite an existing Survey.instruction. Wave 2 will add a
+  // markdown editor that binds to this state.
+  const [instruction, _setInstruction] = useState(draft.instruction);
+  void _setInstruction;
   const [guide, setGuide] = useState<Guide>(() => guideFromDraftSections(draft.sections));
 
   const [selection, setSelection] = useState<Selection>({ kind: "intro" });
@@ -104,6 +109,11 @@ export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: Surv
         targetAudience,
         introScript,
         moderatorInstruction,
+        // ADR-0015 primary field. Wave 1 keeps the UI unchanged so we
+        // just pass through the current Survey.instruction value read
+        // earlier (an empty string for legacy rows); Wave 2 will add a
+        // dedicated markdown editor here.
+        instruction,
         sections: draftSectionsFromGuide(guide),
       };
       try {

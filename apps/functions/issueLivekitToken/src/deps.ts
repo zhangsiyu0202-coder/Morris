@@ -207,10 +207,16 @@ export function createRealDeps(): IssueDeps {
             }>(survey.flowConfig, {}),
             // moderatorInstruction is a dedicated top-level column on the
             // Survey document (not inside flowConfig). The mapper reads it
-            // straight through — no JSON parse needed.
+            // straight through — no JSON parse needed. Legacy field per
+            // ADR-0015; being sunset in favor of `instruction`.
             moderatorInstruction: typeof survey.moderatorInstruction === "string"
               ? survey.moderatorInstruction
               : undefined,
+            // ADR-0015 primary column. When non-empty this becomes the
+            // agent's full operating manual (CLAUDE.md-style); when empty
+            // (legacy row) the composer's fallback reconstructs from the
+            // four legacy fields.
+            instruction: typeof survey.instruction === "string" ? survey.instruction : undefined,
           },
           sections: sectionsRes.documents.map((s: any) => ({
             $id: s.$id,

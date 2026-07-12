@@ -21,8 +21,22 @@ export interface SurveyRow {
    * worker. Companion fix to the branchRules read-path repair in commit
    * 34ff5aa. Guarded by the moderatorInstruction round-trip test in
    * survey-draft-mapper.test.ts.
+   *
+   * Legacy field, being sunset per ADR-0015 (instruction-as-context-doc);
+   * once `instruction` is populated, this field is ignored downstream.
    */
   moderatorInstruction?: string;
+  /**
+   * `instruction` — the CLAUDE.md-style single free-form markdown document
+   * that carries the full AI moderator operating manual. Per ADR-0015
+   * supersedes the four legacy fields (moderatorInstruction /
+   * researchGoal / targetAudience / introScript). The mapper prefers this
+   * value when non-empty; when empty (legacy row that predates the
+   * column), the mapper leaves `draft.instruction` empty and the
+   * composer's fallback reconstructs a supervisor instruction from the
+   * legacy fields via `buildInterviewWorkflowConfigFromDraft`.
+   */
+  instruction?: string;
 }
 
 export interface SectionRow {
@@ -101,6 +115,10 @@ export function buildSurveyDraftFromDocs(input: BuildSurveyDraftInput): SurveyDr
     // base only". Dropping this field entirely (as the mapper used to)
     // silently discarded the researcher's persona for every session.
     moderatorInstruction: survey.moderatorInstruction ?? "",
+    // ADR-0015 primary field. Passes through directly; legacy composer
+    // fallback (in `buildInterviewFlowConfigFromDraft`) handles the case
+    // where this field is empty on a pre-migration row.
+    instruction: survey.instruction ?? "",
     sections: [...sections]
       .sort((a, b) => a.order - b.order)
       .map((section) => ({

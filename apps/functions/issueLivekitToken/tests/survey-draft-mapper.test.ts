@@ -356,3 +356,56 @@ describe("buildSurveyDraftFromDocs — Survey.moderatorInstruction read path (pe
     expect(draft.moderatorInstruction).toBe("keep-me");
   });
 });
+
+describe("buildSurveyDraftFromDocs — Survey.instruction (ADR-0015 primary field)", () => {
+  // The ADR-0015 rollout adds a new top-level `Survey.instruction` column
+  // carrying the CLAUDE.md-style AI moderator operating manual. The mapper
+  // reads it through; during Wave 1 the field is still optional so legacy
+  // rows (that predate the column) continue to work — the composer's
+  // fallback path rebuilds a supervisor instruction from the four legacy
+  // fields when this one is empty.
+
+  it("propagates a non-empty instruction to the draft", () => {
+    const markdown = [
+      "## 研究意图",
+      "了解设计师在跨部门评审时的沟通痛点。",
+      "",
+      "## 主持行为要点",
+      "- 语气温和,允许沉默",
+      "- 遇到抽象回答,追问具体案例",
+    ].join("\n");
+    const draft = buildSurveyDraftFromDocs({
+      survey: { ...baseSurvey, instruction: markdown },
+      sections: [baseSection],
+      questions: [baseQuestion],
+    });
+    expect(draft.instruction).toBe(markdown);
+  });
+
+  it("defaults to '' when survey has no instruction column (legacy row)", () => {
+    const { instruction: _drop, ...withoutField } = baseSurvey as SurveyRow & {
+      instruction?: string;
+    };
+    void _drop;
+    const draft = buildSurveyDraftFromDocs({
+      survey: withoutField,
+      sections: [baseSection],
+      questions: [baseQuestion],
+    });
+    expect(draft.instruction).toBe("");
+  });
+
+  it("preserves instruction independently of moderatorInstruction (both fields coexist during migration)", () => {
+    const draft = buildSurveyDraftFromDocs({
+      survey: {
+        ...baseSurvey,
+        moderatorInstruction: "legacy persona",
+        instruction: "new markdown manual",
+      },
+      sections: [baseSection],
+      questions: [baseQuestion],
+    });
+    expect(draft.moderatorInstruction).toBe("legacy persona");
+    expect(draft.instruction).toBe("new markdown manual");
+  });
+});
