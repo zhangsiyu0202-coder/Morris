@@ -1,0 +1,36 @@
+{
+  "name": "@merism/agent-voice-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "mastra dev",
+    "dev:worker": "tsx src/mastra/voice-worker.ts dev",
+    "download:models": "livekit-agents download-files",
+    "probe:llm": "tsx scripts/probe-qwen-llm.ts",
+    "probe:stt": "tsx scripts/probe-funasr.ts",
+    "probe:tts": "tsx scripts/probe-qwen-tts.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^2.0.61",
+    "@livekit/agents": "1.5.1",
+    "@livekit/agents-plugin-livekit": "1.5.1",
+    "@livekit/agents-plugin-silero": "1.5.1",
+    "@livekit/rtc-node": "^0.13.31",
+    "@mastra/core": "1.50.1",
+    "@mastra/livekit": "0.2.0",
+    "@merism/contracts": "workspace:*",
+    "@merism/observability": "workspace:*",
+    "ai": "^6.0.196",
+    "ws": "^8.18.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.13",
+    "@types/node": "^22.10.2",
+    "mastra": "1.18.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
