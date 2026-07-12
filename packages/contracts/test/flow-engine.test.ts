@@ -188,7 +188,7 @@ describe("InterviewFlowConfigSchema invariants", () => {
   const baseConfig = {
     surveyId: "surv-1",
     sessionId: "sess-1",
-    supervisorInstruction: "be nice",
+    moderatorInstruction: "be nice",
   };
 
   it("accepts a minimal linear flow (Q1 → Q2)", () => {

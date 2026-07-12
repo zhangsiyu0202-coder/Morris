@@ -206,10 +206,10 @@ export const InterviewFlowConfigSchema = z
   .object({
     surveyId: z.string().min(1),
     sessionId: z.string().min(1),
-    /** The composed supervisor system prompt (persona + operational rules).
-     *  Composed on the TS side by the config builder, consumed verbatim by the
-     *  Python engine host. */
-    supervisorInstruction: z.string().min(1),
+    /** The composed moderator system prompt (researcher-authored persona +
+     *  operational rules). Composed on the TS side by the config builder,
+     *  consumed verbatim by the Python engine host as the LLM system prompt. */
+    moderatorInstruction: z.string().min(1),
     startStepId: z.string().min(1),
     steps: z.array(FlowStepSchema).min(1),
     edges: z.array(FlowEdgeSchema).default([]),
