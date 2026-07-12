@@ -17,6 +17,8 @@ export type {
   BuildInterviewRoomMetadataInput,
   BuildInterviewRuntimeStudyInput,
   BuildInterviewWorkflowConfigInput,
+  FinalizeInterviewSessionRequest,
+  FinalizeInterviewSessionResponse,
   InterviewAgentState,
   InterviewAgentStatus,
   InterviewAnswerPayload,

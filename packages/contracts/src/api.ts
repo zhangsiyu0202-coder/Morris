@@ -330,6 +330,53 @@ export const SubmitInterviewAnswerRpcResponseSchema = z.object({
   completed: z.boolean(),
 });
 
+/**
+ * `finalizeInterviewSession` Function contract.
+ *
+ * Post ADR-0013 this Function is the ONLY path from the Mastra voice worker
+ * to Appwrite for terminal-state artifacts (session state + collected answers
+ * + optional transcript + optional quality flags). Called from
+ * `apps/agent-voice-worker/src/persistence/finalize-client.ts` inside the
+ * worker's `onCallEnd` hook.
+ *
+ * `terminalStatus` mirrors the SessionState enum but is narrowed to the
+ * three legal terminal values — the Function rejects any other value at
+ * schema time.
+ */
+export const FinalizeInterviewSessionRequestSchema = z.object({
+  sessionId: z.string().min(1),
+  surveyId: z.string().min(1),
+  terminalStatus: z.enum(["completed", "abandoned", "failed"]),
+  /**
+   * `questionId → { sectionId, questionType, questionContent, answer, source,
+   * probe? }`. Same shape the Python `collected_answers_map` produced.
+   */
+  collectedAnswers: z.record(z.string(), z.record(z.string(), z.unknown())),
+  /**
+   * Optional finalized transcript segments. When omitted the Function does
+   * not touch the transcripts collection (the worker may not have received
+   * any transcription events, e.g. because the interviewee never spoke).
+   */
+  transcript: z
+    .object({
+      segments: z.array(TranscriptSegmentSchema),
+      language: z.string().default("zh"),
+    })
+    .optional(),
+  errorContext: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const FinalizeInterviewSessionResponseSchema = z.object({
+  ok: z.literal(true),
+  sessionId: z.string(),
+  terminalStatus: z.enum(["completed", "abandoned", "failed"]),
+  transcriptPersisted: z.boolean(),
+  analysisTriggered: z.boolean(),
+});
+
+export type FinalizeInterviewSessionRequest = z.infer<typeof FinalizeInterviewSessionRequestSchema>;
+export type FinalizeInterviewSessionResponse = z.infer<typeof FinalizeInterviewSessionResponseSchema>;
+
 export const AnalysisReportInputSchema = z.object({
   sessionId: z.string(),
   survey: z.object({
