@@ -61,7 +61,7 @@ Reference templates already in the repo: `tests/properties/`, `apps/agent-voice-
 
 - Pure-core handlers (`apps/functions/*/src/handler.ts`): **100%** branch coverage. Tested via in-memory `Deps`.
 - zod schemas with `superRefine`: every clause has at least one positive test (input that passes) and one negative test (input that fails with the expected issue path).
-- Workflow state functions in `apps/agent-voice-worker/src/interview/workflow-state.ts`: every transition function has unit + property test.
+- Pure flow-engine functions in `apps/agent-voice-worker/src/interview/flow-engine/{state,edges,probe,condition-eval}.ts`: every branching function has unit + property test in `tests/properties/flow-engine/`.
 - SDK wrappers (`main.ts`, `appwrite_repository.py` `from_env`): integration tested only — no need for branch coverage on the env wiring.
 
 ## Test double pattern (binding)
