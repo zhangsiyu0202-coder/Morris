@@ -1,7 +1,7 @@
 // Real deps wiring Appwrite Server SDK + LiveKit. The LiveKit apiSecret is read
 // only here from env and never returned or logged (Req 3.7).
 import { Client, Databases, Permission, Query, Role } from "node-appwrite";
-import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
+import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
 import { buildInterviewRoomMetadataFromDraft } from "@merism/contracts";
 import type { IssueDeps, LinkRecord, SessionInit } from "./handler.js";
 import { buildSurveyDraftFromDocs } from "./survey-draft-mapper.js";
@@ -16,6 +16,14 @@ interface Env {
   LIVEKIT_INTERNAL_URL?: string;
   LIVEKIT_API_KEY: string;
   LIVEKIT_API_SECRET: string;
+  /**
+   * Registered agent name of the Mastra voice worker. Post ADR-0013 the worker
+   * is dispatched unconditionally on every token issuance — the historical
+   * "only if this env is set" gating existed because two workers (Python auto
+   * + TS explicit) could otherwise join the same room. Now there is only one
+   * worker; the env stays overridable for rollout drills / local canaries.
+   */
+  MERISM_TS_VOICE_AGENT_NAME: string;
 }
 
 function req(k: string): string {
@@ -33,6 +41,10 @@ function requireEnv(): Env {
     LIVEKIT_INTERNAL_URL: process.env.LIVEKIT_INTERNAL_URL,
     LIVEKIT_API_KEY: req("LIVEKIT_API_KEY"),
     LIVEKIT_API_SECRET: req("LIVEKIT_API_SECRET"),
+    // Registered name of apps/agent-voice-worker (see src/mastra/voice-worker.ts).
+    // Overridable only for rollout drills; the default is the production name.
+    MERISM_TS_VOICE_AGENT_NAME:
+      process.env.MERISM_TS_VOICE_AGENT_NAME ?? "merism-mastra-voice-worker",
   };
 }
 
@@ -63,6 +75,7 @@ export function createRealDeps(): IssueDeps {
   // separate internal URL is configured.
   const serverSideUrl = (env.LIVEKIT_INTERNAL_URL ?? env.LIVEKIT_URL).replace(/^ws/, "http");
   const rooms = new RoomServiceClient(serverSideUrl, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET);
+  const dispatch = new AgentDispatchClient(serverSideUrl, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET);
 
   return {
     livekitUrl: env.LIVEKIT_URL,
@@ -235,6 +248,26 @@ export function createRealDeps(): IssueDeps {
         metadata: finalMetadata,
         emptyTimeout: 60 * 60,
         maxParticipants: 5,
+      });
+
+      // Post ADR-0013 the Mastra voice worker is the ONLY interview worker.
+      // `issueLivekitToken` dispatches it explicitly on every token issuance
+      // — no auto-dispatch, no fan-out, no double-worker race that the older
+      // "Python worker auto-dispatches + TS worker sometimes explicit-dispatches"
+      // topology could produce. Per LiveKit Server SDK docs, explicit dispatch
+      // requires the worker to be registered with an `agentName` — which
+      // `apps/agent-voice-worker/src/mastra/voice-worker.ts` does under the
+      // same `MERISM_TS_VOICE_AGENT_NAME` value.
+      await dispatch.createDispatch(room, env.MERISM_TS_VOICE_AGENT_NAME, {
+        metadata: JSON.stringify({
+          threadId: baseMetadata.sessionId ?? room,
+          resourceId: baseMetadata.surveyId ?? room,
+          requestContext: {
+            sessionId: baseMetadata.sessionId ?? room,
+            surveyId: baseMetadata.surveyId ?? null,
+            source: "issueLivekitToken",
+          },
+        }),
       });
     },
 
