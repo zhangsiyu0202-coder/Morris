@@ -55,6 +55,7 @@ import {
 import type { SurveyDraft } from "@merism/contracts";
 import { saveSurveyDraft } from "@/lib/actions/survey";
 import { generateGuide, expandSection } from "@/lib/actions/guide-ai";
+import { createLogger } from "@merism/observability";
 
 type SaveState = "idle" | "saving" | "saved";
 
@@ -117,7 +118,10 @@ export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: Surv
         // target that no longer exists), Appwrite server errors, network
         // failures. Without this catch the button spins forever and the
         // researcher has no idea what went wrong.
-        console.error("saveSurveyDraft failed", err);
+        createLogger("component.studies.guide-editor").warn(
+          "saveSurveyDraft failed",
+          { error: err instanceof Error ? err.message : String(err) },
+        );
         setSaveState("idle");
         setSaveError(
           err instanceof Error
