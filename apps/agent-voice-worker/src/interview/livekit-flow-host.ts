@@ -33,7 +33,7 @@ import type {
 } from "@merism/contracts";
 
 import type { SessionLogger } from "../observability/session-logger.js";
-import type { InterviewStatePublisher } from "../transport/attribute-publisher.js";
+import type { InterviewStateSink } from "../transport/attribute-publisher.js";
 import {
   buildConditionPrompt,
   buildJudgePrompt,
@@ -91,14 +91,14 @@ export interface LiveKitFlowHostArgs {
   agent: Agent;
   room: Room;
   log: SessionLogger;
-  publisher: InterviewStatePublisher;
+  publisher: InterviewStateSink;
   runtimeQuestions: Map<string, InterviewRuntimeQuestion>;
 }
 
 export class LiveKitFlowHost implements FlowEngineHost {
   #agent: Agent;
   #log: SessionLogger;
-  #publisher: InterviewStatePublisher;
+  #publisher: InterviewStateSink;
   #runtimeQuestions: Map<string, InterviewRuntimeQuestion>;
   #pendingAnswer: PendingAnswer | null = null;
 
@@ -127,6 +127,10 @@ export class LiveKitFlowHost implements FlowEngineHost {
     // handler sees `hasActiveTask=false` and rejects. Constructing the
     // deferred outside the Promise executor lets us set `#pendingAnswer`
     // BEFORE the first attribute event reaches the room.
+    //
+    // Guarded by livekit-flow-host.test.ts::"askQuestion sets hasPending
+    // BEFORE publishing status=collecting" — reversing the two blocks below
+    // makes that regression test fail.
     let resolveFn!: (result: QuestionRunResult) => void;
     const promise = new Promise<QuestionRunResult>((resolve) => {
       resolveFn = resolve;

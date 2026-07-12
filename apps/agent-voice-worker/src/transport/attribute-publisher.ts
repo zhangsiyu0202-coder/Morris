@@ -10,6 +10,21 @@ import {
 import type { SessionLogger } from "../observability/session-logger.js";
 
 /**
+ * Minimal typed contract of the state-publish surface that consumers depend
+ * on (e.g. `LiveKitFlowHost`). Extracted so tests can substitute a spy that
+ * captures call ordering without instantiating the full LiveKit-coupled
+ * publisher. `InterviewStatePublisher` implements this interface implicitly
+ * (structurally) — no `implements` clause is needed.
+ */
+export interface InterviewStateSink {
+  publish(args: {
+    status: InterviewAgentState["status"];
+    currentSectionId?: string;
+    currentQuestionId?: string;
+  }): Promise<void>;
+}
+
+/**
  * Publishes `InterviewAgentState` to `merism.interviewState` on the local
  * participant. Ported from `apps/agent/agent/interview/supervisor.py::_publish_state`
  * and preserved through the ADR-0013 iteration 5 flow-engine cutover — the
