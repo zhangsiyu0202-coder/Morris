@@ -27,6 +27,7 @@ const baseQuestion = {
   orderInSection: 0,
   config: {},
   probeConfig: {},
+  skipLogic: {},
 };
 
 describe("buildSurveyDraftFromDocs — probeLevel mapping (contract drift guard)", () => {
@@ -184,5 +185,129 @@ describe("buildSurveyDraftFromDocs — single_choice options invariant", () => {
       ],
     });
     expect(draft.sections[0].questions[0].options).toEqual(["a", "b"]);
+  });
+});
+
+describe("buildSurveyDraftFromDocs — branchRules / stableId / stimulus read path (gap regression)", () => {
+  // Before this fix, the mapper's QuestionRow shape only declared `config` and
+  // `probeConfig` — the `skipLogic` (where the frontend piggybacks
+  // branchRules) and `stimulus` fields were dropped on the floor, and
+  // `config.stableId` / `config.allowSkip` weren't propagated either. The
+  // guide editor let researchers configure branch rules in the UI, the writer
+  // persisted them, but they never reached `SurveyDraft` → the flow-engine
+  // composer emitted a purely linear flow and every branch rule was silently
+  // no-op'd. These tests pin the corrected read path.
+
+  it("propagates branchRules + stableId together so the SurveyDraft superRefine passes", () => {
+    const draft = buildSurveyDraftFromDocs({
+      survey: baseSurvey,
+      sections: [baseSection],
+      questions: [
+        {
+          ...baseQuestion,
+          $id: "q1",
+          orderInSection: 0,
+          config: { stableId: "sid-1" },
+          skipLogic: {
+            branchRules: [{ condition: "answer mentions frustration", jumpToQuestionId: "sid-2" }],
+          },
+        },
+        {
+          ...baseQuestion,
+          $id: "q2",
+          orderInSection: 1,
+          prompt: "Second question",
+          config: { stableId: "sid-2" },
+        },
+      ],
+    });
+
+    expect(draft.sections[0].questions[0].stableId).toBe("sid-1");
+    expect(draft.sections[0].questions[0].branchRules).toEqual([
+      { condition: "answer mentions frustration", jumpToQuestionId: "sid-2" },
+    ]);
+    expect(draft.sections[0].questions[1].stableId).toBe("sid-2");
+    expect(draft.sections[0].questions[1].branchRules).toEqual([]);
+  });
+
+  it("propagates allowSkip from config", () => {
+    const draft = buildSurveyDraftFromDocs({
+      survey: baseSurvey,
+      sections: [baseSection],
+      questions: [{ ...baseQuestion, config: { allowSkip: true } }],
+    });
+    expect(draft.sections[0].questions[0].allowSkip).toBe(true);
+  });
+
+  it("propagates stimulus when present", () => {
+    const draft = buildSurveyDraftFromDocs({
+      survey: baseSurvey,
+      sections: [baseSection],
+      questions: [
+        {
+          ...baseQuestion,
+          stimulus: {
+            id: "stim-1",
+            type: "image",
+            url: "https://example.com/pic.png",
+          },
+        },
+      ],
+    });
+    expect(draft.sections[0].questions[0].stimulus).toEqual({
+      id: "stim-1",
+      type: "image",
+      url: "https://example.com/pic.png",
+    });
+  });
+
+  it("omits stimulus when undefined so the schema's optional handling is preserved", () => {
+    const draft = buildSurveyDraftFromDocs({
+      survey: baseSurvey,
+      sections: [baseSection],
+      questions: [{ ...baseQuestion, stimulus: undefined }],
+    });
+    expect(draft.sections[0].questions[0].stimulus).toBeUndefined();
+  });
+
+  it("treats missing skipLogic bucket as empty branchRules (legacy row)", () => {
+    const draft = buildSurveyDraftFromDocs({
+      survey: baseSurvey,
+      sections: [baseSection],
+      questions: [{ ...baseQuestion, skipLogic: undefined }],
+    });
+    expect(draft.sections[0].questions[0].branchRules).toEqual([]);
+  });
+
+  it("treats non-array branchRules payload as empty (defensive on bad writer)", () => {
+    const draft = buildSurveyDraftFromDocs({
+      survey: baseSurvey,
+      sections: [baseSection],
+      questions: [
+        {
+          ...baseQuestion,
+          skipLogic: { branchRules: "not an array" as unknown as never[] },
+        },
+      ],
+    });
+    expect(draft.sections[0].questions[0].branchRules).toEqual([]);
+  });
+
+  it("rejects branchRules whose jumpToQuestionId does not resolve to any stableId (SurveyDraft superRefine)", () => {
+    expect(() =>
+      buildSurveyDraftFromDocs({
+        survey: baseSurvey,
+        sections: [baseSection],
+        questions: [
+          {
+            ...baseQuestion,
+            config: { stableId: "sid-1" },
+            skipLogic: {
+              branchRules: [{ condition: "x", jumpToQuestionId: "sid-does-not-exist" }],
+            },
+          },
+        ],
+      }),
+    ).toThrow(/jumpToQuestionId/);
   });
 });

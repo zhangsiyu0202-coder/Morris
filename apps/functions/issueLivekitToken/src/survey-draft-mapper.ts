@@ -21,6 +21,26 @@ export interface SectionRow {
   order: number;
 }
 
+/**
+ * Persisted question row. Note the JSON buckets are pre-parsed by the caller
+ * so this mapper stays pure (no `JSON.parse` here, so bad-JSON handling
+ * belongs in the SDK wrapper).
+ *
+ * JSON-bucket piggyback map (see `apps/web/lib/actions/survey.ts` writer):
+ *   - `config.stableId`   — editor-generated stable id for branch rule targets
+ *   - `config.allowSkip`  — researcher's per-question skip toggle
+ *   - `config.options`    — choice-based options (order preserved)
+ *   - `probeConfig.level` / `.instruction` — probe policy
+ *   - `stimulus`          — top-level stimulus JSON (image/video/url)
+ *   - `skipLogic.branchRules` — researcher-authored branch rules
+ *
+ * Historically the mapper only read `config.options` + `probeConfig`, silently
+ * dropping `stableId` / `allowSkip` / `stimulus` / `branchRules`. That drift
+ * made the entire branch-rules feature user-invisible: researchers could
+ * configure rules in the guide editor, they persisted, but they never
+ * reached the flow-engine composer. Fixed here + guarded by the new tests
+ * in `survey-draft-mapper.test.ts`.
+ */
 export interface QuestionRow {
   $id: string;
   sectionId: string;
@@ -28,8 +48,16 @@ export interface QuestionRow {
   type: string;
   orderInSection: number;
   /** Persisted JSON. Parsed by the caller before this hits the mapper. */
-  config: { options?: string[] } | undefined;
+  config: { options?: string[]; stableId?: string; allowSkip?: boolean } | undefined;
   probeConfig: { level?: string; instruction?: string } | undefined;
+  /** Persisted JSON (or undefined for legacy rows). Parsed by the caller. */
+  stimulus?: unknown;
+  /**
+   * Persisted JSON on the `skipLogic` Appwrite bucket. `branchRules` is the
+   * only shape shipped so far — other keys are reserved for future
+   * typebot-style skip logic. Parsed by the caller.
+   */
+  skipLogic: { branchRules?: unknown } | undefined;
 }
 
 export interface BuildSurveyDraftInput {
@@ -70,7 +98,18 @@ export function buildSurveyDraftFromDocs(input: BuildSurveyDraftInput): SurveyDr
           .map((question) => {
             const config = question.config ?? {};
             const probe = question.probeConfig ?? {};
-            return {
+            const skipLogic = question.skipLogic ?? {};
+            // branchRules are parsed by the caller from a JSON bucket, so
+            // they arrive as `unknown`. Passing them through undefaulted
+            // lets SurveyDraftQuestionSchema.parse validate the whole
+            // shape (including the top-level superRefine that checks
+            // stableId cross-references) in one place. If a bad payload
+            // slipped past the writer, the parse throws with a stable
+            // issue path; the caller maps it to a 500.
+            const branchRules = Array.isArray(skipLogic.branchRules)
+              ? skipLogic.branchRules
+              : [];
+            const row: Record<string, unknown> = {
               questionText: question.prompt,
               questionType: question.type,
               // StudyProbeLevelSchema = z.enum(["standard","deep"]) with default
@@ -80,7 +119,18 @@ export function buildSurveyDraftFromDocs(input: BuildSurveyDraftInput): SurveyDr
               probeLevel: probe.level === "deep" ? "deep" : "standard",
               probeInstruction: probe.instruction ?? "",
               options: config.options ?? [],
+              allowSkip: config.allowSkip ?? false,
+              branchRules,
             };
+            // Only include optional keys when we actually have a value —
+            // the schema treats absent-vs-empty differently for
+            // `stableId` (min(1) if present) and `stimulus` (validated
+            // when present).
+            if (config.stableId) row.stableId = config.stableId;
+            if (question.stimulus !== undefined && question.stimulus !== null) {
+              row.stimulus = question.stimulus;
+            }
+            return row;
           }),
       })),
   };

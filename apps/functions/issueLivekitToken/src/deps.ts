@@ -219,8 +219,29 @@ export function createRealDeps(): IssueDeps {
             prompt: q.prompt,
             type: q.type,
             orderInSection: q.orderInSection,
-            config: parseJson<{ options?: string[] }>(q.config, {}),
+            // `config` bucket carries options + editor-generated `stableId`
+            // (for branchRule.jumpToQuestionId targets) + `allowSkip`. All
+            // three are needed downstream — the mapper's superRefine will
+            // reject a draft whose branchRules reference a missing
+            // stableId, and skipping stableId silently would surface as
+            // a generic 500 to interviewees. Widen the parse shape here.
+            config: parseJson<{ options?: string[]; stableId?: string; allowSkip?: boolean }>(
+              q.config,
+              {},
+            ),
             probeConfig: parseJson<{ level?: string; instruction?: string }>(q.probeConfig, {}),
+            // Stimulus (image/video/url) is stored as its own top-level
+            // JSON attribute on QuestionBlock, not inside `config`. Parse
+            // when present so the flow-engine composer can attach it to
+            // the resulting QuestionStep.
+            stimulus: q.stimulus ? parseJson<unknown>(q.stimulus, null) : undefined,
+            // `skipLogic` is the Appwrite bucket that hosts researcher-
+            // authored branchRules (piggybacked there by the guide-editor
+            // writer to avoid adding a new attribute). Historically this
+            // was read as `{}` and thrown away; that silently made the
+            // entire BranchRulesEditor UI a no-op. Read + propagate to
+            // the mapper.
+            skipLogic: parseJson<{ branchRules?: unknown }>(q.skipLogic, {}),
           })),
         });
 
