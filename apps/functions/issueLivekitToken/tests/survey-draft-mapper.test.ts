@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import fc from "fast-check";
-import { buildSurveyDraftFromDocs } from "../src/survey-draft-mapper";
+import { buildSurveyDraftFromDocs, type SurveyRow } from "../src/survey-draft-mapper";
 
 // The SurveyDraft mapper used to live inline in deps.ts::createRoom and
 // silently emitted `probeLevel: "none"` while StudyProbeLevelSchema only
@@ -309,5 +309,50 @@ describe("buildSurveyDraftFromDocs — branchRules / stableId / stimulus read pa
         ],
       }),
     ).toThrow(/jumpToQuestionId/);
+  });
+});
+
+describe("buildSurveyDraftFromDocs — Survey.moderatorInstruction read path (persona chain regression)", () => {
+  // Before this fix, `SurveyRow` had no moderatorInstruction field and the
+  // SDK wrapper did not pass one through, so every published survey lost
+  // the researcher's persona directive on its way to the flow-engine.
+  // AGENTS.md § "Instruction 字段链" step 3 literally warns: "这一步漏一
+  // 字段就会让研究员的 persona 整条链被静默丢掉". These tests pin the fix.
+
+  it("propagates a non-empty moderatorInstruction to the draft", () => {
+    const draft = buildSurveyDraftFromDocs({
+      survey: { ...baseSurvey, moderatorInstruction: "warm, professional, no clinical language" },
+      sections: [baseSection],
+      questions: [baseQuestion],
+    });
+    expect(draft.moderatorInstruction).toBe("warm, professional, no clinical language");
+  });
+
+  it("treats missing moderatorInstruction as empty string (schema default) for legacy surveys", () => {
+    // moderatorInstruction is optional on the SurveyRow shape; omit it
+    // entirely to simulate a legacy row that predates the column.
+    const { moderatorInstruction: _drop, ...withoutField } = baseSurvey as SurveyRow & {
+      moderatorInstruction?: string;
+    };
+    void _drop;
+    const draft = buildSurveyDraftFromDocs({
+      survey: withoutField,
+      sections: [baseSection],
+      questions: [baseQuestion],
+    });
+    expect(draft.moderatorInstruction).toBe("");
+  });
+
+  it("passes through a whitespace-heavy moderatorInstruction that the schema trims", () => {
+    // SurveyDraftSchema.moderatorInstruction has .trim() — verify the
+    // schema-level trim happens rather than the mapper silently
+    // trimming out of turn (which would be surprising to a caller who
+    // wrote leading whitespace deliberately).
+    const draft = buildSurveyDraftFromDocs({
+      survey: { ...baseSurvey, moderatorInstruction: "   keep-me   " },
+      sections: [baseSection],
+      questions: [baseQuestion],
+    });
+    expect(draft.moderatorInstruction).toBe("keep-me");
   });
 });

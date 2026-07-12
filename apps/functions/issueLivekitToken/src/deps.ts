@@ -205,6 +205,12 @@ export function createRealDeps(): IssueDeps {
               targetAudience?: string;
               introScript?: string;
             }>(survey.flowConfig, {}),
+            // moderatorInstruction is a dedicated top-level column on the
+            // Survey document (not inside flowConfig). The mapper reads it
+            // straight through — no JSON parse needed.
+            moderatorInstruction: typeof survey.moderatorInstruction === "string"
+              ? survey.moderatorInstruction
+              : undefined,
           },
           sections: sectionsRes.documents.map((s: any) => ({
             $id: s.$id,

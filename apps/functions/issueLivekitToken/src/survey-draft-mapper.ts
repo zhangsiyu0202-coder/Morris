@@ -11,6 +11,18 @@ export interface SurveyRow {
   title: string;
   /** Persisted as JSON string in Appwrite. Parsed by the caller. */
   flowConfig: { researchGoal?: string; targetAudience?: string; introScript?: string } | undefined;
+  /**
+   * Researcher-authored AI moderator persona / tone / pacing directives.
+   * Stored on Appwrite as a dedicated top-level column (NOT inside the
+   * flowConfig JSON bucket — see packages/appwrite-schema/src/schema.ts).
+   * Historically the mapper's SurveyRow shape did not declare this field
+   * and the SDK wrapper did not pass it through, so every published survey
+   * silently lost the researcher's persona on its way to the LiveKit
+   * worker. Companion fix to the branchRules read-path repair in commit
+   * 34ff5aa. Guarded by the moderatorInstruction round-trip test in
+   * survey-draft-mapper.test.ts.
+   */
+  moderatorInstruction?: string;
 }
 
 export interface SectionRow {
@@ -83,6 +95,12 @@ export function buildSurveyDraftFromDocs(input: BuildSurveyDraftInput): SurveyDr
     researchGoal: flow.researchGoal ?? "",
     targetAudience: flow.targetAudience ?? "",
     introScript: flow.introScript ?? "",
+    // Survey-level AI moderator persona. Empty string is the schema
+    // default and is legal (SurveyDraftSchema.moderatorInstruction defaults
+    // to ""); the composer treats an empty value as "use the operational
+    // base only". Dropping this field entirely (as the mapper used to)
+    // silently discarded the researcher's persona for every session.
+    moderatorInstruction: survey.moderatorInstruction ?? "",
     sections: [...sections]
       .sort((a, b) => a.order - b.order)
       .map((section) => ({
