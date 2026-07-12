@@ -1,6 +1,11 @@
-import { createAgentUIStreamResponse, type UIMessage } from "ai";
+import {
+  createUIMessageStreamResponse,
+  convertToModelMessages,
+  type UIMessage,
+} from "ai";
+import { toAISdkStream } from "@mastra/ai-sdk";
 
-import { buildMorrisAgent } from "@/lib/assistant/agent";
+import { buildMorrisAgent, pruneIfOverBudget } from "@/lib/assistant/agent";
 import { buildAgentContext } from "@/lib/assistant/agent-context";
 import { listMemories } from "@/lib/memories/actions";
 import { classifyMorrisError } from "@/lib/assistant/errors";
@@ -19,27 +24,29 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 /**
- * Morris 研究助手对接端点。
+ * Morris 研究助手对接端点。Post ADR-0013 by Mastra `Agent` (see
+ * `lib/assistant/agent.ts` doc for the migration rationale).
  *
  * 行为契约:
  * - 入参: { messages: UIMessage[]; pageContext?: PageContext }
- * - 出参: UIMessageStream(text/event-stream),由前端 useChat + DefaultChatTransport 消费
+ * - 出参: v6 UIMessageStream(text/event-stream), 由前端 useChat + DefaultChatTransport 消费
  *
- * 每次请求构造一个新的 ToolLoopAgent,把当前研究员的 ownerUserId 注入到工具集。
- * 工具的 execute 用 ownerUserId 过滤 Appwrite 查询,保证只读到该研究员自己的数据。
- * 未登录(ownerUserId === null)时,工具会返回 "请先登录" 错误而不是读任何数据。
+ * Streaming pipeline:
  *
- * PageContext (R2): 客户端的 prepareSendMessagesRequest 把当前页面状态注入
- * 到 body, 这里用 strict schema 校验, 校验失败 → 退化为空对象并 warn。
+ *   client → useChat → route
+ *   ├─ convertToModelMessages(UIMessage[]) → ModelMessage[]
+ *   ├─ pruneIfOverBudget(ModelMessage[]) → ModelMessage[] (结构性裁剪)
+ *   ├─ agent.stream(ModelMessage[]) → MastraModelOutput
+ *   ├─ toAISdkStream(output, { from: "agent", version: "v6" }) → V6UIMessageStream
+ *   └─ createUIMessageStreamResponse({ stream }) → SSE Response
  *
- * 错误处理 (R4): 由 `classifyMorrisError` 把底层错误归入 5 类(client/api/
- * transient/transport/unknown), 用对应中文文案回复, 同时进程内计数器自增,
- * 服务端日志写一行结构化简述(不含 stack/api key)。
+ * `pruneIfOverBudget` 替换了旧 AI SDK 6 `prepareStep` 内的 `pruneMessages`
+ * — Mastra Agent 没有 `prepareStep` hook, 但 pre-turn 结构性裁剪落在 route
+ * 侧同样能控住 token 上限。
  *
- * 对话压缩 (Wave 4 SDD): 早期在这里跑 LLM 摘要器 (planCompaction + applyCompaction
- * + summarizeMessages) 是错的——pruneMessages 操作 ModelMessage 在 agent 的
- * prepareStep 里更准确, 且不需要额外一次 LLM 调用。当前实现:agent.ts::prepareStep
- * 使用 AI SDK 6 原生 `pruneMessages` 按 token 预算结构性裁剪。
+ * 错误处理 (R4): toAISdkStream 的 `onError` 把底层错误归入 5 类
+ * (client/api/transient/transport/unknown), 用对应中文文案回复, 同时进程内
+ * 计数器自增, 服务端日志写一行结构化简述(不含 stack/api key)。
  */
 export async function POST(req: Request) {
   const log = createLogger("route.assistant.post");
@@ -80,24 +87,47 @@ export async function POST(req: Request) {
   // patterns) once per request; injected into the system prompt so the LLM never
   // has to recover these facts from the conversation history. Failure paths inside
   // buildAgentContext degrade gracefully (no auth → fallback name, no email).
-  const memoriesP = listMemories({ limit: 20 }).catch(() => ({ items: [] as Array<{ content: string; metadata: string }> }));
-    const [agentContext, memoriesResult] = await Promise.all([buildAgentContext(), memoriesP]);
-    const memoryItems = memoriesResult.items.map((m) => ({
-      content: m.content,
-      metadata: (() => {
-        try { return JSON.parse(m.metadata) as Record<string, unknown>; } catch { return {}; }
-      })(),
-    }));
+  const memoriesP = listMemories({ limit: 20 }).catch(() => ({
+    items: [] as Array<{ content: string; metadata: string }>,
+  }));
+  const [agentContext, memoriesResult] = await Promise.all([buildAgentContext(), memoriesP]);
+  const memoryItems = memoriesResult.items.map((m) => ({
+    content: m.content,
+    metadata: (() => {
+      try {
+        return JSON.parse(m.metadata) as Record<string, unknown>;
+      } catch {
+        return {};
+      }
+    })(),
+  }));
 
   try {
-    const agent = buildMorrisAgent({ ownerUserId, workspace, pageContext, agentContext, memories: memoryItems });
-    return await createAgentUIStreamResponse({
-      agent,
-      uiMessages: messages,
-      // Forward the request abort signal so useChat.stop() on the client
-      // actually cancels the in-flight DeepSeek call rather than running it
-      // to completion (and burning tokens) after the SSE reader is closed.
+    const agent = buildMorrisAgent({
+      ownerUserId,
+      workspace,
+      pageContext,
+      agentContext,
+      memories: memoryItems,
+    });
+
+    // convertToModelMessages returns Promise<ModelMessage[]> per ai@6.0.196
+    // (it awaits filepart URL resolution etc.). Await here so pruneIfOverBudget
+    // sees a real array.
+    const modelMessages = pruneIfOverBudget(await convertToModelMessages(messages));
+
+    // Mastra Agent.stream(messages, options). `abortSignal` is a top-level
+    // execution option that propagates to the underlying LLM provider so
+    // client-side `useChat.stop()` cancels the in-flight DeepSeek call.
+    // `maxSteps` mirrors the old `stopWhen: [stepCountIs(8)]`.
+    const output = await agent.stream(modelMessages, {
+      maxSteps: 8,
       abortSignal: req.signal,
+    });
+
+    const uiStream = toAISdkStream(output, {
+      from: "agent",
+      version: "v6",
       onError: (error) => {
         const m = classifyMorrisError(error);
         morrisErrorCounter.inc(m.kind);
@@ -106,8 +136,10 @@ export async function POST(req: Request) {
         return m.userMessage;
       },
     });
+
+    return createUIMessageStreamResponse({ stream: uiStream });
   } catch (error) {
-    // 进入这里的多是 buildMorrisAgent / 路由配置错误, 也按同一分类器走一遍。
+    // buildMorrisAgent / 路由配置错误 / Mastra Agent 构造失败都在这里收拢。
     const m = classifyMorrisError(error);
     morrisErrorCounter.inc(m.kind);
     log.error("morris.fatal", { kind: m.kind, detail: m.detail });
