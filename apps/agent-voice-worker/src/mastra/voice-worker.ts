@@ -90,13 +90,54 @@ function refuseJob(
   throw new Error(`agent-voice-worker: refusing job — ${reason}${detail ? ` (${detail})` : ""}`);
 }
 
+/**
+ * Parse a metadata string, returning:
+ *   - `null` when the input is empty (caller should try the fallback source)
+ *   - `{ ok: true, metadata }` on success
+ *   - `{ ok: false, reason }` on a concrete parse failure (invalid_json /
+ *     schema_mismatch) — this is a hard fail, no fallback should be tried
+ *     because the caller-provided metadata is malformed.
+ */
+function tryParse(raw: string): Exclude<RoomMetadataParseResult, { reason: "empty" }> | null {
+  const result = parseMerismRoomMetadata(raw);
+  if (result.ok) return result;
+  if (result.reason === "empty") return null;
+  return result;
+}
+
+/**
+ * Resolve the room-metadata payload from a LiveKit job context, preferring
+ * dispatch metadata (`ctx.job.metadata`) over room metadata (`ctx.room.metadata`).
+ *
+ * The preference is not stylistic — it is required by the mastra/livekit
+ * lifecycle: in the `agent:` resolver, `ctx.room` is a stub with
+ * `name === null` and `metadata === ""` (room state has not yet been synced
+ * to the worker). Only `ctx.job.metadata` is populated at that point,
+ * because it rides the dispatch RPC. The room-metadata fallback is kept for
+ * legacy dispatchers that only set room metadata; new dispatchers
+ * (including `issueLivekitToken`) MUST embed `flowConfig` + `runtimeStudy`
+ * in the dispatch metadata payload.
+ *
+ * Callers should refuse the job on `!parseResult.ok` (via `refuseJob`).
+ */
+function resolveIncomingMetadata(ctx: {
+  room?: { metadata?: string };
+  job?: { metadata?: string };
+}): RoomMetadataParseResult {
+  const rawJobMetadata = ctx.job?.metadata ?? "";
+  const rawRoomMetadata = ctx.room?.metadata ?? "";
+  return tryParse(rawJobMetadata) ?? parseMerismRoomMetadata(rawRoomMetadata);
+}
+
 export default createLiveKitWorker({
   mastra,
 
   // Per-session Mastra agent — built from the flow config resolved from
-  // room metadata. Fail-closed on any parse error OR missing flowConfig.
+  // dispatch metadata (with room metadata as fallback for legacy).
+  // Fail-closed on any parse error OR missing flowConfig. See
+  // `resolveIncomingMetadata` docstring for the timing rationale.
   agent: ({ ctx }) => {
-    const parseResult: RoomMetadataParseResult = parseMerismRoomMetadata(ctx.room.metadata);
+    const parseResult = resolveIncomingMetadata(ctx);
     if (!parseResult.ok) {
       refuseJob(parseResult.reason, parseResult.detail, ctx);
     }
@@ -119,7 +160,7 @@ export default createLiveKitWorker({
   // it. The TS worker does the same via `driver.begin()`.
 
   async onSessionStart({ ctx, session }) {
-    const parseResult = parseMerismRoomMetadata(ctx.room.metadata);
+    const parseResult = resolveIncomingMetadata(ctx);
     if (!parseResult.ok) {
       // Already caught above in `agent:` resolver, but re-check for
       // narrowing; `refuseJob` throws.
