@@ -107,18 +107,35 @@ export const ProbeStepSchema = FlowStepBaseSchema.extend({
 /**
  * Predicate matched against a prior step's collected answer.
  *
- * Simplest shape that covers the two branching cases the interview flow needs:
- * - "if user picked option X on question Y" (`equals` on a choice question)
- * - "if user mentioned keyword K in their open answer" (`contains` on text)
+ * Single-shape: a natural-language `condition` string that the host evaluates
+ * at runtime by asking an LLM "does the source answer satisfy this condition?"
+ * (YES/NO). Design borrowed directly from Retell AI's `Prompt` transition
+ * condition (`docs.retellai.com/build/conversation-flow/transition-condition`),
+ * simplified because MerismV2's first version doesn't yet need Retell's
+ * `Equation` type (call-time dynamic variables).
  *
- * Corresponds to a simplified typebot `Comparison` — we DON'T mirror the full
- * 14 comparators (GREATER/LESS/MATCHES_REGEX/etc.) until the researcher UI
- * demands them.
+ * The old shape (`operator: "equals"|"contains"|"startsWith"` + `value`) was
+ * removed because string-level matching against transcribed voice answers is
+ * too brittle for realistic interviews — a user saying "I'm kind of a
+ * student, in a masters program while working" won't literally `equals` or
+ * `startsWith` any researcher-authored string, but an LLM easily maps it to
+ * "is a full-time student?" (NO) or "is both student and worker?" (YES).
+ *
+ * Evolution path: to add non-LLM comparators later (e.g. equation-mode on
+ * pre-injected variables), add a new sibling schema and turn this into a
+ * discriminated union — do NOT extend this schema with an operator field
+ * (that would recreate the same brittleness).
  */
 const FlowConditionPredicateSchema = z.object({
+  /** The step whose answer this condition judges. Almost always the
+   *  QuestionStep immediately preceding the ConditionStep, but the field is
+   *  explicit so future flow shapes (e.g. cross-question condition steps) can
+   *  reference an earlier answer. */
   sourceStepId: z.string().min(1),
-  operator: z.enum(["equals", "contains", "startsWith"]),
-  value: z.string(),
+  /** Natural-language condition, evaluated by an LLM at runtime. Bounded
+   *  length prevents unintentional prompt-injection bloat and keeps single
+   *  conditions readable in the editor. */
+  condition: z.string().trim().min(1).max(500),
 });
 
 /**

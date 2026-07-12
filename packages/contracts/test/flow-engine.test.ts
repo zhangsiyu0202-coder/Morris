@@ -48,13 +48,13 @@ function probe(id: string, forQuestionStepId: string): FlowStep {
   } as FlowStep;
 }
 
-function cond(id: string, items: Array<{ itemId: string; sourceStepId: string; value: string; outgoingEdgeId?: string }>): FlowStep {
+function cond(id: string, items: Array<{ itemId: string; sourceStepId: string; condition: string; outgoingEdgeId?: string }>): FlowStep {
   return {
     stepId: id,
     kind: "condition",
     items: items.map((it) => ({
       itemId: it.itemId,
-      predicate: { sourceStepId: it.sourceStepId, operator: "equals", value: it.value },
+      predicate: { sourceStepId: it.sourceStepId, condition: it.condition },
       outgoingEdgeId: it.outgoingEdgeId,
     })),
   } as FlowStep;
@@ -83,7 +83,7 @@ describe("FlowStepSchema discriminated union", () => {
 
   it("parses a ConditionStep", () => {
     const parsed = FlowStepSchema.parse(
-      cond("s3", [{ itemId: "i1", sourceStepId: "s1", value: "yes" }]),
+      cond("s3", [{ itemId: "i1", sourceStepId: "s1", condition: "yes" }]),
     );
     expect(parsed.kind).toBe("condition");
   });
@@ -264,7 +264,7 @@ describe("InterviewFlowConfigSchema invariants", () => {
       startStepId: "s1",
       steps: [
         q("s1"),
-        cond("s2", [{ itemId: "i1", sourceStepId: "s1", value: "yes", outgoingEdgeId: "DANGLING" }]),
+        cond("s2", [{ itemId: "i1", sourceStepId: "s1", condition: "yes", outgoingEdgeId: "DANGLING" }]),
       ],
       edges: [],
     });
