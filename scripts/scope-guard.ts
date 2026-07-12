@@ -46,6 +46,7 @@ const EXEMPT_PREFIXES = [
   "apps/functions/stripeWebhook/",
   "apps/functions/aggregateWorkspaceUsage/",
   "apps/functions/issueLivekitToken/",
+  "apps/functions/finalizeInterviewSession/",
   "apps/web/app/api/dev-issue-token/", // dev-only mirror of issueLivekitToken function (NODE_ENV !== production)
   // ADR-0006 (B) native tenancy: these server-write paths grant
   // Permission.read(Role.team(workspaceId)) on the docs they create so
@@ -53,10 +54,12 @@ const EXEMPT_PREFIXES = [
   // field-name guard below still runs.
   "apps/functions/analyzeSession/",
   "apps/functions/analyzeSurvey/",
-  "apps/agent/agent/persistence/appwrite_repository.py",
-  "apps/agent/agent/contracts.py", // ADR-0006 UsageEvent mirror + isBillableInterview
-  "apps/agent/tests/test_recording_persistence.py",
-  "apps/agent/tests/test_usage_event_persistence.py",
+  // Post ADR-0013 the Mastra TS voice worker is the only interview worker.
+  // The finalize path emits ADR-0006 UsageEvents from the worker via the
+  // finalizeInterviewSession Function; the worker itself only speaks to
+  // that Function boundary. The three deleted `apps/agent/agent/...`
+  // exemptions that used to live here were removed with the Python worker.
+  "apps/agent-voice-worker/",
   // ADR-0006 web surface. This repo has no top-level products/ dir; the
   // workspaces-billing UI + data seams live under apps/web. Exempt exactly the
   // billing/members surface so the lifted concepts are allowed here only.

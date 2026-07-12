@@ -34,16 +34,18 @@ jobs:
       - run: pnpm build
 
   python:
-    name: pytest
+    # Deleted per ADR-0013 (2026-07-12): the Python worker under apps/agent has
+    # been removed and the migration is entirely on Mastra + @mastra/livekit.
+    # The `pytest` job used to run `bash scripts/test-py.sh` against apps/agent;
+    # both the job and the script are gone. If a future ADR reintroduces Python
+    # in this repo, restore this job by re-adding an `astral-sh/setup-uv` step
+    # plus the invocation.
+    name: pytest (removed post ADR-0013)
+    if: false
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 3
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: "apps/agent/uv.lock"
-      - run: bash scripts/test-py.sh
+      - run: 'echo "python job intentionally disabled — ADR-0013"'
 
   scope-guard:
     name: scope guard
