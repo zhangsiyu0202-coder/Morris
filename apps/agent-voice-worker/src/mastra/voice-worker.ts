@@ -3,24 +3,32 @@ import { fileURLToPath } from "node:url";
 import { inference } from "@livekit/agents";
 import { createLiveKitWorker, runLiveKitWorker } from "@mastra/livekit/worker";
 
+import type {
+  InterviewRuntimeQuestion,
+  InterviewRuntimeStudy,
+} from "@merism/contracts";
+
 import { mastra } from "./index.js";
 import {
   buildMerismVoiceAgent,
+  flowConfigFromMerismRoomMetadata,
   parseMerismRoomMetadata,
-  workflowConfigFromMerismRoomMetadata,
   type RoomMetadataParseResult,
 } from "./merism-room-metadata.js";
 import { buildVoiceWorkerSpeechProviders } from "./speech.js";
-import { InterviewOrchestrator, indexRuntimeQuestions } from "../interview/orchestrator.js";
+import { FlowEngineDriver } from "../interview/flow-driver.js";
 import { registerSubmitAnswerRpc } from "../transport/submit-answer-rpc.js";
 import { createSessionLogger } from "../observability/session-logger.js";
 import { installDrainHandler, startHealthServer } from "../health.js";
 import { finalizeInterviewSession } from "../persistence/finalize-client.js";
 
 /**
- * Worker entrypoint. Post ADR-0013 this is the ONLY production interview
- * worker. `issueLivekitToken` dispatches `merism-mastra-voice-worker` on
- * every token issuance; the Python worker (`apps/agent/`) has been deleted.
+ * Worker entrypoint. Post ADR-0013 iteration 5 (flow-engine cutover per
+ * HANDOFF.md 2026-07-09) this is the ONLY production interview worker,
+ * and it consumes the `flowConfig` shape exclusively. `issueLivekitToken`
+ * always dispatches `merism-mastra-voice-worker` and always emits
+ * `flowConfig` alongside the legacy `runtimeStudy` / `workflowConfig`
+ * fields; the worker fail-closes if `flowConfig` is missing.
  *
  * Turn-detector: `v1-mini` is pinned explicitly. `inference.TurnDetector`
  * without an explicit `version` auto-selects the cloud-hosted `v1` model
@@ -32,13 +40,33 @@ import { finalizeInterviewSession } from "../persistence/finalize-client.js";
  * entirely.
  */
 
-// Session-scoped orchestrators keyed by JobContext.job.id, so `onCallEnd`
-// can pull the same orchestrator instance `onSessionStart` created. Cleaned
+// Session-scoped drivers keyed by JobContext.job.id, so `onCallEnd`
+// can pull the same driver instance `onSessionStart` created. Cleaned
 // up in `onCallEnd`.
-const orchestratorsByJobId = new Map<string, InterviewOrchestrator>();
+const driversByJobId = new Map<string, FlowEngineDriver>();
 
-// Session-scoped loggers, same lifetime as orchestrators.
+// Session-scoped loggers, same lifetime as drivers.
 const loggersByJobId = new Map<string, ReturnType<typeof createSessionLogger>>();
+
+/**
+ * Build the `questionId → InterviewRuntimeQuestion` index the
+ * `InterviewStatePublisher` uses to enrich `merism.interviewState`
+ * payloads with the structured UI control. Pulls from `runtimeStudy`
+ * which `issueLivekitToken` continues to emit alongside `flowConfig` per
+ * `buildInterviewRoomMetadataFromDraft`.
+ */
+function indexRuntimeQuestions(
+  study: InterviewRuntimeStudy | undefined,
+): Map<string, InterviewRuntimeQuestion> {
+  const map = new Map<string, InterviewRuntimeQuestion>();
+  if (!study) return map;
+  for (const section of study.sections) {
+    for (const question of section.questions) {
+      map.set(question.questionId, question);
+    }
+  }
+  return map;
+}
 
 /**
  * Refuse a job with a logged reason. Called when metadata is malformed —
@@ -65,31 +93,30 @@ function refuseJob(
 export default createLiveKitWorker({
   mastra,
 
-  // Per-session Mastra agent — built from the workflow config resolved from
-  // room metadata. Fail-closed on any parse error.
+  // Per-session Mastra agent — built from the flow config resolved from
+  // room metadata. Fail-closed on any parse error OR missing flowConfig.
   agent: ({ ctx }) => {
     const parseResult: RoomMetadataParseResult = parseMerismRoomMetadata(ctx.room.metadata);
     if (!parseResult.ok) {
       refuseJob(parseResult.reason, parseResult.detail, ctx);
     }
-    const workflowConfig = workflowConfigFromMerismRoomMetadata(parseResult.metadata);
-    if (!workflowConfig) {
+    const flowConfig = flowConfigFromMerismRoomMetadata(parseResult.metadata);
+    if (!flowConfig) {
       refuseJob(
-        "missing_workflow_config",
-        "room metadata has neither workflowConfig nor runtimeStudy",
+        "missing_flow_config",
+        "room metadata has no flowConfig (post flow-engine cutover the legacy runtimeStudy/workflowConfig paths are not consumed)",
         ctx,
       );
     }
-    return buildMerismVoiceAgent(workflowConfig, parseResult.metadata.sessionId);
+    return buildMerismVoiceAgent(flowConfig, parseResult.metadata.sessionId);
   },
 
   ...buildVoiceWorkerSpeechProviders(),
   turnDetection: new inference.TurnDetector({ version: "v1-mini" }),
 
-  // NB: no static `greeting`. The Python worker did not have one — its
-  // Supervisor's first action was to publish the first question and let the
-  // LLM ask it. The Mastra worker does the same via
-  // `orchestrator.begin()` inside `onSessionStart`.
+  // NB: no static `greeting`. The Python worker did not have one — the flow
+  // engine's `run_flow` publishes the first step and the Mastra agent asks
+  // it. The TS worker does the same via `driver.begin()`.
 
   async onSessionStart({ ctx, session }) {
     const parseResult = parseMerismRoomMetadata(ctx.room.metadata);
@@ -98,13 +125,9 @@ export default createLiveKitWorker({
       // narrowing; `refuseJob` throws.
       refuseJob(parseResult.reason, parseResult.detail, ctx);
     }
-    const workflowConfig = workflowConfigFromMerismRoomMetadata(parseResult.metadata);
-    if (!workflowConfig) {
-      refuseJob(
-        "missing_workflow_config",
-        "room metadata has neither workflowConfig nor runtimeStudy",
-        ctx,
-      );
+    const flowConfig = flowConfigFromMerismRoomMetadata(parseResult.metadata);
+    if (!flowConfig) {
+      refuseJob("missing_flow_config", "room metadata has no flowConfig", ctx);
     }
 
     const sessionId = parseResult.metadata.sessionId;
@@ -119,53 +142,48 @@ export default createLiveKitWorker({
       jobId: ctx.job.id,
     });
 
-    const orchestrator = new InterviewOrchestrator({
+    const driver = new FlowEngineDriver({
       // `ctx.room` in `@livekit/agents` is a `@livekit/rtc-node` Room, which
       // is what our transport modules type against.
       room: ctx.room as unknown as import("@livekit/rtc-node").Room,
       log,
-      workflowConfig,
+      agent: buildMerismVoiceAgent(flowConfig, sessionId),
+      config: flowConfig,
       runtimeQuestions: indexRuntimeQuestions(parseResult.metadata.runtimeStudy),
     });
-    orchestratorsByJobId.set(ctx.job.id, orchestrator);
+    driversByJobId.set(ctx.job.id, driver);
 
     // Register `merism.submit_answer` RPC handler BEFORE begin() so a
     // fast-clicking interviewee can never race the handler registration.
     registerSubmitAnswerRpc({
       room: ctx.room as unknown as import("@livekit/rtc-node").Room,
       log,
-      getCurrentQuestionId: () => orchestrator.currentQuestionId,
-      hasActiveTask: () => orchestrator.hasActiveTask,
-      onAcceptedAnswer: (answer) => orchestrator.handleUiSubmission(answer),
+      getCurrentQuestionId: () => driver.currentQuestionId,
+      hasActiveTask: () => driver.hasActiveTask,
+      onAcceptedAnswer: (answer) => driver.handleUiSubmission(answer),
     });
 
-    // Publish `merism.interviewState` for the first question so the UI
-    // renders its structured control immediately. The LLM starts speaking
-    // on the first turn LiveKit's turn detector allows.
-    await orchestrator.begin();
+    // Publish `merism.interviewState` for the first step and fire the
+    // flow engine's main loop.
+    await driver.begin();
 
-    // TODO(agent-voice-worker/interview-tool-loop): register the
-    // `complete_question` + `record_probe_round` tools on the Mastra Agent
-    // built above so the voice path can complete questions from the model
-    // side. Iteration 2 wave; the UI-click path already lands answers via
-    // the RPC handler above.
     session; // suppress unused-var lint until the tool-loop lands
   },
 
   async onCallEnd({ ctx, roomName, memory }) {
-    const orchestrator = orchestratorsByJobId.get(ctx.job.id);
+    const driver = driversByJobId.get(ctx.job.id);
     const log = loggersByJobId.get(ctx.job.id) ?? createSessionLogger("agent.session");
-    orchestratorsByJobId.delete(ctx.job.id);
+    driversByJobId.delete(ctx.job.id);
     loggersByJobId.delete(ctx.job.id);
 
-    if (!orchestrator) {
-      log.warn("call ended but no orchestrator present", { roomName, jobId: ctx.job.id });
+    if (!driver) {
+      log.warn("call ended but no driver present", { roomName, jobId: ctx.job.id });
       return;
     }
 
-    const snapshot = orchestrator.snapshot;
+    const snapshot = driver.snapshot;
     const terminalStatus = snapshot.isComplete ? "completed" : "abandoned";
-    await orchestrator.shutdown(terminalStatus);
+    await driver.shutdown(terminalStatus);
 
     log.info("agent session ended", {
       terminalStatus,

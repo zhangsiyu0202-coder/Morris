@@ -8,7 +8,28 @@ import {
 } from "@merism/contracts";
 
 import type { SessionLogger } from "../observability/session-logger.js";
-import { shouldAcceptUiAnswer } from "../interview/workflow-state.js";
+
+/**
+ * Whether a UI-submitted answer may complete the current question (pure).
+ *
+ * A click only counts for the question the driver is currently on: there
+ * must be an active question task and the submitted questionId must match
+ * the live cursor. Mismatches are stale / duplicate / out-of-order submits.
+ * Inlined from the removed `workflow-state.ts` per the ADR-0013 iteration 5
+ * cutover (flow-engine driver replaces the linear orchestrator; the RPC
+ * gate is unchanged and lives here now).
+ */
+function shouldAcceptUiAnswer(args: {
+  submittedQuestionId: string;
+  currentQuestionId: string | null | undefined;
+  hasActiveTask: boolean;
+}): boolean {
+  return (
+    args.hasActiveTask &&
+    args.currentQuestionId != null &&
+    args.submittedQuestionId === args.currentQuestionId
+  );
+}
 
 /**
  * Registers the `merism.submit_answer` RPC handler on the local participant.

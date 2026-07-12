@@ -5,7 +5,6 @@ import {
   InterviewAgentStateSchema,
   type InterviewAgentState,
   type InterviewRuntimeQuestion,
-  type InterviewWorkflowConfig,
 } from "@merism/contracts";
 
 import type { SessionLogger } from "../observability/session-logger.js";
@@ -13,7 +12,10 @@ import type { SessionLogger } from "../observability/session-logger.js";
 /**
  * Publishes `InterviewAgentState` to `merism.interviewState` on the local
  * participant. Ported from `apps/agent/agent/interview/supervisor.py::_publish_state`
- * per ADR-0013.
+ * and preserved through the ADR-0013 iteration 5 flow-engine cutover — the
+ * publisher is config-agnostic (only needs the `runtimeQuestions` index to
+ * enrich the payload with the structured control), so it works for both the
+ * old workflow-config driver and the new flow-engine driver.
  *
  * The interviewee portal (`apps/web/lib/interview/transport.ts`) subscribes
  * to `RoomEvent.ParticipantAttributesChanged` and renders the structured
@@ -23,18 +25,15 @@ import type { SessionLogger } from "../observability/session-logger.js";
 export class InterviewStatePublisher {
   #room: Room;
   #log: SessionLogger;
-  #config: InterviewWorkflowConfig;
   #runtimeQuestions: Map<string, InterviewRuntimeQuestion>;
 
   constructor(args: {
     room: Room;
     log: SessionLogger;
-    config: InterviewWorkflowConfig;
     runtimeQuestions: Map<string, InterviewRuntimeQuestion>;
   }) {
     this.#room = args.room;
     this.#log = args.log;
-    this.#config = args.config;
     this.#runtimeQuestions = args.runtimeQuestions;
   }
 

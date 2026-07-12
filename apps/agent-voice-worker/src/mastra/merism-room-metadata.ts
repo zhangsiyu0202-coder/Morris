@@ -2,17 +2,10 @@ import { Agent } from "@mastra/core/agent";
 
 import {
   InterviewRoomMetadataSchema,
+  type InterviewFlowConfig,
   type InterviewRoomMetadata,
-  type InterviewRuntimeStudy,
-  type InterviewWorkflowConfig,
-  type SectionTaskGroupConfig,
 } from "@merism/contracts";
 import { voiceWorkerModel } from "./model";
-
-const PROBE_DEFAULT_MAX_ROUNDS = {
-  standard: 3,
-  deep: 5,
-} as const;
 
 /**
  * Discriminated parse result. The old `parseJson` silently returned `null` on
@@ -32,44 +25,6 @@ function parseJsonSafe(raw: string): { ok: true; value: unknown } | { ok: false;
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error : new Error(String(error)) };
   }
-}
-
-function buildWorkflowConfigFromRuntimeStudy(
-  study: InterviewRuntimeStudy,
-  sessionId: string,
-): InterviewWorkflowConfig {
-  return {
-    surveyId: study.surveyId,
-    sessionId,
-    supervisorInstruction: [
-      `You are an AI qualitative interviewer for the study "${study.studyTitle}".`,
-      `Research goal: ${study.researchGoal}`,
-      `Target audience: ${study.targetAudience}`,
-      `Opening script: ${study.introScript}`,
-      "Conduct the interview section by section, keep it conversational, ask configured probes when present, and never reveal internal identifiers.",
-      "Speak only the words the respondent should hear."
-    ].join("\n"),
-    sections: study.sections.map(
-      (section): SectionTaskGroupConfig => ({
-        sectionId: section.sectionId,
-        title: section.title,
-        description: section.objective,
-        sectionInstruction: section.objective,
-        questions: section.questions.map((question) => ({
-          questionId: question.questionId,
-          questionType: question.questionType,
-          questionContent: question.questionText,
-          options: question.options,
-          stimulus: question.stimulus ?? undefined,
-          probeConfig: {
-            level: question.probeLevel,
-            instruction: question.probeInstruction,
-            maxRounds: PROBE_DEFAULT_MAX_ROUNDS[question.probeLevel],
-          },
-        })),
-      }),
-    ),
-  };
 }
 
 /**
@@ -97,56 +52,79 @@ export function parseMerismRoomMetadata(rawMetadata: string | undefined | null):
   return { ok: true, metadata: parsed.data };
 }
 
-export function workflowConfigFromMerismRoomMetadata(
+/**
+ * Extract the `InterviewFlowConfig` from room metadata.
+ *
+ * Per the flow-engine refactor HANDOFF.md § key design decision 6 ("legacy
+ * fallback allows old pipeline to keep running"), the returned config is
+ * `null` when the room does not carry a `flowConfig` shape. `voice-worker`
+ * must fail-closed on that case in the ADR-0013 iteration 5 world because
+ * the legacy Python fallback path has been removed and the TS worker only
+ * consumes the flow-engine shape.
+ *
+ * `issueLivekitToken` always emits `flowConfig` alongside the legacy
+ * `runtimeStudy` / `workflowConfig` (per `buildInterviewRoomMetadataFromDraft`
+ * P3 slice), so under normal operation this returns non-null.
+ */
+export function flowConfigFromMerismRoomMetadata(
   metadata: InterviewRoomMetadata | null,
-): InterviewWorkflowConfig | null {
-  if (!metadata) return null;
-  if (metadata.workflowConfig) return metadata.workflowConfig;
-  if (metadata.runtimeStudy) {
-    return buildWorkflowConfigFromRuntimeStudy(metadata.runtimeStudy, metadata.sessionId);
-  }
-  return null;
-}
-
-function buildQuestionOutline(config: InterviewWorkflowConfig) {
-  return config.sections
-    .map((section, sectionIndex) => {
-      const questions = section.questions
-        .map((question, questionIndex) => {
-          const options =
-            question.options.length > 0
-              ? ` Options: ${question.options.join(", ")}.`
-              : "";
-          const probe =
-            question.probeConfig && question.probeConfig.instruction.trim().length > 0
-              ? ` Probe guidance: ${question.probeConfig.instruction}.`
-              : "";
-          return `${sectionIndex + 1}.${questionIndex + 1} ${question.questionContent}.${options}${probe}`;
-        })
-        .join("\n");
-      return `Section ${sectionIndex + 1}: ${section.title}\n${questions}`;
-    })
-    .join("\n\n");
+): InterviewFlowConfig | null {
+  return metadata?.flowConfig ?? null;
 }
 
 /**
- * Build a session-scoped Mastra `Agent` from a workflow config.
- *
- * Note (ADR-0013 migration completeness bar §1): the returned agent is only
- * the LLM loop. The actual state machine (section cursor / question cursor /
- * probe maxRounds / first-writer-wins) lives in a session-scoped orchestrator
- * class under `src/interview/`. The agent's instructions describe the
- * interview shape so the LLM speaks naturally, but the orchestrator — not the
- * prompt — decides which question is active.
+ * Compose a short textual outline of the flow so the Mastra Agent has an
+ * at-a-glance sense of the interview. The engine is the authoritative
+ * cursor; this outline is purely informational for the LLM's speech.
  */
-export function buildMerismVoiceAgent(config: InterviewWorkflowConfig, sessionId: string) {
+function buildFlowOutline(config: InterviewFlowConfig): string {
+  const lines: string[] = ["Interview steps (graph order):"];
+  for (const step of config.steps) {
+    switch (step.kind) {
+      case "question": {
+        const opts = step.options.length > 0 ? ` [options: ${step.options.map((o) => o.content).join(", ")}]` : "";
+        lines.push(`- ${step.stepId} (question): ${step.content}${opts}`);
+        break;
+      }
+      case "probe":
+        lines.push(
+          `- ${step.stepId} (probe for ${step.forQuestionStepId}, up to ${step.maxRounds} rounds): ${step.instruction || "(no instruction)"}`,
+        );
+        break;
+      case "condition":
+        lines.push(
+          `- ${step.stepId} (condition, ${step.items.length} branch${step.items.length === 1 ? "" : "es"})`,
+        );
+        break;
+    }
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Build a session-scoped Mastra `Agent` from a flow config.
+ *
+ * Per HANDOFF.md § key design decision 2, the instructions are composed
+ * from `moderatorInstruction` (researcher-authored persona + operational
+ * rules pre-composed on the TS side by `buildInterviewFlowConfigFromDraft`).
+ * The word "supervisor" is intentionally dropped — it referred to the
+ * pre-flow-engine architecture where a `LiveKit Supervisor` owned the
+ * cursor. In the flow-engine world the cursor is owned by `run_flow`, and
+ * the Agent only speaks the questions on demand.
+ *
+ * The returned agent is only the LLM loop. The actual state machine
+ * (step traversal / probe rounds / condition eval / first-writer-wins)
+ * lives in `FlowEngineDriver` + `LiveKitFlowHost`. The agent's instructions
+ * describe the interview shape so the LLM speaks naturally, but the
+ * engine — not the prompt — decides which step is active.
+ */
+export function buildMerismVoiceAgent(config: InterviewFlowConfig, sessionId: string) {
   const instructions = [
-    config.supervisorInstruction,
+    config.moderatorInstruction,
     `Session ID: ${sessionId}`,
     `Survey ID: ${config.surveyId}`,
-    "Interview outline:",
-    buildQuestionOutline(config),
-    "Do not mention these internal section/question identifiers aloud.",
+    buildFlowOutline(config),
+    "Do not mention internal step identifiers aloud.",
   ].join("\n\n");
 
   return new Agent({
