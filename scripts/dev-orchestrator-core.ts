@@ -15,6 +15,8 @@ export type ReadinessResult = {
   reason?: string;
 };
 
+export type ReadinessTarget = Pick<ReadinessResult, "component" | "url">;
+
 type HttpResponse = Pick<Response, "ok" | "status">;
 type HttpRequest = (url: string, init: RequestInit) => Promise<HttpResponse>;
 type Sleeper = (milliseconds: number) => Promise<void>;
@@ -24,6 +26,16 @@ const requiredEndpointEnvironment = [
   ["APP_URL", LOCAL_DEV_ENDPOINTS.web],
   ["LIVEKIT_URL", LOCAL_DEV_ENDPOINTS.livekit],
 ] as const;
+
+export function localReadinessTargets(): ReadinessTarget[] {
+  return [
+    { component: "Appwrite", url: `${LOCAL_DEV_ENDPOINTS.appwrite}/health/version` },
+    { component: "LiveKit", url: `${LOCAL_DEV_ENDPOINTS.livekit.replace("ws://", "http://")}/` },
+    { component: "Web", url: `${LOCAL_DEV_ENDPOINTS.web}/_health/readyz?role=web` },
+    { component: "Mastra", url: `${LOCAL_DEV_ENDPOINTS.mastra}/api/agents?partial=true` },
+    { component: "Voice worker", url: `${LOCAL_DEV_ENDPOINTS.voiceWorker}/_readyz` },
+  ];
+}
 
 export function validateLocalDevEnvironment(environment: LocalDevEnvironment): string[] {
   return requiredEndpointEnvironment.flatMap(([name, expected]) => {

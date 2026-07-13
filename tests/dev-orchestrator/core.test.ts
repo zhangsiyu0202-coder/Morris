@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   checkHttpReadiness,
   formatReadinessSummary,
+  localReadinessTargets,
   waitForReadiness,
   validateLocalDevEnvironment,
   type ReadinessResult,
@@ -17,6 +18,16 @@ const localEnvironment = {
 describe("local dev orchestration contract", () => {
   it("accepts the documented local endpoints", () => {
     expect(validateLocalDevEnvironment(localEnvironment)).toEqual([]);
+  });
+
+  it("uses application health endpoints for every local long-running service", () => {
+    expect(localReadinessTargets()).toEqual([
+      { component: "Appwrite", url: "http://localhost:8080/v1/health/version" },
+      { component: "LiveKit", url: "http://localhost:7880/" },
+      { component: "Web", url: "http://localhost:3000/_health/readyz?role=web" },
+      { component: "Mastra", url: "http://localhost:4111/api/agents?partial=true" },
+      { component: "Voice worker", url: "http://localhost:8082/_readyz" },
+    ]);
   });
 
   it("rejects endpoint drift with the required value", () => {
