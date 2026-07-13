@@ -11,6 +11,9 @@ describe("W5b destructive schema apply gate", () => {
     expect(parseSchemaApplyOptions(["--allow-destructive"])).toEqual({
       allowDestructive: true,
     });
+    expect(parseSchemaApplyOptions(["--", "--allow-destructive"])).toEqual({
+      allowDestructive: true,
+    });
     expect(() => parseSchemaApplyOptions(["--force"])).toThrow(/Usage/);
   });
 

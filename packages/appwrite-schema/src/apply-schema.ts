@@ -19,8 +19,9 @@ const DESTRUCTIVE_ATTRIBUTE_ALLOWLIST = [
 ] as const;
 
 export function parseSchemaApplyOptions(args: readonly string[]): { allowDestructive: boolean } {
-  if (args.length === 0) return { allowDestructive: false };
-  if (args.length === 1 && args[0] === "--allow-destructive") {
+  const normalized = args[0] === "--" ? args.slice(1) : args;
+  if (normalized.length === 0) return { allowDestructive: false };
+  if (normalized.length === 1 && normalized[0] === "--allow-destructive") {
     return { allowDestructive: true };
   }
   throw new Error("Usage: apply-schema.ts [--allow-destructive]");
