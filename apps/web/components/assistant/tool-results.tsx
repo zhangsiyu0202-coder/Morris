@@ -28,8 +28,7 @@ type DraftQuestion = { questionText: string; questionType: string; probeLevel?: 
 type DraftSection = { title: string; objective: string; questions: DraftQuestion[] };
 type SurveyDraftShape = {
   title: string;
-  researchGoal: string;
-  targetAudience: string;
+  instruction: string;
   sections: DraftSection[];
 };
 type CreateStudyResult =
@@ -86,10 +85,7 @@ export function CreateStudyResultCard({ data }: { data: CreateStudyResult }) {
   return (
     <ToolCard icon={<FileText size={14} />} title="调研草稿(预览)">
       <h4 className="font-display text-body-lg text-ink-900">{data.draft.title}</h4>
-      <p className="mt-1 font-ui text-body-sm text-ink-600">{data.draft.researchGoal}</p>
-      <div className="mt-2 inline-flex items-center rounded-full bg-mauve-100 px-2 py-0.5 font-ui text-caption text-ink-600">
-        受访人群:{data.draft.targetAudience}
-      </div>
+      <p className="mt-1 whitespace-pre-wrap font-ui text-body-sm text-ink-600">{data.draft.instruction}</p>
       <DraftOutline draft={data.draft} />
       <p className="mt-3 font-ui text-caption text-ink-400">{data.note}</p>
     </ToolCard>

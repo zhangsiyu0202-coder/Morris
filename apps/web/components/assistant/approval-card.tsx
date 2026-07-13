@@ -124,8 +124,7 @@ function renderCreateStudyDraftPreview(draft: SurveyDraft): string {
     .join("\n\n");
   return (
     `将创建调研「${draft.title}」并保存提纲(${draft.sections.length} 节、${questionCount} 个问题)。\n\n` +
-    `- 研究目标:${draft.researchGoal}\n` +
-    `- 目标人群:${draft.targetAudience}\n\n` +
+    `- 研究说明:\n${draft.instruction}\n\n` +
     sectionLines
   );
 }

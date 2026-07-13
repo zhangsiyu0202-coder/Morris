@@ -22,9 +22,7 @@ const mockGenerate = vi.mocked(generateInstructionBaseline);
 
 const validDraft = {
   title: "差旅住宿预订习惯",
-  researchGoal: "了解经常出差者如何挑选与预订住宿",
-  targetAudience: "每月出差两次以上的上班族",
-  introScript: "你好,感谢参与这次访谈,我们想聊聊你的差旅住宿预订习惯。",
+  instruction: "## 研究意图\n了解经常出差者如何挑选与预订住宿。",
   sections: [
     {
       title: "预订渠道",
@@ -79,25 +77,15 @@ describe("createStudyDraft: auth-conditional execute behavior", () => {
   });
 });
 
-describe("createStudyDraft: two-step baseline instruction generation (ADR-0015 Wave 3)", () => {
-  it("signed-in with empty instruction → generates baseline and persists it", async () => {
+describe("createStudyDraft: instruction is mandatory", () => {
+  it("signed-in persists the supplied instruction without legacy generation", async () => {
     mockCreate.mockResolvedValue({ surveyId: "sv9", url: "/studies/sv9" });
-    mockGenerate.mockResolvedValue("## 研究意图\n了解差旅预订决策");
     const built = buildCreateStudyDraftTool({ ownerUserId: "u1" });
     await (built.spec as any).execute(validDraft);
 
-    expect(mockGenerate).toHaveBeenCalledOnce();
-    // Step 2 receives the flattened questions (in order) + title + legacy hints.
-    const genArg = mockGenerate.mock.calls[0][0];
-    expect(genArg.surveyTitle).toBe(validDraft.title);
-    expect(genArg.questions.map((q: { text: string }) => q.text)).toEqual([
-      "你最近一次出差是怎么订住宿的?",
-      "为什么选这个渠道?",
-    ]);
-    expect(genArg.legacy).toMatchObject({ researchGoal: validDraft.researchGoal });
-    // The generated instruction lands on the persisted draft.
+    expect(mockGenerate).not.toHaveBeenCalled();
     const persisted = mockCreate.mock.calls[0][0];
-    expect(persisted.instruction).toBe("## 研究意图\n了解差旅预订决策");
+    expect(persisted.instruction).toBe(validDraft.instruction);
   });
 
   it("skips generation when Morris already supplied a non-empty instruction", async () => {
@@ -107,18 +95,6 @@ describe("createStudyDraft: two-step baseline instruction generation (ADR-0015 W
 
     expect(mockGenerate).not.toHaveBeenCalled();
     expect(mockCreate.mock.calls[0][0].instruction).toBe("研究员手写的说明");
-  });
-
-  it("best-effort: generator failure still persists the study with empty instruction", async () => {
-    mockCreate.mockResolvedValue({ surveyId: "sv9", url: "/studies/sv9" });
-    mockGenerate.mockRejectedValue(new Error("deepseek down"));
-    const built = buildCreateStudyDraftTool({ ownerUserId: "u1" });
-    const res = await (built.spec as any).execute(validDraft);
-
-    expect(mockGenerate).toHaveBeenCalledOnce();
-    expect(mockCreate).toHaveBeenCalledOnce();
-    expect(mockCreate.mock.calls[0][0].instruction).toBe("");
-    expect(res.artifact).toMatchObject({ persisted: true, surveyId: "sv9" });
   });
 
   it("anonymous preview does NOT trigger instruction generation (lossless, no LLM)", async () => {
@@ -186,9 +162,7 @@ const sectionArb = fc.record({
 });
 const draftArb = fc.record({
   title: nonBlank,
-  researchGoal: nonBlank,
-  targetAudience: nonBlank,
-  introScript: nonBlank,
+  instruction: nonBlank,
   sections: fc.array(sectionArb, { minLength: 1, maxLength: 4 }),
 });
 
