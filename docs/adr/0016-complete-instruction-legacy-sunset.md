@@ -37,6 +37,9 @@ it carries no research-intent fields.
 - The local backfill reported 33 populated surveys and three blank test rows;
   the project owner classified the three rows as disposable test data.
 - The owner explicitly authorized destructive local execution.
+- A paged local cleanup scanned 36 surveys, removed the three legacy JSON keys
+  from 33 `flowConfig` values, and independently verified zero remaining
+  legacy-key-bearing flow configs.
 - `pnpm -F @merism/appwrite-schema apply -- --allow-destructive` completed,
   followed by `pnpm schema:verify`.
 - The fixed allowlist permits only `surveys.moderatorInstruction`; apply is
