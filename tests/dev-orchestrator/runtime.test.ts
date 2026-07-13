@@ -20,7 +20,7 @@ describe("local development process definitions", () => {
         command: "pnpm",
         args: ["-F", "@merism/agent-voice-worker", "dev"],
         cwd: "/repo",
-        env: { MASTRA_PORT: "4111" },
+        env: { PORT: "4111" },
       },
       {
         component: "Voice worker",

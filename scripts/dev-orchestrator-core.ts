@@ -41,6 +41,10 @@ export function localReadinessTargets(): ReadinessTarget[] {
   ];
 }
 
+export function readinessTimeoutMs(component: string): number {
+  return component === "Mastra" ? 300_000 : 90_000;
+}
+
 export function validateLocalDevEnvironment(environment: LocalDevEnvironment): string[] {
   return requiredEndpointEnvironment.flatMap(([name, expected]) => {
     const actual = environment[name];

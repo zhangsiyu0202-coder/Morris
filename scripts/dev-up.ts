@@ -6,6 +6,7 @@ import {
   checkHttpReadiness,
   formatReadinessSummary,
   localReadinessTargets,
+  readinessTimeoutMs,
   waitForReadiness,
   validateLocalDevEnvironment,
   type ReadinessResult,
@@ -13,8 +14,6 @@ import {
 import { checkFunctionDeployments, localProcessDefinitions, type LocalProcessDefinition } from "./dev-runtime.js";
 
 const root = process.cwd();
-const startupTimeoutMs = 90_000;
-
 function run(command: string, args: string[]): Promise<void> {
   return new Promise((resolveRun, rejectRun) => {
     const child = spawn(command, args, { cwd: root, env: process.env, stdio: "inherit" });
@@ -79,7 +78,7 @@ async function waitForTarget(component: string, stopReason: () => string | undef
   if (!target) throw new Error(`No readiness target registered for ${component}`);
   return waitForReadiness(
     () => checkHttpReadiness(target.component, target.url),
-    { timeoutMs: startupTimeoutMs, intervalMs: 1_000, stopReason },
+    { timeoutMs: readinessTimeoutMs(component), intervalMs: 1_000, stopReason },
   );
 }
 

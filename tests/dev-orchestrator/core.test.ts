@@ -4,6 +4,7 @@ import {
   checkHttpReadiness,
   formatReadinessSummary,
   localReadinessTargets,
+  readinessTimeoutMs,
   waitForReadiness,
   validateLocalDevEnvironment,
   type ReadinessResult,
@@ -28,6 +29,11 @@ describe("local dev orchestration contract", () => {
       { component: "Mastra", url: "http://localhost:4111/api/agents?partial=true" },
       { component: "Voice worker", url: "http://localhost:8082/_readyz" },
     ]);
+  });
+
+  it("allows Mastra's first bundle more time without slowing every failure", () => {
+    expect(readinessTimeoutMs("Mastra")).toBe(300_000);
+    expect(readinessTimeoutMs("Web")).toBe(90_000);
   });
 
   it("rejects endpoint drift with the required value", () => {

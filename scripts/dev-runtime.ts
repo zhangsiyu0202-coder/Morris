@@ -38,7 +38,7 @@ export function localProcessDefinitions(root: string): LocalProcessDefinition[] 
       command: "pnpm",
       args: ["-F", "@merism/agent-voice-worker", "dev"],
       cwd: root,
-      env: { MASTRA_PORT: "4111" },
+      env: { PORT: "4111" },
     },
     {
       component: "Voice worker",
