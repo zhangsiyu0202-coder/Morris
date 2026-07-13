@@ -53,9 +53,8 @@ repo; Python + uv are no longer required.)
 ```bash
 cp .env.example .env        # fill in real Appwrite project/key + provider keys
 pnpm install
-pnpm stack:up               # Appwrite + LiveKit via Docker (waits for health)
-pnpm schema:apply           # create collections / indexes / buckets (idempotent)
-pnpm smoke                  # end-to-end: researcher -> survey -> link -> token
+pnpm dev:up                 # infra + schema + Web + Mastra + voice worker, readiness-gated
+pnpm dev:smoke              # full local verification including deployed Function + worker flow
 ```
 
 ## Commands
@@ -63,6 +62,9 @@ pnpm smoke                  # end-to-end: researcher -> survey -> link -> token
 | Command | Purpose |
 |---|---|
 | `pnpm dev` | Run the Next.js app |
+| `pnpm dev:up` | Start the complete local stack in dependency order; waits for application readiness |
+| `pnpm dev:status` | Report readiness and deployed Function failures by component |
+| `pnpm dev:smoke` | Verify Web, Appwrite, deployed Functions, LiveKit, Mastra, and voice worker |
 | `pnpm build` / `pnpm typecheck` / `pnpm lint` | Build / typecheck / lint all packages |
 | `pnpm test` | Vitest (unit + property) across the workspace |
 | `pnpm test:properties` | Property-based tests in `tests/properties/` |
@@ -71,6 +73,9 @@ pnpm smoke                  # end-to-end: researcher -> survey -> link -> token
 | `pnpm schema:apply` / `schema:verify` | Apply / diff Appwrite schema |
 | `pnpm smoke` | Local-stack smoke test |
 | `pnpm scope-guard` | Fail on out-of-scope concepts |
+
+See [local development lifecycle](docs/dev/local-development.md) for fixed
+ports, first-time Function deployment, and safe shutdown behavior.
 
 Run live integration tests (permission matrix etc.) with a running stack:
 `MERISM_LIVE_TESTS=1 pnpm test:properties`.
