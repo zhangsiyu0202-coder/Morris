@@ -2,6 +2,8 @@
 // Creates/syncs database, collections, attributes, indexes, and storage buckets.
 // Refuses destructive attribute type changes.
 import { Databases, Storage, IndexType } from "node-appwrite";
+import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { databases, storage, loadDotEnv } from "./client.js";
 import {
   DATABASE_ID,
@@ -11,6 +13,27 @@ import {
   type AttrDef,
   type CollectionDef,
 } from "./schema.js";
+
+const DESTRUCTIVE_ATTRIBUTE_ALLOWLIST = [
+  { collectionId: "surveys", key: "moderatorInstruction" },
+] as const;
+
+export function parseSchemaApplyOptions(args: readonly string[]): { allowDestructive: boolean } {
+  if (args.length === 0) return { allowDestructive: false };
+  if (args.length === 1 && args[0] === "--allow-destructive") {
+    return { allowDestructive: true };
+  }
+  throw new Error("Usage: apply-schema.ts [--allow-destructive]");
+}
+
+export function destructiveAttributesForApply(
+  deployed: Record<string, Set<string>>,
+): Array<{ collectionId: string; key: string }> {
+  return DESTRUCTIVE_ATTRIBUTE_ALLOWLIST.filter(({ collectionId, key }) => {
+    const declared = COLLECTIONS.find((collection) => collection.id === collectionId);
+    return deployed[collectionId]?.has(key) && !declared?.attributes.some((attribute) => attribute.key === key);
+  });
+}
 
 // Appwrite reports enum attrs as type "string"; map declared -> reported type.
 function reportedType(t: AttrDef["type"]): string {
@@ -129,6 +152,7 @@ async function ensureBuckets(st: Storage): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  const options = parseSchemaApplyOptions(process.argv.slice(2));
   loadDotEnv();
   const db = databases();
   const st = storage();
@@ -147,6 +171,19 @@ async function main(): Promise<void> {
     console.error("ERROR: destructive attribute type changes detected; aborting:");
     for (const c of allConflicts) console.error("  - " + c);
     process.exit(1);
+  }
+
+  const destructive = destructiveAttributesForApply(
+    Object.fromEntries([...existingByColl].map(([id, attributes]) => [id, new Set(attributes.keys())])),
+  );
+  if (destructive.length > 0 && !options.allowDestructive) {
+    throw new Error(
+      `Refusing destructive attribute deletion: ${destructive.map(({ collectionId, key }) => `${collectionId}.${key}`).join(", ")}. Re-run with --allow-destructive after backup approval.`,
+    );
+  }
+  for (const { collectionId, key } of destructive) {
+    await db.deleteAttribute(DATABASE_ID, collectionId, key);
+    console.log(`- ${collectionId}.${key}`);
   }
 
   // 2) Create missing attributes, then indexes.
@@ -207,7 +244,9 @@ async function main(): Promise<void> {
   console.log("schema:apply OK");
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

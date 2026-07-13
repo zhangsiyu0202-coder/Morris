@@ -110,9 +110,6 @@ export const COLLECTIONS: CollectionDef[] = [
         default: "draft",
       },
       { key: "flowConfig", type: "string", size: JSON_SIZE, required: false, default: "{}" },
-      // survey-editor moderator-instruction increment: dedicated long-text column
-      // (not flowConfig) for the AI moderator delivery directives.
-      { key: "moderatorInstruction", type: "string", size: TEXT_SIZE, required: false, default: "" },
       // instruction-as-context-doc (ADR-0015): single free-form markdown
       // document that carries the full AI moderator operating manual —
       // "what this study is about / notes / research goal", CLAUDE.md
