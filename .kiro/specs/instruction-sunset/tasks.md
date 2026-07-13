@@ -31,18 +31,18 @@
 
 ## W5b: destructive sunset — blocked until W5a gates
 
-- [ ] **T5: Write RED contract/metadata tests.**
+- [x] **T5: Write RED contract/metadata tests.**
   - Acceptance: tests require no legacy fields or `workflowConfig`, preserve
     runtime question progress, and reject blank instruction for issuance.
 
-- [ ] **T6: Remove contracts and consumers.**
+- [x] **T6: Remove contracts and consumers.**
   - Acceptance: contract-first removal, narrowed runtime study, direct
     instruction flow config, cleaned web/functions/Morris callers.
 
-- [ ] **T7: Add destructive schema gate and execute only against approved target.**
+- [x] **T7: Add destructive schema gate and execute only against approved target.**
   - Acceptance: fixed allowlist, explicit flag, preflight, live verify;
     remove `moderatorInstruction` and legacy JSON keys after backup approval.
 
-- [ ] **T8: Finalize evidence and ADR-0016.**
-  - Acceptance: production evidence attached, zero legacy production refs,
-    full gates pass, ADR-0016 status becomes Accepted.
+- [x] **T8: Finalize local-test evidence and ADR-0016.**
+  - Acceptance: local-test evidence attached, zero legacy production refs,
+    full gates pass, ADR-0016 is Accepted for the authorized local target.

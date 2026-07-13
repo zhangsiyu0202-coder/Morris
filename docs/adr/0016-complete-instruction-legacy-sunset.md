@@ -2,8 +2,9 @@
 
 ## Status
 
-Proposed — this ADR must not become Accepted until the W5a production gates in
-`.kiro/specs/instruction-sunset/requirements.md` are evidenced.
+Accepted for the explicitly authorized local test environment (2026-07-13).
+Production rollout remains a separate release decision: it requires its own
+backup, release-cycle, and monitoring evidence.
 
 ## Context
 
@@ -18,7 +19,7 @@ must remain readable for a production sub-spec cycle before deletion, per
 
 ## Decision
 
-After all W5a gates pass, W5b will:
+For the authorized local test environment, W5b will:
 
 1. remove legacy fields and fallback composition from contracts and consumers;
 2. emit only `flowConfig` plus the question-only `runtimeStudy` projection in
@@ -31,14 +32,23 @@ The worker remains flow-config-only. `runtimeStudy` is retained solely for the
 browser's progress calculation and the worker's structured question publisher;
 it carries no research-intent fields.
 
-## Preconditions to accept
+## Local acceptance evidence
 
-- W5a backfill dry-run and apply reports are retained with the release record.
-- All resolvable surveys have a non-empty `instruction`; unresolved surveys
-  are repaired by their researcher before W5b.
-- One production sub-spec cycle has no fallback/rollback event.
-- A collection export/backup is available before destructive execution.
-- W5b test and live-stack evidence is attached to this ADR.
+- The local backfill reported 33 populated surveys and three blank test rows;
+  the project owner classified the three rows as disposable test data.
+- The owner explicitly authorized destructive local execution.
+- `pnpm -F @merism/appwrite-schema apply -- --allow-destructive` completed,
+  followed by `pnpm schema:verify`.
+- The fixed allowlist permits only `surveys.moderatorInstruction`; apply is
+  non-destructive unless the explicit flag is supplied.
+
+## Production rollout prerequisites
+
+- Retain a production backfill dry-run and apply report with no unresolved
+  non-test survey.
+- Observe one production sub-spec cycle without fallback or rollback.
+- Take and retain a current `surveys` collection export/backup.
+- Obtain an explicit production release approval before `--allow-destructive`.
 
 ## Consequences
 
