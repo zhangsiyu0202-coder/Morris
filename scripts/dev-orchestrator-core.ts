@@ -15,6 +15,10 @@ export type ReadinessResult = {
   reason?: string;
 };
 
+type HttpResponse = Pick<Response, "ok" | "status">;
+type HttpRequest = (url: string, init: RequestInit) => Promise<HttpResponse>;
+type Sleeper = (milliseconds: number) => Promise<void>;
+
 const requiredEndpointEnvironment = [
   ["APPWRITE_ENDPOINT", LOCAL_DEV_ENDPOINTS.appwrite],
   ["APP_URL", LOCAL_DEV_ENDPOINTS.web],
@@ -38,4 +42,43 @@ export function formatReadinessSummary(results: ReadinessResult[]): string {
     "Readiness failed:",
     ...failures.map((failure) => `- ${failure.component}: ${failure.reason ?? "not ready"} (${failure.url})`),
   ].join("\n");
+}
+
+export async function checkHttpReadiness(
+  component: string,
+  url: string,
+  request: HttpRequest = (input, init) => fetch(input, init),
+): Promise<ReadinessResult> {
+  try {
+    const response = await request(url, { signal: AbortSignal.timeout(3_000) });
+    if (response.ok) return { component, ok: true, url };
+    return { component, ok: false, url, reason: `HTTP ${response.status}` };
+  } catch (error) {
+    return {
+      component,
+      ok: false,
+      url,
+      reason: error instanceof Error ? error.message : "request failed",
+    };
+  }
+}
+
+export async function waitForReadiness(
+  probe: () => Promise<ReadinessResult>,
+  options: { timeoutMs: number; intervalMs: number; sleep?: Sleeper },
+): Promise<ReadinessResult> {
+  const deadline = Date.now() + options.timeoutMs;
+  const sleep = options.sleep ?? ((milliseconds) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
+
+  for (;;) {
+    const result = await probe();
+    if (result.ok) return result;
+    if (Date.now() >= deadline) {
+      return {
+        ...result,
+        reason: `${result.reason ?? "not ready"} after ${options.timeoutMs}ms`,
+      };
+    }
+    await sleep(options.intervalMs);
+  }
 }

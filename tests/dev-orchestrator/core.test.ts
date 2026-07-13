@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
+  checkHttpReadiness,
   formatReadinessSummary,
+  waitForReadiness,
   validateLocalDevEnvironment,
   type ReadinessResult,
 } from "../../scripts/dev-orchestrator-core";
@@ -40,5 +42,35 @@ describe("local dev orchestration contract", () => {
       "- Web: timed out after 30s (http://localhost:3000/_health/readyz?role=web)",
       "- Voice worker: connection refused (http://localhost:8082/_readyz)",
     ].join("\n"));
+  });
+
+  it("treats a non-success HTTP response as not ready instead of accepting an open port", async () => {
+    const result = await checkHttpReadiness(
+      "Web",
+      "http://localhost:3000/_health/readyz?role=web",
+      async () => new Response("starting", { status: 503 }),
+    );
+
+    expect(result).toEqual({
+      component: "Web",
+      ok: false,
+      url: "http://localhost:3000/_health/readyz?role=web",
+      reason: "HTTP 503",
+    });
+  });
+
+  it("retries a failing health probe until it reports ready", async () => {
+    const probe = vi
+      .fn<() => Promise<ReadinessResult>>()
+      .mockResolvedValueOnce({ component: "Voice worker", ok: false, url: "http://localhost:8082/_readyz", reason: "HTTP 503" })
+      .mockResolvedValueOnce({ component: "Voice worker", ok: true, url: "http://localhost:8082/_readyz" });
+    const sleep = vi.fn(async () => undefined);
+
+    await expect(waitForReadiness(probe, { intervalMs: 1, timeoutMs: 50, sleep })).resolves.toEqual({
+      component: "Voice worker",
+      ok: true,
+      url: "http://localhost:8082/_readyz",
+    });
+    expect(sleep).toHaveBeenCalledOnce();
   });
 });
