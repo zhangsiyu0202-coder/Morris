@@ -469,46 +469,12 @@ export const AnalysisReportInputSchema = z.object({
     sections: z.array(SurveySectionSchema),
     questionBlocks: z.array(QuestionBlockSchema),
   }),
-  /**
-   * Resolved research-intent backdrop for the study, per ADR-0015
-   * (instruction-as-context-document). Prefers `Survey.instruction`; falls
-   * back to the composed legacy fields for pre-migration surveys (see
-   * `resolveResearchIntent` in `instruction-helpers.ts`). Optional + defaults
-   * to empty upstream so the analysis LLM prompt simply omits the backdrop
-   * section when a study has no instruction yet.
-   */
+  /** Researcher-authored context document supplied by `Survey.instruction`. */
   researchIntent: z.string().optional(),
   transcript: z.object({
     segments: z.array(TranscriptSegmentSchema),
   }),
   collectedAnswers: z.record(z.string(), z.unknown()),
-});
-
-export const QuestionTaskConfigSchema = z.object({
-  questionId: z.string(),
-  questionType: QuestionType,
-  questionContent: z.string().min(1),
-  // Choice/ranking options, surfaced to the voice prompt so the AI can read
-  // them out. Empty for open_ended. (Structured UI rendering uses the published
-  // InterviewRuntimeQuestion, not this.)
-  options: z.array(z.string()).default([]),
-  probeConfig: ProbeConfigSchema.optional(),
-  stimulus: StimulusSchema.optional(),
-});
-
-export const SectionTaskGroupConfigSchema = z.object({
-  sectionId: z.string(),
-  title: z.string(),
-  description: z.string().default(""),
-  sectionInstruction: z.string().optional(),
-  questions: z.array(QuestionTaskConfigSchema).min(1),
-});
-
-export const InterviewWorkflowConfigSchema = z.object({
-  surveyId: z.string(),
-  sessionId: z.string(),
-  supervisorInstruction: z.string().min(1),
-  sections: z.array(SectionTaskGroupConfigSchema).min(1),
 });
 
 // A single probe exchange: the AI's follow-up question and the answer to it.
@@ -525,48 +491,21 @@ export const ProbeResultSchema = z.object({
   rounds: z.array(ProbeRoundSchema).min(1),
 });
 
-export const QuestionTaskResultSchema = z.object({
-  questionType: QuestionType,
-  questionContent: z.string(),
-  respondentAnswer: z.string(),
-  probe: ProbeResultSchema.nullable(),
-});
-
-export const SectionTaskGroupResultSchema = z.object({
-  sectionId: z.string(),
-  questionResults: z.record(z.string(), QuestionTaskResultSchema),
-});
-
 export const BuildInterviewRuntimeStudyInputSchema = z.object({
   surveyId: z.string().min(1),
   draft: SurveyDraftSchema,
-});
-
-export const BuildInterviewWorkflowConfigInputSchema = z.object({
-  surveyId: z.string().min(1),
-  sessionId: z.string().min(1),
-  draft: SurveyDraftSchema,
-  supervisorInstruction: z.string().min(1).optional(),
 });
 
 export const BuildInterviewFlowConfigInputSchema = z.object({
   surveyId: z.string().min(1),
   sessionId: z.string().min(1),
   draft: SurveyDraftSchema,
-  /**
-   * Optional pre-composed moderator instruction. When absent, the composer
-   * builds one from `draft.moderatorInstruction` (researcher persona) +
-   * an operational base string, matching `buildInterviewWorkflowConfigFromDraft`
-   * behavior so the two paths stay in lockstep.
-   */
-  moderatorInstruction: z.string().min(1).optional(),
 });
 
 export const BuildInterviewRoomMetadataInputSchema = z.object({
   surveyId: z.string().min(1),
   sessionId: z.string().min(1),
   draft: SurveyDraftSchema,
-  supervisorInstruction: z.string().min(1).optional(),
 });
 
 const SegmentRefSchema = z.object({
@@ -864,24 +803,10 @@ const QUESTION_TYPE_TO_RESPONSE_MODE: Record<
   ranking: "ranking",
 };
 
-// Default round ceilings per depth. These are starting points; the authoritative
-// control is the maxRounds number itself, which a researcher can fine-tune.
 const PROBE_DEFAULT_MAX_ROUNDS = {
   standard: 3,
   deep: 5,
 } as const;
-
-// Every question is probed, so this always returns a config (never undefined).
-function mapProbeLevelToProbeConfig(
-  probeLevel: z.infer<typeof StudyProbeLevelSchema>,
-  probeInstruction: string,
-) {
-  return {
-    level: probeLevel,
-    instruction: probeInstruction,
-    maxRounds: PROBE_DEFAULT_MAX_ROUNDS[probeLevel],
-  } as const;
-}
 
 export function buildInterviewRuntimeStudy(input: BuildInterviewRuntimeStudyInput): InterviewRuntimeStudy {
   const { surveyId, draft } = BuildInterviewRuntimeStudyInputSchema.parse(input);
@@ -914,63 +839,23 @@ export function buildInterviewRuntimeStudy(input: BuildInterviewRuntimeStudyInpu
   });
 }
 
-export function buildInterviewWorkflowConfigFromDraft(
-  input: BuildInterviewWorkflowConfigInput,
-): InterviewWorkflowConfig {
-  const { surveyId, sessionId, draft, supervisorInstruction } =
-    BuildInterviewWorkflowConfigInputSchema.parse(input);
-  const runtimeStudy = buildInterviewRuntimeStudy({ surveyId, draft });
-
-  // Operational base: how to run the interview (section order, probes). Stable.
-  const operationalInstruction = `Guide a qualitative interview for "${runtimeStudy.studyTitle}". Use the intro script, follow the section order, and use probe instructions when configured.`;
-  // Moderator persona/delivery (tone, pacing-as-behavior, style) authored by the
-  // researcher on the survey. Prepended so it frames the whole interview; the
-  // operational base still follows. An explicit `supervisorInstruction` arg wins
-  // outright (used by callers that already composed their own).
-  const composedInstruction = draft.instruction;
-
-  return InterviewWorkflowConfigSchema.parse({
-    surveyId,
-    sessionId,
-    supervisorInstruction: supervisorInstruction ?? composedInstruction,
-    sections: runtimeStudy.sections.map((section) => ({
-      sectionId: section.sectionId,
-      title: section.title,
-      description: section.objective,
-      sectionInstruction: section.objective,
-      questions: section.questions.map((question) => ({
-        questionId: question.questionId,
-        questionType: question.questionType,
-        questionContent: question.questionText,
-        options: question.options,
-        probeConfig: mapProbeLevelToProbeConfig(
-          question.probeLevel,
-          question.probeInstruction,
-        ),
-      })),
-    })),
-  });
-}
-
 export function buildInterviewRoomMetadataFromDraft(
   input: BuildInterviewRoomMetadataInput,
 ): InterviewRoomMetadata {
-  const { surveyId, sessionId, draft, supervisorInstruction } =
+  const { surveyId, sessionId, draft } =
     BuildInterviewRoomMetadataInputSchema.parse(input);
   const runtimeStudy = buildInterviewRuntimeStudy({ surveyId, draft });
   const instruction = draft.instruction.trim();
   if (instruction.length === 0) {
     throw new Error("Survey instruction must be non-empty before issuing interview metadata");
   }
-  // Flow-engine config is included alongside legacy runtimeStudy/workflowConfig
-  // so the Python agent can pick the shape it prefers. Precedence on the agent
-  // side (per `agent.flow_engine.metadata.flow_config_from_metadata`):
-  //   flowConfig > runtimeStudy fallback conversion.
+  // `runtimeStudy` remains for the browser progress surface and the voice
+  // worker's structural question index. The flow engine is the only runtime
+  // moderation configuration.
   const flowConfig = buildInterviewFlowConfigFromDraft({
     surveyId,
     sessionId,
     draft,
-    moderatorInstruction: supervisorInstruction ?? instruction,
   });
 
   return InterviewRoomMetadataSchema.parse({
@@ -987,10 +872,8 @@ export function buildInterviewRoomMetadataFromDraft(
  * Layout: flatten sections/questions into a linear flow. Each question becomes
  * a `QuestionStep`; if `PROBE_DEFAULT_MAX_ROUNDS[probeLevel] > 0` the question
  * is followed by a `ProbeStep` whose `outgoingEdgeId` points at the next
- * question. This is the same shape the Python agent's fallback path
- * (`agent.flow_engine.metadata.flow_config_from_runtime_study`) produces, so
- * a Python-only fallback and this TS composer stay behavior-identical on any
- * `SurveyDraft` the researcher publishes.
+ * question. `runtimeStudy` remains a structural companion for progress and
+ * question indexing; it is not a fallback moderation path.
  *
  * The web editor slice (P4) later extends this with per-option `outgoingEdgeId`
  * on question options and standalone `ConditionStep`s. Those additions layer
@@ -999,28 +882,8 @@ export function buildInterviewRoomMetadataFromDraft(
 export function buildInterviewFlowConfigFromDraft(
   input: BuildInterviewFlowConfigInput,
 ): InterviewFlowConfig {
-  const {
-    surveyId,
-    sessionId,
-    draft,
-    moderatorInstruction: overrideModerator,
-  } = BuildInterviewFlowConfigInputSchema.parse(input);
-
-  // Persona composition. Preference order per ADR-0015
-  // (instruction-as-context-document):
-  //   1. Explicit override (composer caller has already prepared a string,
-  //      e.g. buildInterviewRoomMetadataFromDraft reusing the workflowConfig
-  //      composed instruction to keep the two shapes byte-identical during
-  //      the workflowConfig sunset window).
-  //   2. `draft.instruction` — the CLAUDE.md-style single markdown document
-  //      that supersedes the four legacy fields. When non-empty, use it as
-  //      the full agent operating manual verbatim; no compositional wrapping.
-  //   3. Legacy compose path — for pre-Wave-2 rows that only carry the four
-  //      legacy fields (`moderatorInstruction` / `researchGoal` etc.), fall
-  //      back to the same string the old `buildInterviewWorkflowConfigFromDraft`
-  //      would build. Keeps existing surveys working through the deprecation
-  //      cycle.
-  const finalModerator = overrideModerator ?? draft.instruction;
+  const { surveyId, sessionId, draft } = BuildInterviewFlowConfigInputSchema.parse(input);
+  const finalModerator = draft.instruction;
 
   // Walk the draft directly (rather than via runtimeStudy) so we have access
   // to `branchRules` and `stableId`. Section is a UI-grouping concern; the
@@ -1210,7 +1073,6 @@ export type SubmitInterviewAnswerRpcResponse = z.infer<
   typeof SubmitInterviewAnswerRpcResponseSchema
 >;
 export type BuildInterviewRuntimeStudyInput = z.infer<typeof BuildInterviewRuntimeStudyInputSchema>;
-export type BuildInterviewWorkflowConfigInput = z.infer<typeof BuildInterviewWorkflowConfigInputSchema>;
 export type BuildInterviewFlowConfigInput = z.infer<typeof BuildInterviewFlowConfigInputSchema>;
 export type BuildInterviewRoomMetadataInput = z.infer<
   typeof BuildInterviewRoomMetadataInputSchema
@@ -1218,13 +1080,8 @@ export type BuildInterviewRoomMetadataInput = z.infer<
 export type AnalysisReportInput = z.infer<typeof AnalysisReportInputSchema>;
 export type AnalysisReportOutput = z.infer<typeof AnalysisReportOutputSchema>;
 export type VisualAnalysisOutput = z.infer<typeof VisualAnalysisOutputSchema>;
-export type QuestionTaskConfig = z.infer<typeof QuestionTaskConfigSchema>;
-export type SectionTaskGroupConfig = z.infer<typeof SectionTaskGroupConfigSchema>;
-export type InterviewWorkflowConfig = z.infer<typeof InterviewWorkflowConfigSchema>;
 export type ProbeRound = z.infer<typeof ProbeRoundSchema>;
 export type ProbeResult = z.infer<typeof ProbeResultSchema>;
-export type QuestionTaskResult = z.infer<typeof QuestionTaskResultSchema>;
-export type SectionTaskGroupResult = z.infer<typeof SectionTaskGroupResultSchema>;
 export type AnalyzeSurveyRequest = z.infer<typeof AnalyzeSurveyRequestSchema>;
 export type AnalyzeSurveyResponse = z.infer<typeof AnalyzeSurveyResponseSchema>;
 export type DashboardWidgetCatalogEntry = z.infer<typeof DashboardWidgetCatalogEntrySchema>;

@@ -215,17 +215,14 @@ export const FlowEdgeSchema = z.object({
  * `startStepId` is the entry point (analogous to typebot's
  * `events[0].outgoingEdgeId` for V6 bots — the target of the START event).
  *
- * REPLACES the legacy `InterviewWorkflowConfig` (sections + questions linear).
- * The old shape is preserved in `api.ts` as a compat alias until all downstream
- * consumers migrate. New code MUST target this shape.
+ * This is the sole interview moderation configuration. Structural
+ * `runtimeStudy` is carried separately for progress and question indexing.
  */
 export const InterviewFlowConfigSchema = z
   .object({
     surveyId: z.string().min(1),
     sessionId: z.string().min(1),
-    /** The composed moderator system prompt (researcher-authored persona +
-     *  operational rules). Composed on the TS side by the config builder,
-     *  consumed verbatim by the Python engine host as the LLM system prompt. */
+    /** The researcher-authored instruction consumed verbatim by the voice host. */
     moderatorInstruction: z.string().min(1),
     startStepId: z.string().min(1),
     steps: z.array(FlowStepSchema).min(1),

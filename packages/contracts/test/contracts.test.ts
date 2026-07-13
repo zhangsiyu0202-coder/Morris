@@ -15,11 +15,9 @@ import {
   NotebookSchema,
   notebookReportSchema,
   RecordingFormat,
-  InterviewWorkflowConfigSchema,
   IssueLivekitTokenRequestSchema,
   IssueLivekitTokenResponseSchema,
   InterviewLinkSchema,
-  QuestionTaskResultSchema,
   SurveyAnalysisReportOutputSchema,
   SubmitInterviewAnswerRpcResponseSchema,
   SurveyDraftSchema,
@@ -162,47 +160,6 @@ describe("contracts: InterviewLink usedCount invariant (P-DATA-05 shape)", () =>
       expiresAt: new Date().toISOString(),
     });
     expect(link.kind).toBe("test");
-  });
-});
-
-describe("contracts: LiveKit interview workflow", () => {
-  it("models survey sections as task groups and questions as tasks", () => {
-    const workflow = InterviewWorkflowConfigSchema.parse({
-      surveyId: "sv1",
-      sessionId: "sess1",
-      supervisorInstruction: "Guide the interview with a calm research tone.",
-      sections: [
-        {
-          sectionId: "sec1",
-          title: "Concept reaction",
-          questions: [
-            {
-              questionId: "q1",
-              questionType: "text",
-              questionContent: "What is your first reaction?",
-              probeConfig: {
-                level: "standard",
-                instruction: "Ask one or two natural follow-ups if the answer is thin.",
-                maxRounds: 2,
-              },
-            },
-          ],
-        },
-      ],
-    });
-
-    expect(workflow.sections[0]?.questions[0]?.probeConfig?.level).toBe("standard");
-  });
-
-  it("keeps question task results minimal", () => {
-    const result = QuestionTaskResultSchema.parse({
-      questionType: "single_choice",
-      questionContent: "Which option do you prefer?",
-      respondentAnswer: "Option A, because it feels clearer.",
-      probe: null,
-    });
-
-    expect(result.probe).toBeNull();
   });
 });
 

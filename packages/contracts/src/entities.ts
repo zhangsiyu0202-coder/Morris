@@ -188,12 +188,8 @@ export const SurveySchema = z.object({
   /**
    * `instruction` — the CLAUDE.md-style single free-form markdown document
    * that carries the full AI moderator operating manual (persona +
-   * research intent + operating notes + open / close style). Per ADR-0015
-   * this supersedes the four legacy fields (`moderatorInstruction` +
-   * `flowConfig.{researchGoal, targetAudience, introScript}`) which are
-   * being sunset. Default "" keeps legacy Survey rows valid throughout the
-   * deprecation cycle; downstream composers reconstruct a supervisor
-   * instruction from the legacy fields when this one is empty.
+   * research intent + operating notes + open / close style). It is the sole
+   * source for an issued interview's flow moderator instruction.
    */
   instruction: z.string().default(""),
   version: z.number().int().nonnegative().default(1),

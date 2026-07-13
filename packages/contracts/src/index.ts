@@ -1,13 +1,11 @@
 export * from "./entities.js";
 export * from "./api.js";
-export * from "./state.js";
 export * from "./notebook.js";
 export * from "./billing.js";
 export * from "./conversation.js";
 export * from "./memory.js";
 export * from "./health.js";
 export * from "./flow-engine.js";
-export * from "./instruction-helpers.js";
 
 // Wave F (T46): legacy alias removed (was Insight ↦ Notebook). All
 // consumers must use Notebook / NotebookSchema / notebookReportSchema.
@@ -18,7 +16,6 @@ export type {
   AnalysisReportOutput,
   BuildInterviewRoomMetadataInput,
   BuildInterviewRuntimeStudyInput,
-  BuildInterviewWorkflowConfigInput,
   FinalizeInterviewSessionRequest,
   FinalizeInterviewSessionResponse,
   InterviewAgentState,
@@ -29,15 +26,10 @@ export type {
   InterviewRuntimeQuestion,
   InterviewRuntimeSection,
   InterviewRuntimeStudy,
-  InterviewWorkflowConfig,
   IssueLivekitTokenRequest,
   IssueLivekitTokenResponse,
   ProbeResult,
   ProbeRound,
-  QuestionTaskConfig,
-  QuestionTaskResult,
-  SectionTaskGroupConfig,
-  SectionTaskGroupResult,
   StudyProbeLevel,
   StudyQuestionType,
   SubmitInterviewAnswerRpcRequest,
@@ -55,4 +47,3 @@ export type {
   SurveyQuestionStat,
   VisualAnalysisOutput,
 } from "./api.js";
-

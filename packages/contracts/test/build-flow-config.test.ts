@@ -20,10 +20,6 @@ function draftFixture(overrides: Partial<SurveyDraft> = {}): SurveyDraft {
   return {
     title: "Test Study",
     instruction: "## 研究意图\n默认测试说明。",
-    researchGoal: "understand user motivation",
-    targetAudience: "adults 25-40",
-    introScript: "Hi, thanks for joining.",
-    moderatorInstruction: "",
     sections: [
       {
         title: "Warm-up",
@@ -138,76 +134,14 @@ describe("buildInterviewFlowConfigFromDraft", () => {
     expect(p1.forQuestionStepId).toBe("q_question-1-1");
   });
 
-  it("moderatorInstruction override wins over composition", () => {
+  it("uses the draft instruction even when an obsolete override is supplied", () => {
     const cfg = buildInterviewFlowConfigFromDraft({
       surveyId: "surv-1",
       sessionId: "sess-1",
-      draft: draftFixture({ moderatorInstruction: "Ignored" }),
-      moderatorInstruction: "Explicit override",
-    });
-    expect(cfg.moderatorInstruction).toBe("Explicit override");
-  });
-
-  // ADR-0015 — `draft.instruction` (CLAUDE.md-style single markdown doc)
-  // supersedes the four legacy fields when non-empty. Composer plumbing
-  // tests. UI/mapper/writer tests live in the mapper suite + web action
-  // suite; here we pin the composer's preference order only.
-
-  it("instruction (ADR-0015) supersedes composed persona+operational when non-empty", () => {
-    const markdown = [
-      "## 研究意图",
-      "了解设计师在跨部门评审时的沟通痛点。",
-      "",
-      "## 主持行为要点",
-      "- 语气温和",
-    ].join("\n");
-    const cfg = buildInterviewFlowConfigFromDraft({
-      surveyId: "surv-1",
-      sessionId: "sess-1",
-      draft: draftFixture({
-        instruction: markdown,
-        // These legacy values would compose into a supervisorInstruction
-        // string that starts with "Legacy persona"; the ADR-0015
-        // instruction must win over that composition.
-        moderatorInstruction: "Legacy persona should be ignored",
-      }),
-    });
-    expect(cfg.moderatorInstruction).toBe(markdown);
-    // no compose wrapper added
-    expect(cfg.moderatorInstruction).not.toContain("Guide a qualitative interview");
-    expect(cfg.moderatorInstruction).not.toContain("Legacy persona");
-  });
-
-  it("instruction empty (legacy row) falls back to composed persona+operational", () => {
-    const cfg = buildInterviewFlowConfigFromDraft({
-      surveyId: "surv-1",
-      sessionId: "sess-1",
-      draft: draftFixture({
-        instruction: "",
-        moderatorInstruction: "Warm and unhurried.",
-      }),
-    });
-    expect(cfg.moderatorInstruction.startsWith("Warm and unhurried")).toBe(true);
-    expect(cfg.moderatorInstruction).toContain("Guide a qualitative interview");
-  });
-
-  it("instruction whitespace-only counts as empty (falls back to legacy compose)", () => {
-    const cfg = buildInterviewFlowConfigFromDraft({
-      surveyId: "surv-1",
-      sessionId: "sess-1",
-      draft: draftFixture({ instruction: "   \n\t  ", moderatorInstruction: "Persona" }),
-    });
-    expect(cfg.moderatorInstruction.startsWith("Persona")).toBe(true);
-  });
-
-  it("explicit override still wins over instruction (composer symmetry)", () => {
-    const cfg = buildInterviewFlowConfigFromDraft({
-      surveyId: "surv-1",
-      sessionId: "sess-1",
-      draft: draftFixture({ instruction: "would-normally-win" }),
-      moderatorInstruction: "Explicit override",
-    });
-    expect(cfg.moderatorInstruction).toBe("Explicit override");
+      draft: draftFixture({ instruction: "source of truth" }),
+      moderatorInstruction: "obsolete override",
+    } as never);
+    expect(cfg.moderatorInstruction).toBe("source of truth");
   });
 
   it("passes the InterviewFlowConfigSchema invariants (all endpoints valid)", () => {
