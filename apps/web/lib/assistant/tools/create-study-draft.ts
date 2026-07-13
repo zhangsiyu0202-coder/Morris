@@ -1,7 +1,9 @@
 import { tool } from "ai";
 import { SurveyDraftSchema, type SurveyDraft } from "@merism/contracts";
+import { createLogger } from "@merism/observability";
 
 import { createSurveyFromDraft } from "@/lib/actions/survey";
+import { generateInstructionBaseline } from "@/lib/instruction/generator";
 import {
   toToolError,
   toolResult,
@@ -53,6 +55,45 @@ const DESCRIPTION =
   "- 这是访谈「调研提纲」(Survey),不是 Notebook 报告,也不是 NPS/打分问卷小组件。\n" +
   "- 不要凭空捏造研究背景:研究目标 / 目标人群不清楚时,先向用户追问,再生成提纲。\n" +
   "- 登录后调用会真正在 Appwrite 创建 Survey(需研究员确认);未登录只返回预览不落库。";
+
+/**
+ * ADR-0015 Wave 3: two-step generation. Morris produces the questions
+ * (step 1, the tool `input`); before persisting, derive a baseline
+ * `instruction` from those questions (step 2) using the SAME shared generator
+ * as the guide-editor "生成 baseline" button — do not fork the prompt.
+ *
+ * Skipped when Morris already supplied a non-empty `instruction`. Best-effort:
+ * `instruction` is optional (the interview composer + analysis consumers fall
+ * back to the legacy fields when it is empty per ADR-0015), so a generator
+ * failure must NOT fail study creation — we log a warning and persist the
+ * draft with an empty instruction, which the researcher can regenerate from
+ * the 研究说明 tab.
+ */
+async function withBaselineInstruction(draft: SurveyDraft): Promise<SurveyDraft> {
+  if (draft.instruction.trim().length > 0) return draft;
+  const log = createLogger("morris.tool.createStudyDraft");
+  try {
+    const questions = draft.sections.flatMap((s) =>
+      s.questions.map((q) => ({ text: q.questionText, type: q.questionType })),
+    );
+    const instruction = await generateInstructionBaseline({
+      surveyTitle: draft.title,
+      questions,
+      legacy: {
+        researchGoal: draft.researchGoal,
+        targetAudience: draft.targetAudience,
+        introScript: draft.introScript,
+        moderatorInstruction: draft.moderatorInstruction,
+      },
+    });
+    return { ...draft, instruction };
+  } catch (err) {
+    log.warn("baseline instruction generation failed; persisting without instruction", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return draft;
+  }
+}
 
 /**
  * `createStudyDraft` 工具 — 由 Morris 生成结构化提纲,登录态走 AI SDK 6
@@ -132,15 +173,16 @@ export function buildCreateStudyDraftTool(ctx: AssistantToolContext) {
 
         // 登录态: needsApproval=true 保证只有研究员明确"批准"后才能到达这里。
         try {
-          const { surveyId, url } = await createSurveyFromDraft(draft);
+          const draftToPersist = await withBaselineInstruction(draft);
+          const { surveyId, url } = await createSurveyFromDraft(draftToPersist);
           return toolResult(
-            `已创建调研「${draft.title}」(${draft.sections.length} 节、${questionCount} 个问题)。打开 ${url} 继续编辑。`,
+            `已创建调研「${draftToPersist.title}」(${draftToPersist.sections.length} 节、${questionCount} 个问题)。打开 ${url} 继续编辑。`,
             {
               persisted: true,
               surveyId,
               url,
-              title: draft.title,
-              sectionCount: draft.sections.length,
+              title: draftToPersist.title,
+              sectionCount: draftToPersist.sections.length,
               questionCount,
             } satisfies CreatedStudyArtifact,
           );

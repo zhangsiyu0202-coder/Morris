@@ -9,13 +9,16 @@ vi.mock("@/lib/actions/survey", async () => (await import("./fixtures/install-mo
 vi.mock("@/lib/queries", async () => (await import("./fixtures/install-mocks")).fakeQueriesModule());
 vi.mock("@/lib/server/notebooks", async () => (await import("./fixtures/install-mocks")).fakeNotebooksServerModule());
 vi.mock("@/lib/server/embedder-qwen", async () => (await import("./fixtures/install-mocks")).fakeEmbedderQwenModule());
+vi.mock("@/lib/instruction/generator", async () => (await import("./fixtures/install-mocks")).fakeInstructionGeneratorModule());
 vi.mock("node-appwrite", async () => (await import("./fixtures/install-mocks")).fakeNodeAppwriteModule());
 
 import { createSurveyFromDraft } from "@/lib/actions/survey";
+import { generateInstructionBaseline } from "@/lib/instruction/generator";
 import { buildCreateStudyDraftTool } from "../tools/create-study-draft";
 import { buildAssistantTools } from "../tools";
 
 const mockCreate = vi.mocked(createSurveyFromDraft);
+const mockGenerate = vi.mocked(generateInstructionBaseline);
 
 const validDraft = {
   title: "差旅住宿预订习惯",
@@ -36,6 +39,8 @@ const validDraft = {
 
 beforeEach(() => {
   mockCreate.mockReset();
+  mockGenerate.mockReset();
+  mockGenerate.mockResolvedValue("## 研究意图\n(mock baseline)");
 });
 
 describe("createStudyDraft: auth-conditional execute behavior", () => {
@@ -71,6 +76,55 @@ describe("createStudyDraft: auth-conditional execute behavior", () => {
     const res = await (built.spec as any).execute(bad);
     expect(res.artifact).toMatchObject({ error: true });
     expect(mockCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("createStudyDraft: two-step baseline instruction generation (ADR-0015 Wave 3)", () => {
+  it("signed-in with empty instruction → generates baseline and persists it", async () => {
+    mockCreate.mockResolvedValue({ surveyId: "sv9", url: "/studies/sv9" });
+    mockGenerate.mockResolvedValue("## 研究意图\n了解差旅预订决策");
+    const built = buildCreateStudyDraftTool({ ownerUserId: "u1" });
+    await (built.spec as any).execute(validDraft);
+
+    expect(mockGenerate).toHaveBeenCalledOnce();
+    // Step 2 receives the flattened questions (in order) + title + legacy hints.
+    const genArg = mockGenerate.mock.calls[0][0];
+    expect(genArg.surveyTitle).toBe(validDraft.title);
+    expect(genArg.questions.map((q: { text: string }) => q.text)).toEqual([
+      "你最近一次出差是怎么订住宿的?",
+      "为什么选这个渠道?",
+    ]);
+    expect(genArg.legacy).toMatchObject({ researchGoal: validDraft.researchGoal });
+    // The generated instruction lands on the persisted draft.
+    const persisted = mockCreate.mock.calls[0][0];
+    expect(persisted.instruction).toBe("## 研究意图\n了解差旅预订决策");
+  });
+
+  it("skips generation when Morris already supplied a non-empty instruction", async () => {
+    mockCreate.mockResolvedValue({ surveyId: "sv9", url: "/studies/sv9" });
+    const built = buildCreateStudyDraftTool({ ownerUserId: "u1" });
+    await (built.spec as any).execute({ ...validDraft, instruction: "研究员手写的说明" });
+
+    expect(mockGenerate).not.toHaveBeenCalled();
+    expect(mockCreate.mock.calls[0][0].instruction).toBe("研究员手写的说明");
+  });
+
+  it("best-effort: generator failure still persists the study with empty instruction", async () => {
+    mockCreate.mockResolvedValue({ surveyId: "sv9", url: "/studies/sv9" });
+    mockGenerate.mockRejectedValue(new Error("deepseek down"));
+    const built = buildCreateStudyDraftTool({ ownerUserId: "u1" });
+    const res = await (built.spec as any).execute(validDraft);
+
+    expect(mockGenerate).toHaveBeenCalledOnce();
+    expect(mockCreate).toHaveBeenCalledOnce();
+    expect(mockCreate.mock.calls[0][0].instruction).toBe("");
+    expect(res.artifact).toMatchObject({ persisted: true, surveyId: "sv9" });
+  });
+
+  it("anonymous preview does NOT trigger instruction generation (lossless, no LLM)", async () => {
+    const built = buildCreateStudyDraftTool({ ownerUserId: null });
+    await (built.spec as any).execute(validDraft);
+    expect(mockGenerate).not.toHaveBeenCalled();
   });
 });
 

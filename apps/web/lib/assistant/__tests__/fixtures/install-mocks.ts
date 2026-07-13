@@ -60,6 +60,19 @@ export function fakeEmbedderQwenModule() {
 }
 
 /**
+ * Fake `@/lib/instruction/generator` (ADR-0015 baseline instruction LLM).
+ *
+ * createStudyDraft (Wave 3) calls `generateInstructionBaseline` in its
+ * signed-in persist path. Tests stub it to a deterministic string so no real
+ * LLM call happens; individual tests override the return / rejection.
+ */
+export function fakeInstructionGeneratorModule() {
+  return {
+    generateInstructionBaseline: vi.fn().mockResolvedValue("## 研究意图\n(mock baseline)"),
+  };
+}
+
+/**
  * Fake `node-appwrite` SDK module.
  *
  * 必要: tools/search-across-studies.ts 在 module load 时构造一个 Client 实例,
