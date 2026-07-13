@@ -12,6 +12,7 @@ const TABS = [
   { slug: "overview", label: "概览" },
   { slug: "dashboard", label: "仪表盘" },
   { slug: "guide", label: "提纲" },
+  { slug: "instruction", label: "研究说明" },
   { slug: "screener", label: "筛选问卷" },
   { slug: "recruit", label: "招募" },
   { slug: "results", label: "结果" },

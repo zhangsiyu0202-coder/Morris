@@ -140,7 +140,7 @@ export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: Surv
         );
       }
     });
-  }, [surveyId, title, researchGoal, targetAudience, introScript, moderatorInstruction, guide]);
+  }, [surveyId, title, researchGoal, targetAudience, introScript, moderatorInstruction, instruction, guide]);
 
   // ---- guide 变更帮助函数 ----
   const setGuideDirty = (updater: (g: Guide) => Guide) => {
