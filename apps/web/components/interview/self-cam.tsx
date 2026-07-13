@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useState } from "react"
 import type { LocalVideoTrack } from "livekit-client"
 import { MicOff, VideoOff } from "lucide-react"
 
@@ -16,16 +16,16 @@ interface SelfCamProps {
  * mic-off badge keeps the audio state visible since this is a voice interview.
  */
 export function SelfCam({ track, cameraEnabled, micEnabled }: SelfCamProps) {
-  const videoRef = useRef<HTMLVideoElement>(null)
+  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null)
 
   useEffect(() => {
-    const element = videoRef.current
-    if (!element || !track) return
-    track.attach(element)
+    if (!videoElement || !track) return
+
+    track.attach(videoElement)
     return () => {
-      track.detach(element)
+      track.detach(videoElement)
     }
-  }, [track])
+  }, [track, videoElement])
 
   const showVideo = cameraEnabled && track !== null
 
@@ -33,7 +33,7 @@ export function SelfCam({ track, cameraEnabled, micEnabled }: SelfCamProps) {
     <div className="relative h-full w-full overflow-hidden border-t border-ink-0/10 bg-ink-900">
       {showVideo ? (
         <video
-          ref={videoRef}
+          ref={setVideoElement}
           autoPlay
           muted
           playsInline
