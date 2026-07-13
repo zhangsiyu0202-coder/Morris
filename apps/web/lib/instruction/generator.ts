@@ -104,20 +104,6 @@ export interface GenerateBaselineInput {
    * engine (they are editor UX only, per ADR-0014).
    */
   questions: ReadonlyArray<{ text: string; type: string }>;
-  /**
-   * Optional legacy hints — the four soon-to-be-sunset fields from
-   * pre-ADR-0015 surveys. When provided, the prompt includes them as
-   * "researcher-authored background context" so the generator doesn't
-   * have to guess the research goal / audience from questions alone.
-   * Post-Wave 5 (legacy sunset) this shape simplifies to just title +
-   * questions.
-   */
-  legacy?: {
-    researchGoal?: string;
-    targetAudience?: string;
-    introScript?: string;
-    moderatorInstruction?: string;
-  };
 }
 
 function summarizeQuestions(questions: GenerateBaselineInput["questions"]): string {
@@ -128,23 +114,6 @@ function summarizeQuestions(questions: GenerateBaselineInput["questions"]): stri
       return `${i + 1}. ${q.text}${type}`;
     })
     .join("\n");
-}
-
-function summarizeLegacy(legacy: GenerateBaselineInput["legacy"]): string {
-  if (!legacy) return "";
-  const lines: string[] = [];
-  if (legacy.researchGoal?.trim()) lines.push(`原研究目标:${legacy.researchGoal.trim()}`);
-  if (legacy.targetAudience?.trim()) lines.push(`原目标受众:${legacy.targetAudience.trim()}`);
-  if (legacy.introScript?.trim()) lines.push(`原开场:${legacy.introScript.trim()}`);
-  if (legacy.moderatorInstruction?.trim()) {
-    lines.push(`原主持指令:${legacy.moderatorInstruction.trim()}`);
-  }
-  if (lines.length === 0) return "";
-  return [
-    "",
-    "# 研究员已有的背景信息(可作为写作参考,不要照搬)",
-    ...lines,
-  ].join("\n");
 }
 
 /**
@@ -158,7 +127,6 @@ export async function generateInstructionBaseline(
   input: GenerateBaselineInput,
 ): Promise<string> {
   const title = input.surveyTitle.trim() || "(未填写)";
-  const legacyBlock = summarizeLegacy(input.legacy);
   const traceId = input.traceId ?? createLogger("action.instruction.generate").traceId;
 
   const userPrompt = [
@@ -167,7 +135,6 @@ export async function generateInstructionBaseline(
     ``,
     `# 该调研的问题清单(按访谈顺序)`,
     summarizeQuestions(input.questions),
-    legacyBlock,
     ``,
     `请基于以上信息撰写这份 instruction。`,
   ].join("\n");

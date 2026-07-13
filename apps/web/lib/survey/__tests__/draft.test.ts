@@ -7,13 +7,8 @@ const survey: Survey = {
   projectId: "p1",
   title: "差旅住宿调研",
   status: "draft",
-  flowConfig: {
-    researchGoal: "了解预订习惯",
-    targetAudience: "常旅客",
-    introScript: "你好,感谢参与",
-  },
-  moderatorInstruction: "语气温和,允许停顿",
-  instruction: "",
+  flowConfig: {},
+  instruction: "## 研究意图\n了解预订习惯",
   version: 1,
   updatedAt: "2024-12-03T00:00:00.000Z",
 };
@@ -52,14 +47,11 @@ const questions: QuestionBlock[] = [
 ];
 
 describe("assembleSurveyDraft", () => {
-  it("maps meta from flowConfig and orders sections/questions", () => {
+  it("maps instruction and orders sections/questions", () => {
     const draft = assembleSurveyDraft(survey, sections, questions);
 
     expect(draft.title).toBe("差旅住宿调研");
-    expect(draft.researchGoal).toBe("了解预订习惯");
-    expect(draft.moderatorInstruction).toBe("语气温和,允许停顿");
-    expect(draft.targetAudience).toBe("常旅客");
-    expect(draft.introScript).toBe("你好,感谢参与");
+    expect(draft.instruction).toBe("## 研究意图\n了解预订习惯");
 
     // sections sorted by order
     expect(draft.sections.map((s) => s.title)).toEqual(["暖场", "深入"]);
@@ -76,7 +68,7 @@ describe("assembleSurveyDraft", () => {
     expect(q[1].probeInstruction).toBe("追问原因");
   });
 
-  it("defaults missing meta to empty strings and coerces unknown question types", () => {
+  it("preserves the single instruction and coerces unknown question types", () => {
     const draft = assembleSurveyDraft(
       { ...survey, flowConfig: {} },
       [{ $id: "se1", surveyId: "sv1", title: "S", description: "D", order: 0 }],
@@ -95,7 +87,7 @@ describe("assembleSurveyDraft", () => {
         },
       ],
     );
-    expect(draft.researchGoal).toBe("");
+    expect(draft.instruction).toBe("## 研究意图\n了解预订习惯");
     expect(draft.sections[0].questions[0].questionType).toBe("open_ended");
     expect(draft.sections[0].questions[0].probeLevel).toBe("standard");
   });

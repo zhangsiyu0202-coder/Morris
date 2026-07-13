@@ -65,18 +65,16 @@ const GUIDE_SYSTEM = `你是 Morris 的访谈提纲设计专家。你为定性�
 - 关键问题用 deep 追问,并在 probeInstruction 写明追问方向。
 - 全程中文,问题口语化、适合主持人朗读,不带编号。`;
 
-/** 根据研究主题/目标/受众,生成一整份访谈提纲。 */
+/** 根据研究主题与研究说明,生成一整份访谈提纲。 */
 export async function generateGuide(input: {
   title: string;
-  researchGoal: string;
-  targetAudience: string;
+  instruction: string;
 }): Promise<{ sections: GuideSection[] } | { error: string }> {
   const title = (input.title ?? "").trim();
-  const goal = (input.researchGoal ?? "").trim();
-  const audience = (input.targetAudience ?? "").trim();
+  const instruction = (input.instruction ?? "").trim();
 
-  if (!title && !goal) {
-    return { error: "请先填写调研标题或研究目标,AI 才能生成提纲。" };
+  if (!title && !instruction) {
+    return { error: "请先填写调研标题或研究说明,AI 才能生成提纲。" };
   }
 
   const log = createLogger("action.guide-ai.generateGuide");
@@ -95,8 +93,7 @@ export async function generateGuide(input: {
           system: GUIDE_SYSTEM,
           prompt: `请为以下调研设计一份完整的访谈提纲:
 标题:${title || "(未填写)"}
-研究目标:${goal || "(未填写)"}
-目标受众:${audience || "(未填写)"}`,
+研究说明:${instruction || "(未填写)"}`,
         }),
     );
 

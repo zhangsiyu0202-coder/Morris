@@ -54,10 +54,7 @@ export function assembleSurveyDraft(
 
   return {
     title: survey.title,
-    // ADR-0015 primary field. Read straight from the Survey column;
-    // legacy Survey rows return "" (schema default) and the composer's
-    // fallback rebuilds from the four legacy fields at flow-config
-    // build time.
+    // Read the single study-wide moderator context document directly.
     instruction: survey.instruction,
     sections: orderedSections.map((section) => {
       const sectionQuestions = questions

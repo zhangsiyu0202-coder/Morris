@@ -215,7 +215,7 @@ export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: Surv
     setAiError(null);
     setGenerating(true);
     startTransition(async () => {
-      const res = await generateGuide({ title, researchGoal, targetAudience });
+      const res = await generateGuide({ title, instruction });
       setGenerating(false);
       if ("error" in res) {
         setAiError(res.error);

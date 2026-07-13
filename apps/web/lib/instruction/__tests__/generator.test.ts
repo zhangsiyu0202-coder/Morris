@@ -1,7 +1,7 @@
 /**
  * Unit tests for `generateInstructionBaseline` — the shared LLM entry
  * point (ADR-0015 Wave 2). We assert on the prompt shape (title +
- * questions + optional legacy block make it into the LLM prompt) and
+ * questions make it into the LLM prompt) and
  * error handling (empty LLM response throws).
  *
  * The actual LLM call is stubbed via a vi.mock() on the `ai` module,
@@ -100,7 +100,7 @@ describe("generateInstructionBaseline — prompt shape", () => {
     expect(args.prompt).toContain("[rating]");
   });
 
-  it("includes the legacy block ONLY when legacy fields are non-empty", async () => {
+  it("does not include deprecated hints supplied by a stale caller", async () => {
     generateTextMock.mockResolvedValueOnce({ text: "..." });
     await generateInstructionBaseline({
       surveyTitle: "study",
@@ -109,22 +109,11 @@ describe("generateInstructionBaseline — prompt shape", () => {
         researchGoal: "understand decision path",
         targetAudience: "SaaS buyers",
       },
-    });
-    const args = generateTextMock.mock.calls[0][0];
-    expect(args.prompt).toContain("研究员已有的背景信息");
-    expect(args.prompt).toContain("understand decision path");
-    expect(args.prompt).toContain("SaaS buyers");
-  });
-
-  it("omits the legacy block when all legacy fields are empty / whitespace", async () => {
-    generateTextMock.mockResolvedValueOnce({ text: "..." });
-    await generateInstructionBaseline({
-      surveyTitle: "study",
-      questions: [{ text: "q1", type: "open_ended" }],
-      legacy: { researchGoal: "", targetAudience: "  " },
-    });
+    } as never);
     const args = generateTextMock.mock.calls[0][0];
     expect(args.prompt).not.toContain("研究员已有的背景信息");
+    expect(args.prompt).not.toContain("understand decision path");
+    expect(args.prompt).not.toContain("SaaS buyers");
   });
 
   it("passes low temperature (deterministic template output)", async () => {

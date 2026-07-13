@@ -3,26 +3,15 @@
 /**
  * `InstructionView` — the 研究说明 tab (ADR-0015 Wave 2).
  *
- * Renders a single markdown editor for `Survey.instruction` plus two
- * action buttons: "生成 baseline" (LLM) and "从旧字段合成" (legacy
- * migration). The tab is intentionally minimal — it treats the
+ * Renders a single markdown editor for `Survey.instruction` plus a
+ * baseline-generation action. The tab is intentionally minimal — it treats the
  * instruction as one free-form text field, matching the CLAUDE.md
  * mental model established in ADR-0015: one document, editor decides
  * structure, agent consumes markdown verbatim.
- *
- * Legacy migration:
- *   - "从旧字段合成" is only visible when `Survey.instruction` is empty
- *     AND at least one of the four legacy fields
- *     (moderatorInstruction / researchGoal / targetAudience /
- *     introScript) is populated. This lets researchers of pre-ADR-0015
- *     surveys bootstrap without spending an LLM call.
- *   - Once the researcher writes into the editor (making instruction
- *     non-empty), the legacy button hides — legacy fields become
- *     effectively orphaned and Wave 5's sunset will remove them.
  */
 
 import { useCallback, useState, useTransition } from "react";
-import { Loader2, Check, Sparkles, RefreshCw } from "lucide-react";
+import { Loader2, Check, Sparkles } from "lucide-react";
 
 import { createLogger } from "@merism/observability";
 import type { SurveyDraft } from "@merism/contracts";
@@ -31,7 +20,6 @@ import {
   generateInstructionBaselineAction,
   saveInstructionAction,
 } from "@/lib/actions/instruction";
-import { composeInstructionFromLegacy } from "@/lib/instruction/legacy-migration";
 
 const log = createLogger("component.studies.instruction-view");
 
@@ -59,13 +47,6 @@ export function InstructionView({ surveyId, draft }: InstructionViewProps) {
   const [generateError, setGenerateError] = useState<string | null>(null);
 
   const questionCount = draft.sections.reduce((n, s) => n + s.questions.length, 0);
-  const legacyCompose = composeInstructionFromLegacy({
-    researchGoal: draft.researchGoal,
-    targetAudience: draft.targetAudience,
-    introScript: draft.introScript,
-    moderatorInstruction: draft.moderatorInstruction,
-  });
-  const legacyAvailable = markdown.trim() === "" && legacyCompose !== null;
   const dirty = markdown !== (draft.instruction ?? "");
 
   const handleGenerate = useCallback(() => {
@@ -81,10 +62,6 @@ export function InstructionView({ surveyId, draft }: InstructionViewProps) {
       log.info("instruction.generate.ok", { surveyId, chars: result.markdown.length });
     });
   }, [surveyId]);
-
-  const handleComposeFromLegacy = useCallback(() => {
-    if (legacyCompose) setMarkdown(legacyCompose);
-  }, [legacyCompose]);
 
   const handleSave = useCallback(async () => {
     setSaveError(null);
@@ -157,22 +134,6 @@ export function InstructionView({ surveyId, draft }: InstructionViewProps) {
             建议以 markdown 组织(建议 5 个 section:研究意图 / 访谈对象 / 主持行为要点 / 开场 / 结束),
             但格式完全自由 —— 你怎么写主持人就怎么读。
           </p>
-          {legacyAvailable && (
-            <div className="mt-3 flex items-center gap-3 rounded border border-dashed border-ink-200 bg-mauve-50 px-3 py-2">
-              <p className="flex-1 font-ui text-caption text-ink-600">
-                检测到旧版字段(研究目标 / 目标受众 / 开场 / 主持指令)。可从旧字段合成一份 markdown 骨架,
-                或直接点「生成 baseline」由 AI 起草一份完整版。
-              </p>
-              <button
-                type="button"
-                onClick={handleComposeFromLegacy}
-                className="inline-flex h-8 items-center gap-1.5 rounded border border-ink-900 bg-ink-0 px-3 font-ui text-caption font-medium text-ink-900 transition-colors hover:bg-mauve-50"
-              >
-                <RefreshCw className="size-3.5" strokeWidth={2} />
-                从旧字段合成
-              </button>
-            </div>
-          )}
           {generateError && (
             <p className="mt-3 font-ui text-caption italic text-ink-900">⚠ {generateError}</p>
           )}
