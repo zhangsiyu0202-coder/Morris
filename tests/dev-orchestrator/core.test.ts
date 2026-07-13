@@ -84,4 +84,19 @@ describe("local dev orchestration contract", () => {
     });
     expect(sleep).toHaveBeenCalledOnce();
   });
+
+  it("stops waiting when the managed process exits", async () => {
+    let stopped = false;
+    const result = await waitForReadiness(
+      async () => ({ component: "Mastra", ok: false, url: "http://localhost:4111/api/agents", reason: "fetch failed" }),
+      {
+        intervalMs: 1,
+        timeoutMs: 50,
+        sleep: async () => { stopped = true; },
+        stopReason: () => stopped ? "process exited with code 1" : undefined,
+      },
+    );
+
+    expect(result.reason).toBe("process exited with code 1");
+  });
 });

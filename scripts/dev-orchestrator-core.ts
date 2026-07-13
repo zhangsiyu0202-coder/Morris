@@ -77,7 +77,7 @@ export async function checkHttpReadiness(
 
 export async function waitForReadiness(
   probe: () => Promise<ReadinessResult>,
-  options: { timeoutMs: number; intervalMs: number; sleep?: Sleeper },
+  options: { timeoutMs: number; intervalMs: number; sleep?: Sleeper; stopReason?: () => string | undefined },
 ): Promise<ReadinessResult> {
   const deadline = Date.now() + options.timeoutMs;
   const sleep = options.sleep ?? ((milliseconds) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
@@ -85,6 +85,8 @@ export async function waitForReadiness(
   for (;;) {
     const result = await probe();
     if (result.ok) return result;
+    const stopReason = options.stopReason?.();
+    if (stopReason) return { ...result, reason: stopReason };
     if (Date.now() >= deadline) {
       return {
         ...result,
