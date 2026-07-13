@@ -16,7 +16,11 @@ export const REQUIRED_LOCAL_FUNCTIONS = [
   "analyzeSessionVisual",
 ] as const;
 
-type FunctionEnvironment = Pick<NodeJS.ProcessEnv, "APPWRITE_ENDPOINT" | "APPWRITE_PROJECT_ID" | "APPWRITE_API_KEY">;
+type FunctionEnvironment = {
+  APPWRITE_ENDPOINT?: string;
+  APPWRITE_PROJECT_ID?: string;
+  APPWRITE_API_KEY?: string;
+};
 type HttpResponse = Pick<Response, "ok" | "status" | "json">;
 type HttpRequest = (url: string, init: RequestInit) => Promise<HttpResponse>;
 

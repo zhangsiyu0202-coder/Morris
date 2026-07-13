@@ -1,6 +1,3 @@
-import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
-
 import { loadDotEnv } from "../packages/appwrite-schema/src/client.js";
 import {
   checkHttpReadiness,
@@ -9,8 +6,6 @@ import {
   validateLocalDevEnvironment,
 } from "./dev-orchestrator-core.js";
 import { checkFunctionDeployments } from "./dev-runtime.js";
-
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 async function main(): Promise<void> {
   loadDotEnv();
@@ -36,7 +31,7 @@ async function main(): Promise<void> {
   process.exitCode = 1;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1]?.endsWith("dev-status.ts")) {
   void main().catch((error) => {
     console.error(error instanceof Error ? error.message : "dev status failed");
     process.exitCode = 1;

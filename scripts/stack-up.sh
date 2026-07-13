@@ -7,21 +7,24 @@ COMPOSE="$ROOT/infra/docker/docker-compose.yml"
 bash "$ROOT/scripts/check-env.sh"
 docker compose --env-file "$ROOT/.env" -f "$COMPOSE" up -d
 
-echo "Waiting for Appwrite to become healthy (max 5 min)..."
-for i in $(seq 1 60); do
-  # Any HTTP response (incl. 401) means the API is serving; only a connection
-  # failure (code 000) counts as not-ready.
-  code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/v1/health/version || echo 000)
-  if [ "$code" != "000" ]; then
-    appwrite_ok=1; break
-  fi
-  sleep 5
-done
+wait_for_ready() {
+  local name="$1"
+  local url="$2"
+  echo "Waiting for $name readiness (max 5 min)..."
+  for _ in $(seq 1 60); do
+    # A successful HTTP response proves the service handler is ready; a bound
+    # port or an arbitrary 4xx/5xx response does not.
+    if curl -fsS --max-time 3 -o /dev/null "$url"; then
+      return 0
+    fi
+    sleep 5
+  done
+  echo "ERROR: $name did not become ready in time ($url)" >&2
+  return 1
+}
 
-if [ "${appwrite_ok:-0}" != "1" ]; then
-  echo "ERROR: Appwrite did not become healthy in time" >&2
-  exit 1
-fi
+wait_for_ready "Appwrite" "http://localhost:8080/v1/health/version"
+wait_for_ready "LiveKit" "http://localhost:7880/"
 
 echo "OK"
 echo "  Appwrite:  http://localhost:8080"

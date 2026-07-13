@@ -6,7 +6,11 @@ export const LOCAL_DEV_ENDPOINTS = {
   voiceWorker: "http://localhost:8082",
 } as const;
 
-type LocalDevEnvironment = Pick<NodeJS.ProcessEnv, "APPWRITE_ENDPOINT" | "APP_URL" | "LIVEKIT_URL">;
+type LocalDevEnvironment = {
+  APPWRITE_ENDPOINT?: string;
+  APP_URL?: string;
+  LIVEKIT_URL?: string;
+};
 
 export type ReadinessResult = {
   component: string;
