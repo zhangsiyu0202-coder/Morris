@@ -31,8 +31,6 @@ const deepseek = createDeepSeek({
   apiKey: process.env.DEEPSEEK_API_KEY ?? process.env.AI_GATEWAY_API_KEY,
 });
 
-const log = createLogger("action.instruction.generate");
-
 // ---------------------------------------------------------------------------
 // Prompt template — Claude Code `/init` style
 // ---------------------------------------------------------------------------
@@ -94,6 +92,8 @@ const BASELINE_SYSTEM_PROMPT = `你是 Merism 的访谈说明写作专家。你�
 
 /** Input to the baseline generator. */
 export interface GenerateBaselineInput {
+  /** Request-scoped trace id supplied by the Server Action or Morris tool. */
+  traceId?: string;
   /** Survey title as it appears in the editor. Trimmed by caller. */
   surveyTitle: string;
   /**
@@ -159,6 +159,7 @@ export async function generateInstructionBaseline(
 ): Promise<string> {
   const title = input.surveyTitle.trim() || "(未填写)";
   const legacyBlock = summarizeLegacy(input.legacy);
+  const traceId = input.traceId ?? createLogger("action.instruction.generate").traceId;
 
   const userPrompt = [
     `# 待撰写 instruction 的调研`,
@@ -174,7 +175,7 @@ export async function generateInstructionBaseline(
   const { text } = await withLLMCall(
     {
       scope: "action.instruction.generate",
-      traceId: log.traceId,
+      traceId,
       defaultModel: "deepseek-chat",
     },
     () =>

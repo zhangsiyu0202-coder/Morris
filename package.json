@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:properties": "vitest run tests/properties",
     "smoke": "bash scripts/smoke.sh",
+    "backfill:survey-instruction": "tsx scripts/backfill-survey-instruction.ts",
     "smoke:stress": "tsx scripts/smoke-stress.mts",
     "e2e": "pnpm -F @merism/web e2e",
     "schema:apply": "pnpm -F @merism/appwrite-schema apply",

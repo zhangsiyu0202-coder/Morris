@@ -10,6 +10,10 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const observability = vi.hoisted(() => ({
+  withLLMCall: vi.fn(async (_opts: unknown, fn: () => Promise<unknown>) => fn()),
+}));
+
 // AI SDK 6: mock `generateText` so we can inspect the prompt.
 const generateTextMock = vi.fn();
 vi.mock("ai", () => ({
@@ -19,7 +23,7 @@ vi.mock("ai", () => ({
 // Observability: pass through to the real generateText so we can still
 // inspect its arguments.
 vi.mock("@merism/observability", () => ({
-  withLLMCall: async (_opts: unknown, fn: () => Promise<unknown>) => fn(),
+  withLLMCall: observability.withLLMCall,
   createLogger: () => ({
     traceId: "test-trace",
     info: () => {},
@@ -37,9 +41,25 @@ const { generateInstructionBaseline } = await import("../generator");
 
 beforeEach(() => {
   generateTextMock.mockReset();
+  observability.withLLMCall.mockClear();
 });
 
 describe("generateInstructionBaseline — prompt shape", () => {
+  it("uses the invocation trace id supplied by its caller", async () => {
+    generateTextMock.mockResolvedValueOnce({ text: "## 研究意图\n..." });
+
+    await generateInstructionBaseline({
+      surveyTitle: "study",
+      questions: [{ text: "q1", type: "open_ended" }],
+      traceId: "request-trace-1",
+    });
+
+    expect(observability.withLLMCall).toHaveBeenCalledWith(
+      expect.objectContaining({ traceId: "request-trace-1" }),
+      expect.any(Function),
+    );
+  });
+
   it("includes the survey title in the user prompt", async () => {
     generateTextMock.mockResolvedValueOnce({ text: "## 研究意图\n..." });
     await generateInstructionBaseline({

@@ -265,14 +265,21 @@ export const SurveyDraftSectionSchema = z.object({
 
 export const SurveyDraftSchema = z.object({
   title: z.string().trim().min(1),
+  /**
+   * @deprecated Use `instruction`; retained for ADR-0015 W5a backfill only.
+   */
   researchGoal: z.string().trim().min(1),
+  /**
+   * @deprecated Use `instruction`; retained for ADR-0015 W5a backfill only.
+   */
   targetAudience: z.string().trim().min(1),
+  /**
+   * @deprecated Use `instruction`; retained for ADR-0015 W5a backfill only.
+   */
   introScript: z.string().trim().min(1),
-  // survey-editor moderator-instruction increment: researcher-authored directives
-  // for the AI voice moderator (tone, pacing-as-behavior, interview style). The
-  // interview GOAL is NOT duplicated here — it stays in `researchGoal`. Composed
-  // into InterviewWorkflowConfig.supervisorInstruction at build time. Default ""
-  // keeps existing drafts valid and means "use the operational default only".
+  /**
+   * @deprecated Use `instruction`; retained for ADR-0015 W5a backfill only.
+   */
   moderatorInstruction: z.string().trim().default(""),
   /**
    * `instruction` — the CLAUDE.md-style single free-form markdown document

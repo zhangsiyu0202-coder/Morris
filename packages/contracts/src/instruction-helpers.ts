@@ -19,9 +19,13 @@
  * before ADR-0015 introduced the single `Survey.instruction` document.
  */
 export interface LegacyInstructionSources {
+  /** @deprecated ADR-0015 replaces this with `instruction`. */
   researchGoal?: string;
+  /** @deprecated ADR-0015 replaces this with `instruction`. */
   targetAudience?: string;
+  /** @deprecated ADR-0015 replaces this with `instruction`. */
   introScript?: string;
+  /** @deprecated ADR-0015 replaces this with `instruction`. */
   moderatorInstruction?: string;
 }
 

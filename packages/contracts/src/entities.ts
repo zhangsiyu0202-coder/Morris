@@ -185,9 +185,11 @@ export const SurveySchema = z.object({
   title: z.string(),
   status: SurveyStatus.default("draft"),
   flowConfig: json.default({}),
-  // survey-editor moderator-instruction increment: a dedicated (not flowConfig)
-  // field carrying the researcher's directives for the AI voice moderator
-  // (tone/pacing-as-behavior/style). Default "" so existing surveys stay valid.
+  /**
+   * @deprecated ADR-0015 replaces this with the study-scoped markdown
+   * `instruction`. Kept readable through instruction-sunset W5a so existing
+   * surveys can be backfilled before W5b deletes the Appwrite attribute.
+   */
   moderatorInstruction: z.string().default(""),
   /**
    * `instruction` — the CLAUDE.md-style single free-form markdown document

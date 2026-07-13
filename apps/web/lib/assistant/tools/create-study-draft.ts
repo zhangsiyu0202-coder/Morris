@@ -77,6 +77,7 @@ async function withBaselineInstruction(draft: SurveyDraft): Promise<SurveyDraft>
       s.questions.map((q) => ({ text: q.questionText, type: q.questionType })),
     );
     const instruction = await generateInstructionBaseline({
+      traceId: log.traceId,
       surveyTitle: draft.title,
       questions,
       legacy: {

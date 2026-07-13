@@ -21,8 +21,6 @@ import { getServerClient, DATABASE_ID } from "@/lib/queries/client";
 
 const SURVEYS = "surveys";
 
-const log = createLogger("action.instruction.baseline");
-
 export type InstructionBaselineResult =
   | { ok: true; markdown: string }
   | { ok: false; error: InstructionBaselineError };
@@ -48,6 +46,7 @@ export type InstructionBaselineError =
 export async function generateInstructionBaselineAction(
   surveyId: string,
 ): Promise<InstructionBaselineResult> {
+  const log = createLogger("action.instruction.baseline");
   // Owner-scope check. `loadSurveyDraft` returns null for non-owners; we
   // treat both cases (not signed in, and signed in but not the owner) as
   // "not authenticated" from the client's perspective — the client should
@@ -77,6 +76,7 @@ export async function generateInstructionBaselineAction(
 
   try {
     const markdown = await generateInstructionBaseline({
+      traceId: log.traceId,
       surveyTitle: loaded.draft.title,
       questions,
       legacy: {
@@ -119,6 +119,7 @@ export async function saveInstructionAction(
   surveyId: string,
   markdown: string,
 ): Promise<SaveInstructionResult> {
+  const log = createLogger("action.instruction.save");
   let owner: string;
   try {
     owner = await requireOwnerUserId();
