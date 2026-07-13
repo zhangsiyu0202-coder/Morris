@@ -22,7 +22,6 @@ const { buildStudyContext } = await import("../study-context");
 
 function surveyWith(fields: {
   instruction?: string;
-  moderatorInstruction?: string;
   flowConfig?: Record<string, unknown>;
 }) {
   return {
@@ -32,7 +31,6 @@ function surveyWith(fields: {
       title: "差旅住宿调研",
       status: "published",
       flowConfig: fields.flowConfig ?? {},
-      moderatorInstruction: fields.moderatorInstruction ?? "",
       instruction: fields.instruction ?? "",
       version: 1,
       updatedAt: new Date().toISOString(),
@@ -57,17 +55,10 @@ describe("buildStudyContext — research-intent backdrop (ADR-0015 Wave 4)", () 
     expect(ctx).toContain("了解差旅用户的预订决策");
   });
 
-  it("falls back to composing legacy fields when instruction is empty", async () => {
-    getStudy.mockResolvedValue(
-      surveyWith({
-        instruction: "",
-        flowConfig: { researchGoal: "了解流失原因", targetAudience: "退订用户" },
-      }),
-    );
+  it("does not synthesize research context when instruction is empty", async () => {
+    getStudy.mockResolvedValue(surveyWith({ instruction: "" }));
     const ctx = await buildStudyContext("owner", "sv1");
-    expect(ctx).toContain("研究说明");
-    expect(ctx).toContain("了解流失原因");
-    expect(ctx).toContain("退订用户");
+    expect(ctx).not.toContain("研究说明");
   });
 
   it("omits the backdrop entirely when no instruction and no legacy fields", async () => {

@@ -36,9 +36,7 @@ const sectionArb = fc.record({
 
 const draftArb: fc.Arbitrary<SurveyDraft> = fc.record({
   title: fc.string({ minLength: 1 }),
-  researchGoal: fc.string(),
-  targetAudience: fc.string(),
-  introScript: fc.string(),
+  instruction: fc.string({ minLength: 1 }),
   sections: fc.array(sectionArb, { minLength: 1, maxLength: 4 }),
 });
 
@@ -53,11 +51,8 @@ function draftToDocs(draft: SurveyDraft): {
     projectId: "default",
     title: draft.title,
     status: "draft",
-    flowConfig: {
-      researchGoal: draft.researchGoal,
-      targetAudience: draft.targetAudience,
-      introScript: draft.introScript,
-    },
+    flowConfig: {},
+    instruction: draft.instruction,
     version: 1,
     updatedAt: "2024-01-01T00:00:00.000Z",
   } as Survey;
@@ -95,9 +90,7 @@ describe("P-DATA-01: SurveyDraft write->read roundtrip is lossless", () => {
         const out = assembleSurveyDraft(survey, sections, questions);
 
         expect(out.title).toBe(draft.title);
-        expect(out.researchGoal).toBe(draft.researchGoal);
-        expect(out.targetAudience).toBe(draft.targetAudience);
-        expect(out.introScript).toBe(draft.introScript);
+        expect(out.instruction).toBe(draft.instruction);
         expect(out.sections.length).toBe(draft.sections.length);
 
         draft.sections.forEach((s, si) => {

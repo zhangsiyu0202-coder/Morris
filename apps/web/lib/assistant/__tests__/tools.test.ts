@@ -164,9 +164,7 @@ describe("Morris tools factory: createStudyDraft", () => {
     const tools = buildAssistantTools({ ownerUserId: null });
     const result: any = await (tools.createStudyDraft as any).execute({
       title: "差旅住宿预订习惯",
-      researchGoal: "了解差旅住宿预订习惯",
-      targetAudience: "经常出差的上班族",
-      introScript: "你好,感谢参与这次访谈。",
+      instruction: "## 研究意图\n了解差旅住宿预订习惯。",
       sections: [
         {
           title: "预订渠道",

@@ -35,10 +35,7 @@ const FIXTURE_PATH = join(__dirname, "__fixtures__", "branch-e2e-flow-config.jso
 function equivalentDraft(): SurveyDraft {
   return SurveyDraftSchema.parse({
     title: "Occupation Study",
-    researchGoal: "test branches",
-    targetAudience: "testers",
-    introScript: "Hi.",
-    moderatorInstruction: "",
+    instruction: "Test branch instruction.",
     sections: [
       {
         title: "Q",

@@ -1,7 +1,7 @@
 {
   "surveyId": "surv-branch",
   "sessionId": "sess-branch",
-  "moderatorInstruction": "Guide a qualitative interview for \"Occupation Study\". Use the intro script, follow the section order, and use probe instructions when configured.",
+  "moderatorInstruction": "Test branch instruction.",
   "startStepId": "q_s1",
   "steps": [
     {

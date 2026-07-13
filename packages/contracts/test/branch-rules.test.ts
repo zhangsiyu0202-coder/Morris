@@ -17,10 +17,7 @@ import {
 function draftWithStableIds(): SurveyDraft {
   return {
     title: "Branch Study",
-    researchGoal: "test branches",
-    targetAudience: "testers",
-    introScript: "Hi.",
-    moderatorInstruction: "",
+    instruction: "Test branch instruction.",
     sections: [
       {
         title: "Q",
