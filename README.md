@@ -26,9 +26,9 @@ sub-specs (see [Sub-spec roadmap](#sub-spec-roadmap)).
   re-render); see `docs/adr/0008-participant-egress-for-interview-recording.md`.
   Post ADR-0013 this is the only interview worker; the Python worker in
   `apps/agent/` has been deleted.
-- **Functions:** four Appwrite Functions deployed via OpenRuntimes
-  (`issueLivekitToken`, `analyzeSession`, `analyzeSurvey`,
-  `analyzeSessionVisual`). Local-stack deploy steps in
+- **Functions:** five Appwrite Functions deployed via OpenRuntimes
+  (`issueLivekitToken`, `finalizeInterviewSession`, `analyzeSession`,
+  `analyzeSurvey`, `analyzeSessionVisual`). Local-stack deploy steps in
   `docs/dev/deploy-functions.md`.
 - **Web:** Next.js 15 (App Router) + TypeScript + Tailwind + shadcn/ui, with a
   **Mastra `Agent`** ("Morris") page assistant — sidebar dock + standalone
