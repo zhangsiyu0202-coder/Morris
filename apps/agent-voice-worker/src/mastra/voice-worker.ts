@@ -1,6 +1,5 @@
 import { fileURLToPath } from "node:url";
 
-import { inference } from "@livekit/agents";
 import { createLiveKitWorker, runLiveKitWorker } from "@mastra/livekit/worker";
 
 import type {
@@ -16,6 +15,7 @@ import {
   type RoomMetadataParseResult,
 } from "./merism-room-metadata.js";
 import { buildVoiceWorkerSpeechProviders } from "./speech.js";
+import { buildVoiceWorkerTurnDetection } from "./turn-detection.js";
 import { FlowEngineDriver } from "../interview/flow-driver.js";
 import { registerSubmitAnswerRpc } from "../transport/submit-answer-rpc.js";
 import { createSessionLogger } from "../observability/session-logger.js";
@@ -152,7 +152,9 @@ export default createLiveKitWorker({
   },
 
   ...buildVoiceWorkerSpeechProviders(),
-  turnDetection: new inference.TurnDetector({ version: "v1-mini" }),
+  turnHandling: {
+    turnDetection: buildVoiceWorkerTurnDetection(),
+  },
 
   // NB: no static `greeting`. The Python worker did not have one — the flow
   // engine's `run_flow` publishes the first step and the Mastra agent asks
