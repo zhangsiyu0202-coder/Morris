@@ -99,7 +99,6 @@ export async function createSurvey(title: string): Promise<string> {
       title: title.trim() || "未命名调研",
       status: "draft",
       flowConfig: JSON.stringify({}),
-      moderatorInstruction: "",
       // ADR-0015 primary field, initialized empty. Populated later when
       // the researcher clicks "generate baseline" (Wave 2) or edits by
       // hand in guide-editor.
@@ -140,7 +139,6 @@ export async function saveSurveyDraft(surveyId: string, draftInput: SurveyDraft)
       targetAudience: draft.targetAudience,
       introScript: draft.introScript,
     }),
-    moderatorInstruction: draft.moderatorInstruction,
     // ADR-0015 (instruction-as-context-document) primary column. During
     // the Wave 1 rollout the guide-editor UI still writes the four legacy
     // fields, so `draft.instruction` will typically arrive as "" for

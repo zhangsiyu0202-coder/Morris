@@ -25,7 +25,6 @@ export interface SurveyRow {
    * Legacy field, being sunset per ADR-0015 (instruction-as-context-doc);
    * once `instruction` is populated, this field is ignored downstream.
    */
-  moderatorInstruction?: string;
   /**
    * `instruction` — the CLAUDE.md-style single free-form markdown document
    * that carries the full AI moderator operating manual. Per ADR-0015
@@ -114,7 +113,7 @@ export function buildSurveyDraftFromDocs(input: BuildSurveyDraftInput): SurveyDr
     // to ""); the composer treats an empty value as "use the operational
     // base only". Dropping this field entirely (as the mapper used to)
     // silently discarded the researcher's persona for every session.
-    moderatorInstruction: survey.moderatorInstruction ?? "",
+    moderatorInstruction: "",
     // ADR-0015 primary field. Passes through directly; legacy composer
     // fallback (in `buildInterviewFlowConfigFromDraft`) handles the case
     // where this field is empty on a pre-migration row.

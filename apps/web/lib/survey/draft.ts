@@ -64,7 +64,7 @@ export function assembleSurveyDraft(
     researchGoal: flowString(flow, "researchGoal"),
     targetAudience: flowString(flow, "targetAudience"),
     introScript: flowString(flow, "introScript"),
-    moderatorInstruction: survey.moderatorInstruction ?? "",
+    moderatorInstruction: "",
     // ADR-0015 primary field. Read straight from the Survey column;
     // legacy Survey rows return "" (schema default) and the composer's
     // fallback rebuilds from the four legacy fields at flow-config
