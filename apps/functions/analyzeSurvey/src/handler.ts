@@ -67,6 +67,12 @@ export interface SurveyContextLite {
   title: string;
   questionBlocks: SurveyDef["questionBlocks"];
   topics: string[];
+  /**
+   * Resolved research-intent backdrop (ADR-0015): prefers Survey.instruction,
+   * falls back to composed legacy fields. Empty string when the study has no
+   * instruction yet — the compose-insights prompt omits the backdrop.
+   */
+  researchIntent: string;
 }
 
 /** Stage 1: extract themes (no session attribution). */
@@ -94,6 +100,8 @@ export interface AssignThemesInput {
 export interface ComposeInsightsInput {
   surveyTitle: string;
   totalSessions: number;
+  /** Research-intent backdrop (ADR-0015). Empty string → omitted from prompt. */
+  researchIntent?: string;
   themes: SurveyThemePreSentiment[];
   themeContexts: ThemeContext[];
   questionStats: Array<{ questionId: string; kind: string }>;
@@ -233,6 +241,7 @@ export async function analyzeSurvey(
       compose = await deps.composeInsightsWithLLM({
         surveyTitle: survey.title,
         totalSessions: completed.length,
+        researchIntent: survey.researchIntent,
         themes: enriched.themes,
         themeContexts: enriched.themeContexts,
         questionStats: aggregated.map((s) => ({ questionId: s.questionId, kind: s.kind })),

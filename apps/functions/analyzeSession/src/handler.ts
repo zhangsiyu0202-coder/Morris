@@ -11,6 +11,7 @@
 
 import {
   AnalyzeSessionRequestSchema,
+  resolveResearchIntent,
   type AnalyzeSessionResponse,
   type AnalysisReportInput,
   type AnalysisReportOutput,
@@ -46,6 +47,15 @@ export interface SurveyContext {
   ownerUserId: string;
   title: string;
   flowConfig: Record<string, unknown>;
+  /**
+   * ADR-0015 single research-intent document (`Survey.instruction`). Empty
+   * string for pre-migration surveys — the handler then composes a fallback
+   * from the legacy `flowConfig` fields + `moderatorInstruction` via
+   * `resolveResearchIntent`.
+   */
+  instruction: string;
+  /** Legacy persona field, being sunset per ADR-0015. Used only as fallback. */
+  moderatorInstruction: string;
   sections: Array<{ $id: string; surveyId: string; title: string; description: string; order: number }>;
   questionBlocks: Array<{
     $id: string;
@@ -175,8 +185,25 @@ export async function analyzeSession(
   if (!transcript) return { status: 404, body: { error: "transcript_not_found" } };
   if (!survey) return { status: 404, body: { error: "survey_not_found" } };
 
+  // ADR-0015: single research-intent source of truth. Prefer Survey.instruction;
+  // fall back to the legacy flowConfig fields + moderatorInstruction for
+  // pre-migration surveys. Empty string → the prompt omits the backdrop.
+  const flow = survey.flowConfig as {
+    researchGoal?: unknown;
+    targetAudience?: unknown;
+    introScript?: unknown;
+  };
+  const researchIntent = resolveResearchIntent({
+    instruction: survey.instruction,
+    researchGoal: typeof flow.researchGoal === "string" ? flow.researchGoal : undefined,
+    targetAudience: typeof flow.targetAudience === "string" ? flow.targetAudience : undefined,
+    introScript: typeof flow.introScript === "string" ? flow.introScript : undefined,
+    moderatorInstruction: survey.moderatorInstruction,
+  });
+
   const llmInput: AnalysisReportInput = {
     sessionId,
+    researchIntent,
     survey: {
       title: survey.title,
       flowConfig: survey.flowConfig,

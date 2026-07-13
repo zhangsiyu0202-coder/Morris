@@ -17,6 +17,12 @@ export const SESSION_ANALYZE_SYSTEM = `你是 Morris 的资深定性研究分析
 
 export interface SessionAnalyzePromptInput {
   surveyTitle: string;
+  /**
+   * Resolved research-intent backdrop (ADR-0015). When non-empty it is
+   * embedded ahead of the questions so the analyst LLM understands what the
+   * study is trying to learn. Empty string → the section is omitted.
+   */
+  researchIntent?: string;
   questions: Array<{
     questionId: string;
     questionType: string;
@@ -43,9 +49,15 @@ export function buildSessionAnalyzeUserPrompt(input: SessionAnalyzePromptInput):
     )
     .join("\n");
 
+  const researchIntent = input.researchIntent?.trim() ?? "";
+  const backdrop = researchIntent
+    ? ["研究说明(研究员定义的访谈意图,用于理解主题与作答背景):", researchIntent, ""]
+    : [];
+
   return [
     `调研: ${input.surveyTitle}`,
     "",
+    ...backdrop,
     "题目列表:",
     questionLines || "(无题目)",
     "",

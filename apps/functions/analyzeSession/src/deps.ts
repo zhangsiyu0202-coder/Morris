@@ -186,6 +186,9 @@ export function createRealDeps(): AnalyzeSessionDeps {
           ownerUserId,
           title: survey.title,
           flowConfig: parseJson(survey.flowConfig, {}),
+          instruction: typeof survey.instruction === "string" ? survey.instruction : "",
+          moderatorInstruction:
+            typeof survey.moderatorInstruction === "string" ? survey.moderatorInstruction : "",
           sections: sectionsRes.documents.map((s: any) => ({
             $id: s.$id,
             surveyId: s.surveyId,
@@ -218,6 +221,7 @@ export function createRealDeps(): AnalyzeSessionDeps {
     ): Promise<AnalysisReportOutput> {
       const baseUserPrompt = buildSessionAnalyzeUserPrompt({
         surveyTitle: input.survey.title,
+        researchIntent: input.researchIntent,
         questions: input.survey.questionBlocks.map((q) => ({
           questionId: q.$id,
           questionType: q.type,

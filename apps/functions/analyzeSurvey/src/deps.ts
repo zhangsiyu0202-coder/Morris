@@ -3,6 +3,7 @@ import { Client, Databases, ID, Permission, Query, Role } from "node-appwrite";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { generateText, Output } from "ai";
 import { withLLMCall, createLogger } from "@merism/observability";
+import { resolveResearchIntent } from "@merism/contracts";
 import type {
   AnalyzeSurveyDeps,
   AssignThemesInput,
@@ -95,7 +96,12 @@ export function createRealDeps(): AnalyzeSurveyDeps {
     async findSurveyContext(surveyId: string): Promise<SurveyContextLite | null> {
       try {
         const survey = (await db.getDocument(DB, "surveys", surveyId)) as any;
-        const flow = parseJson<{ topics?: string[] }>(survey.flowConfig, {});
+        const flow = parseJson<{
+          topics?: string[];
+          researchGoal?: string;
+          targetAudience?: string;
+          introScript?: string;
+        }>(survey.flowConfig, {});
         const questionsRes = await db.listDocuments(DB, "question_blocks", [
           Query.equal("surveyId", surveyId),
           Query.orderAsc("order"),
@@ -126,6 +132,14 @@ export function createRealDeps(): AnalyzeSurveyDeps {
             config: parseJson(q.config, {}),
           })),
           topics: flow.topics ?? [],
+          researchIntent: resolveResearchIntent({
+            instruction: typeof survey.instruction === "string" ? survey.instruction : "",
+            researchGoal: flow.researchGoal,
+            targetAudience: flow.targetAudience,
+            introScript: flow.introScript,
+            moderatorInstruction:
+              typeof survey.moderatorInstruction === "string" ? survey.moderatorInstruction : "",
+          }),
         };
       } catch (e: any) {
         if (e?.code === 404) return null;
@@ -262,6 +276,7 @@ export function createRealDeps(): AnalyzeSurveyDeps {
       const baseUserPrompt = buildComposeInsightsUserPrompt({
         surveyTitle: input.surveyTitle,
         totalSessions: input.totalSessions,
+        researchIntent: input.researchIntent,
         themes: input.themes,
         themeContexts: input.themeContexts,
         questionStats: input.questionStats,

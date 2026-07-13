@@ -33,6 +33,8 @@ export const COMPOSE_INSIGHTS_SYSTEM = `你是 Morris 的资深定性研究分�
 export interface ComposeInsightsPromptInput {
   surveyTitle: string;
   totalSessions: number;
+  /** Research-intent backdrop (ADR-0015). Empty/undefined → section omitted. */
+  researchIntent?: string;
   themes: Array<{ id: string; label: string; mentions: number; pct: number }>;
   themeContexts: Array<{
     id: string;
@@ -45,10 +47,15 @@ export interface ComposeInsightsPromptInput {
 }
 
 export function buildComposeInsightsUserPrompt(input: ComposeInsightsPromptInput): string {
+  const researchIntent = input.researchIntent?.trim() ?? "";
+  const backdrop = researchIntent
+    ? ["研究说明(研究员定义的访谈意图,用于校准 insights 与 topics):", researchIntent, ""]
+    : [];
   return [
     `调研: ${input.surveyTitle}`,
     `已完成 session 数: ${input.totalSessions}`,
     "",
+    ...backdrop,
     "Themes (已聚合, 不要改动):",
     JSON.stringify(input.themes, null, 2),
     "",

@@ -29,6 +29,8 @@ const surveyContext: SurveyContext = {
   ownerUserId: "u1",
   title: "test survey",
   flowConfig: {},
+  instruction: "",
+  moderatorInstruction: "",
   sections: [],
   questionBlocks: [],
 };

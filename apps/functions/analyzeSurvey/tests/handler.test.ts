@@ -25,6 +25,7 @@ const baseSurvey: SurveyContextLite = {
     },
   ],
   topics: ["fallback topic"],
+  researchIntent: "",
 };
 
 const baseSessions: SessionDigest[] = [

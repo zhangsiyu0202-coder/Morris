@@ -29,6 +29,8 @@ const baseSurvey: SurveyContext = {
   ownerUserId: "user-owner",
   title: "Test Study",
   flowConfig: {},
+  instruction: "",
+  moderatorInstruction: "",
   sections: [
     { $id: "sec1", surveyId: "sv1", title: "Sec", description: "", order: 0 },
   ],

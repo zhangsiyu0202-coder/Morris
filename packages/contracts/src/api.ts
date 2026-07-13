@@ -482,6 +482,15 @@ export const AnalysisReportInputSchema = z.object({
     sections: z.array(SurveySectionSchema),
     questionBlocks: z.array(QuestionBlockSchema),
   }),
+  /**
+   * Resolved research-intent backdrop for the study, per ADR-0015
+   * (instruction-as-context-document). Prefers `Survey.instruction`; falls
+   * back to the composed legacy fields for pre-migration surveys (see
+   * `resolveResearchIntent` in `instruction-helpers.ts`). Optional + defaults
+   * to empty upstream so the analysis LLM prompt simply omits the backdrop
+   * section when a study has no instruction yet.
+   */
+  researchIntent: z.string().optional(),
   transcript: z.object({
     segments: z.array(TranscriptSegmentSchema),
   }),
