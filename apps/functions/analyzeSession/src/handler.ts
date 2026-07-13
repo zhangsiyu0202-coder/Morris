@@ -11,7 +11,6 @@
 
 import {
   AnalyzeSessionRequestSchema,
-  resolveResearchIntent,
   type AnalyzeSessionResponse,
   type AnalysisReportInput,
   type AnalysisReportOutput,
@@ -185,21 +184,7 @@ export async function analyzeSession(
   if (!transcript) return { status: 404, body: { error: "transcript_not_found" } };
   if (!survey) return { status: 404, body: { error: "survey_not_found" } };
 
-  // ADR-0015: single research-intent source of truth. Prefer Survey.instruction;
-  // fall back to the legacy flowConfig fields + moderatorInstruction for
-  // pre-migration surveys. Empty string → the prompt omits the backdrop.
-  const flow = survey.flowConfig as {
-    researchGoal?: unknown;
-    targetAudience?: unknown;
-    introScript?: unknown;
-  };
-  const researchIntent = resolveResearchIntent({
-    instruction: survey.instruction,
-    researchGoal: typeof flow.researchGoal === "string" ? flow.researchGoal : undefined,
-    targetAudience: typeof flow.targetAudience === "string" ? flow.targetAudience : undefined,
-    introScript: typeof flow.introScript === "string" ? flow.introScript : undefined,
-    moderatorInstruction: survey.moderatorInstruction,
-  });
+  const researchIntent = survey.instruction;
 
   const llmInput: AnalysisReportInput = {
     sessionId,

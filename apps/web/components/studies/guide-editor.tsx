@@ -77,15 +77,7 @@ const TYPE_BADGE: Record<QuestionType, string> = {
 
 export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: SurveyDraft }) {
   const [title, setTitle] = useState(draft.title);
-  const [researchGoal, setResearchGoal] = useState(draft.researchGoal);
-  const [targetAudience, setTargetAudience] = useState(draft.targetAudience);
-  const [introScript, setIntroScript] = useState(draft.introScript);
-  const [moderatorInstruction, setModeratorInstruction] = useState(draft.moderatorInstruction);
-  // ADR-0015 primary field. Wave 1: no UI, just pass-through so a save
-  // does not overwrite an existing Survey.instruction. Wave 2 will add a
-  // markdown editor that binds to this state.
-  const [instruction, _setInstruction] = useState(draft.instruction);
-  void _setInstruction;
+  const [instruction, setInstruction] = useState(draft.instruction);
   const [guide, setGuide] = useState<Guide>(() => guideFromDraftSections(draft.sections));
 
   const [selection, setSelection] = useState<Selection>({ kind: "intro" });
@@ -105,14 +97,6 @@ export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: Surv
     startTransition(async () => {
       const nextDraft: SurveyDraft = {
         title: title.trim() || "未命名调研",
-        researchGoal,
-        targetAudience,
-        introScript,
-        moderatorInstruction,
-        // ADR-0015 primary field. Wave 1 keeps the UI unchanged so we
-        // just pass through the current Survey.instruction value read
-        // earlier (an empty string for legacy rows); Wave 2 will add a
-        // dedicated markdown editor here.
         instruction,
         sections: draftSectionsFromGuide(guide),
       };
@@ -140,7 +124,7 @@ export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: Surv
         );
       }
     });
-  }, [surveyId, title, researchGoal, targetAudience, introScript, moderatorInstruction, instruction, guide]);
+  }, [surveyId, title, instruction, guide]);
 
   // ---- guide 变更帮助函数 ----
   const setGuideDirty = (updater: (g: Guide) => Guide) => {
@@ -435,9 +419,7 @@ export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: Surv
               selection={selection}
               guide={guide}
               title={title}
-              researchGoal={researchGoal}
-              targetAudience={targetAudience}
-              introScript={introScript}
+              instruction={instruction}
               section={selectedSection}
               question={selectedQuestion}
               onGenerate={handleGenerate}
@@ -452,28 +434,13 @@ export function GuideEditor({ surveyId, draft }: { surveyId: string; draft: Surv
             {selection.kind === "intro" && (
               <IntroOptions
                 title={title}
-                researchGoal={researchGoal}
-                targetAudience={targetAudience}
-                introScript={introScript}
-                moderatorInstruction={moderatorInstruction}
+                instruction={instruction}
                 onTitle={(v) => {
                   setTitle(v);
                   markDirty();
                 }}
-                onGoal={(v) => {
-                  setResearchGoal(v);
-                  markDirty();
-                }}
-                onAudience={(v) => {
-                  setTargetAudience(v);
-                  markDirty();
-                }}
-                onIntro={(v) => {
-                  setIntroScript(v);
-                  markDirty();
-                }}
-                onModerator={(v) => {
-                  setModeratorInstruction(v);
+                onInstruction={(v) => {
+                  setInstruction(v);
                   markDirty();
                 }}
               />
@@ -668,9 +635,7 @@ function Canvas({
   selection,
   guide,
   title,
-  researchGoal,
-  targetAudience,
-  introScript,
+  instruction,
   section,
   question,
   onGenerate,
@@ -679,9 +644,7 @@ function Canvas({
   selection: Selection;
   guide: Guide;
   title: string;
-  researchGoal: string;
-  targetAudience: string;
-  introScript: string;
+  instruction: string;
   section: GuideSection | null;
   question: GuideQuestion | null;
   onGenerate: () => void;
@@ -696,7 +659,7 @@ function Canvas({
           {title || "未命名调研"}
         </h2>
         <p className="mx-auto mt-2 max-w-md font-ui text-body-sm leading-6 text-ink-400 text-pretty">
-          {introScript || "还没有访谈提纲。先在右侧填写研究设定,或让 AI 直接生成一份完整提纲。"}
+          {instruction || "还没有访谈提纲。先在右侧填写研究说明,或让 AI 直接生成一份完整提纲。"}
         </p>
         <button
           type="button"
@@ -727,22 +690,8 @@ function Canvas({
           {title || "未命名调研"}
         </h2>
         <p className="mt-3 font-reading text-body leading-7 text-ink-600 text-pretty">
-          {introScript || "（开场白为空,在右侧填写主持人对受访者说的第一句话。）"}
+          {instruction || "（研究说明为空，请在右侧填写 AI 访谈员的完整操作说明。）"}
         </p>
-        {(researchGoal || targetAudience) && (
-          <div className="mt-6 flex flex-col gap-2 border-t border-ink-100 pt-5">
-            {researchGoal && (
-              <p className="font-ui text-body-sm text-ink-400">
-                <span className="font-medium text-ink-600">研究目标:</span> {researchGoal}
-              </p>
-            )}
-            {targetAudience && (
-              <p className="font-ui text-body-sm text-ink-400">
-                <span className="font-medium text-ink-600">目标受众:</span> {targetAudience}
-              </p>
-            )}
-          </div>
-        )}
         <div className="mt-8">
           <span className="inline-flex h-10 items-center rounded bg-mauve-200 px-5 font-ui text-body-sm font-medium text-ink-900">
             开始访谈
@@ -874,48 +823,27 @@ function AnswerPreview({ question }: { question: GuideQuestion }) {
 /* ============ 右栏:开场设置 ============ */
 function IntroOptions({
   title,
-  researchGoal,
-  targetAudience,
-  introScript,
-  moderatorInstruction,
+  instruction,
   onTitle,
-  onGoal,
-  onAudience,
-  onIntro,
-  onModerator,
+  onInstruction,
 }: {
   title: string;
-  researchGoal: string;
-  targetAudience: string;
-  introScript: string;
-  moderatorInstruction: string;
+  instruction: string;
   onTitle: (v: string) => void;
-  onGoal: (v: string) => void;
-  onAudience: (v: string) => void;
-  onIntro: (v: string) => void;
-  onModerator: (v: string) => void;
+  onInstruction: (v: string) => void;
 }) {
   return (
     <div className="flex flex-col gap-4">
-      <PanelTitle>研究设定</PanelTitle>
+      <PanelTitle>研究说明</PanelTitle>
       <Field label="调研标题">
         <TextInput value={title} onChange={onTitle} placeholder="例如:差旅住宿预订习惯调研" />
       </Field>
-      <Field label="研究目标">
-        <TextArea value={researchGoal} onChange={onGoal} placeholder="你希望通过这次访谈搞清楚什么?" />
-      </Field>
-      <Field label="目标受众">
-        <TextArea value={targetAudience} onChange={onAudience} placeholder="你想访谈什么样的人?" />
-      </Field>
-      <Field label="开场白">
-        <TextArea value={introScript} onChange={onIntro} placeholder="主持人开场时对受访者说的话" rows={4} />
-      </Field>
-      <Field label="主持风格指令">
+      <Field label="Instruction">
         <TextArea
-          value={moderatorInstruction}
-          onChange={onModerator}
-          placeholder="给 AI 访谈员的主持指令:语调、节奏、风格(例如:语气温暖、不急促、给停顿留白、不照读问题)。访谈目标无需重复,已在研究目标里。"
-          rows={4}
+          value={instruction}
+          onChange={onInstruction}
+          placeholder="用 Markdown 写明研究意图、访谈对象、主持方式、开场和结束方式。"
+          rows={12}
         />
       </Field>
     </div>

@@ -16,7 +16,6 @@ import {
   parseSurveyReportBody,
   searchTranscriptSegments,
 } from "../queries";
-import { resolveResearchIntent } from "@merism/contracts";
 
 // 报告契约统一在 @merism/contracts/insight 维护;本文件只 re-export 以保持
 // 现有 import 路径(lib/actions/insights.ts 等)不破裂。
@@ -77,22 +76,7 @@ export async function buildStudyContext(
 
   const sections: string[] = [`调研标题:${study.survey.title}`];
 
-  // ADR-0015: surface the study's single research-intent document so the
-  // notebook LLM understands what the study is about. Prefer Survey.instruction;
-  // fall back to the composed legacy flowConfig fields for pre-migration
-  // surveys. Omitted entirely when the study has no instruction yet.
-  const flow = (study.survey.flowConfig ?? {}) as {
-    researchGoal?: unknown;
-    targetAudience?: unknown;
-    introScript?: unknown;
-  };
-  const researchIntent = resolveResearchIntent({
-    instruction: study.survey.instruction,
-    researchGoal: typeof flow.researchGoal === "string" ? flow.researchGoal : undefined,
-    targetAudience: typeof flow.targetAudience === "string" ? flow.targetAudience : undefined,
-    introScript: typeof flow.introScript === "string" ? flow.introScript : undefined,
-    moderatorInstruction: study.survey.moderatorInstruction,
-  });
+  const researchIntent = study.survey.instruction;
   if (researchIntent) {
     sections.push(`研究说明(研究员定义的访谈意图):\n${researchIntent}`);
   }
