@@ -370,9 +370,6 @@ export const InterviewRuntimeSectionSchema = z.object({
 export const InterviewRuntimeStudySchema = z.object({
   surveyId: z.string(),
   studyTitle: z.string().min(1),
-  researchGoal: z.string().min(1),
-  targetAudience: z.string().min(1),
-  introScript: z.string().min(1),
   sections: z.array(InterviewRuntimeSectionSchema).min(1),
 });
 
@@ -408,7 +405,6 @@ export const InterviewRoomMetadataSchema = z.object({
   sessionId: z.string(),
   surveyId: z.string(),
   runtimeStudy: InterviewRuntimeStudySchema.optional(),
-  workflowConfig: z.lazy(() => InterviewWorkflowConfigSchema).optional(),
   // Flow-engine config: new (steps + edges) shape consumed by the Python
   // flow_engine. When present, this OVERRIDES `runtimeStudy` / `workflowConfig`
   // on the agent side. Kept optional so issueLivekitToken can migrate over in
@@ -909,9 +905,6 @@ export function buildInterviewRuntimeStudy(input: BuildInterviewRuntimeStudyInpu
   return InterviewRuntimeStudySchema.parse({
     surveyId,
     studyTitle: draft.title,
-    researchGoal: draft.researchGoal,
-    targetAudience: draft.targetAudience,
-    introScript: draft.introScript,
     sections: draft.sections.map((section, sectionIndex) => {
       const sectionId = `section-${sectionIndex + 1}`;
 
@@ -984,12 +977,10 @@ export function buildInterviewRoomMetadataFromDraft(
   const { surveyId, sessionId, draft, supervisorInstruction } =
     BuildInterviewRoomMetadataInputSchema.parse(input);
   const runtimeStudy = buildInterviewRuntimeStudy({ surveyId, draft });
-  const workflowConfig = buildInterviewWorkflowConfigFromDraft({
-    surveyId,
-    sessionId,
-    draft,
-    supervisorInstruction,
-  });
+  const instruction = draft.instruction.trim();
+  if (instruction.length === 0) {
+    throw new Error("Survey instruction must be non-empty before issuing interview metadata");
+  }
   // Flow-engine config is included alongside legacy runtimeStudy/workflowConfig
   // so the Python agent can pick the shape it prefers. Precedence on the agent
   // side (per `agent.flow_engine.metadata.flow_config_from_metadata`):
@@ -998,16 +989,13 @@ export function buildInterviewRoomMetadataFromDraft(
     surveyId,
     sessionId,
     draft,
-    // Reuse the composed moderator persona from the workflowConfig path so
-    // the two shapes carry byte-identical instructions.
-    moderatorInstruction: workflowConfig.supervisorInstruction,
+    moderatorInstruction: supervisorInstruction ?? instruction,
   });
 
   return InterviewRoomMetadataSchema.parse({
     sessionId,
     surveyId,
     runtimeStudy,
-    workflowConfig,
     flowConfig,
   });
 }

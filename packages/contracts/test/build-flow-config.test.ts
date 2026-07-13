@@ -5,9 +5,9 @@
  *     flow_config_from_runtime_study`): flat q → probe → q → probe sequence,
  *     edge ids follow `e_q_to_p_${questionId}` / `e_p_to_q_${questionId}` /
  *     `e_q_to_q_${questionId}` conventions
- *   - moderator instruction composition (persona + operational base)
- *   - buildInterviewRoomMetadataFromDraft populates all three: runtimeStudy,
- *     workflowConfig, flowConfig
+ *   - instruction passthrough into the flow config
+ *   - buildInterviewRoomMetadataFromDraft retains runtimeStudy for structured
+ *     progress and emits only the flow-engine config for moderation
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -19,6 +19,7 @@ import {
 function draftFixture(overrides: Partial<SurveyDraft> = {}): SurveyDraft {
   return {
     title: "Test Study",
+    instruction: "## 研究意图\n默认测试说明。",
     researchGoal: "understand user motivation",
     targetAudience: "adults 25-40",
     introScript: "Hi, thanks for joining.",
@@ -137,22 +138,6 @@ describe("buildInterviewFlowConfigFromDraft", () => {
     expect(p1.forQuestionStepId).toBe("q_question-1-1");
   });
 
-  it("composes moderatorInstruction: persona + operational base", () => {
-    const draft = draftFixture({
-      moderatorInstruction: "Warm and unhurried, use plain language.",
-    });
-    const cfg = buildInterviewFlowConfigFromDraft({
-      surveyId: "surv-1",
-      sessionId: "sess-1",
-      draft,
-    });
-    // Persona prepended
-    expect(cfg.moderatorInstruction).toContain("Warm and unhurried");
-    // Operational base follows
-    expect(cfg.moderatorInstruction).toContain('Guide a qualitative interview for "Test Study"');
-    expect(cfg.moderatorInstruction.startsWith("Warm and unhurried")).toBe(true);
-  });
-
   it("moderatorInstruction override wins over composition", () => {
     const cfg = buildInterviewFlowConfigFromDraft({
       surveyId: "surv-1",
@@ -161,15 +146,6 @@ describe("buildInterviewFlowConfigFromDraft", () => {
       moderatorInstruction: "Explicit override",
     });
     expect(cfg.moderatorInstruction).toBe("Explicit override");
-  });
-
-  it("moderatorInstruction default (empty persona) drops the persona line", () => {
-    const cfg = buildInterviewFlowConfigFromDraft({
-      surveyId: "surv-1",
-      sessionId: "sess-1",
-      draft: draftFixture({ moderatorInstruction: "" }),
-    });
-    expect(cfg.moderatorInstruction.startsWith("Guide a qualitative interview")).toBe(true);
   });
 
   // ADR-0015 — `draft.instruction` (CLAUDE.md-style single markdown doc)
@@ -248,29 +224,54 @@ describe("buildInterviewFlowConfigFromDraft", () => {
   });
 });
 
-describe("buildInterviewRoomMetadataFromDraft (P3: now also populates flowConfig)", () => {
-  it("includes runtimeStudy, workflowConfig, AND flowConfig", () => {
+describe("buildInterviewRoomMetadataFromDraft", () => {
+  it("includes runtimeStudy and flowConfig", () => {
     const md = buildInterviewRoomMetadataFromDraft({
       surveyId: "surv-1",
       sessionId: "sess-1",
       draft: draftFixture(),
     });
     expect(md.runtimeStudy).toBeDefined();
-    expect(md.workflowConfig).toBeDefined();
     expect(md.flowConfig).toBeDefined();
     expect(md.flowConfig!.startStepId).toBe("q_question-1-1");
   });
 
-  it("carries the same moderator instruction on flowConfig as workflowConfig.supervisorInstruction", () => {
+  it("copies instruction verbatim to flowConfig.moderatorInstruction", () => {
+    const instruction = "## 研究意图\n平静好奇地探索。";
     const md = buildInterviewRoomMetadataFromDraft({
       surveyId: "surv-1",
       sessionId: "sess-1",
       draft: draftFixture({
-        moderatorInstruction: "Curious and calm.",
+        instruction,
       }),
     });
-    expect(md.flowConfig!.moderatorInstruction).toBe(
-      md.workflowConfig!.supervisorInstruction,
-    );
+    expect(md.flowConfig!.moderatorInstruction).toBe(instruction);
+  });
+
+  it("W5b emits only flowConfig plus question-only runtimeStudy and rejects blank instruction", () => {
+    const instruction = "## 研究意图\n直接使用这份研究说明。";
+    const metadata = buildInterviewRoomMetadataFromDraft({
+      surveyId: "surv-w5b",
+      sessionId: "sess-w5b",
+      draft: draftFixture({ instruction }),
+    });
+
+    expect(metadata).not.toHaveProperty("workflowConfig");
+    expect(metadata.flowConfig?.moderatorInstruction).toBe(instruction);
+    expect(metadata.runtimeStudy).toMatchObject({
+      surveyId: "surv-w5b",
+      sections: expect.any(Array),
+    });
+    expect(metadata.runtimeStudy).not.toHaveProperty("researchGoal");
+    expect(metadata.runtimeStudy).not.toHaveProperty("targetAudience");
+    expect(metadata.runtimeStudy).not.toHaveProperty("introScript");
+
+    expect(() =>
+      buildInterviewRoomMetadataFromDraft({
+        surveyId: "surv-blank",
+        sessionId: "sess-blank",
+        draft: draftFixture({ instruction: "   " }),
+      }),
+    ).toThrow();
   });
 });
