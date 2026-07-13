@@ -102,18 +102,18 @@ Mastra 与 LiveKit 相关 import (`@mastra/livekit`, `@livekit/agents`, `@liveki
 精确流向(按数据实际走向, 不是 README/spec 描述的最终目标态):
 
 1. **研究员在 `apps/web/components/studies/guide-editor.tsx` 写**:
-   - `Survey.title` / `Survey.flowConfig.{researchGoal, targetAudience, introScript}` / `Survey.moderatorInstruction` (Survey 级 tone / pacing / style 指引)
+   - `Survey.title` / `Survey.instruction` (研究意图、受访者、开场与主持风格的单一运行说明)
    - `SurveySection.title` / `.description` / `.sectionInstruction` (section 可选指引)
 2. **`apps/web/lib/actions/survey.ts` 写入 Appwrite** Survey / SurveySection / QuestionBlock 行
-3. **`apps/functions/issueLivekitToken/src/survey-draft-mapper.ts::buildSurveyDraftFromDocs`** 把行映射成 `SurveyDraft`; `section.objective = section.description || section.sectionInstruction || ""`; `draft.moderatorInstruction = survey.moderatorInstruction ?? ""` (T16/T17 接通点 — 这一步漏一字段就会让研究员的 persona 整条链被静默丢掉)
-4. **`apps/functions/issueLivekitToken/src/deps.ts::createRoom`** 调 `buildInterviewRoomMetadataFromDraft` (`@merism/contracts/src/api.ts`) — 该 composer 依次调 `buildInterviewWorkflowConfigFromDraft` (合成 `workflowConfig.supervisorInstruction`) 与 `buildInterviewFlowConfigFromDraft` (**复用同一 composed 串** 作 `flowConfig.moderatorInstruction`, 保 byte-identical), 把三种 shape (`runtimeStudy` + legacy `workflowConfig` + 新 `flowConfig`) 都塞进 `InterviewRoomMetadata`, 经 `JSON.stringify` 送进 LiveKit dispatch metadata。 **iteration 5 post-cutover 关键**:worker 已不再消费 `workflowConfig`,但 composer 仍产出以留 backward-compat 逃生口(见 ADR-0014);未来 sunset 时会从此 composer 删除。
+3. **`apps/functions/issueLivekitToken/src/survey-draft-mapper.ts::buildSurveyDraftFromDocs`** 把行映射成 `SurveyDraft`; `section.objective = section.description || section.sectionInstruction || ""`; `draft.instruction = survey.instruction`。空 instruction 由 `SurveyDraftSchema` 拒绝，不能签发访谈。
+4. **`apps/functions/issueLivekitToken/src/deps.ts::createRoom`** 调 `buildInterviewRoomMetadataFromDraft` (`@merism/contracts/src/api.ts`) — composer 直接把非空 `draft.instruction` 复制为 `flowConfig.moderatorInstruction`，并仅发送 `runtimeStudy`（progress / question index）与 `flowConfig`。经 `JSON.stringify` 送进 LiveKit dispatch metadata。
 5. **`apps/agent-voice-worker/src/mastra/merism-room-metadata.ts::flowConfigFromMerismRoomMetadata`** 只读 `metadata.flowConfig`。缺 `flowConfig` 时 worker **fail-close 拒绝 job**(不再 fallback 到 `runtimeStudy`,post-iteration-5 无 fallback path)。
-6. **`apps/agent-voice-worker/src/mastra/merism-room-metadata.ts::buildMerismVoiceAgent(flowConfig, sessionId)`** 用 `flowConfig.moderatorInstruction` (加 sessionId / surveyId / 若干 flow outline 行) 初始化 Mastra `Agent` 的 `instructions`。 `flowConfig.moderatorInstruction` 语义上等价老 `workflowConfig.supervisorInstruction`(field name 换,composed 内容相同)。
+6. **`apps/agent-voice-worker/src/mastra/merism-room-metadata.ts::buildMerismVoiceAgent(flowConfig, sessionId)`** 用 `flowConfig.moderatorInstruction`（即研究员的 `Survey.instruction`，加 sessionId / surveyId / flow outline）初始化 Mastra `Agent` 的 `instructions`。
 
 **Morris 与这条链的关系: 不写、不读、不参与**。
 
-- Morris **不写** `moderatorInstruction` (它在 survey editor 表单里, 由研究员手写)
-- Morris **不读** `moderatorInstruction` / `sectionInstruction` (那是 LiveKit worker 进程的运行时输入, 在 LiveKit room metadata 流)
+- Morris **只能在 `createStudyDraft` 的待审批 SurveyDraft 中提供** `instruction`，不直接写已发布 Survey。
+- Morris **不读** `Survey.instruction` / `sectionInstruction` 作为实时运行时输入（那是 LiveKit room metadata 流）。
 - Morris `createStudyDraft` 工具的产出物是 `SurveyDraft` (供研究员复核), 不直接活化为活跃 `Survey` 行
 
 `grep -RIn 'moderatorInstruction\|supervisorInstruction' apps/web/lib/assistant` 应**全 0 命中** — 命中即漂移信号。
@@ -131,7 +131,7 @@ Mastra 与 LiveKit 相关 import (`@mastra/livekit`, `@livekit/agents`, `@liveki
 
 ### 禁混淆备忘 (binding)
 
-- "Morris 自动生成 `Survey.moderatorInstruction`" — 当前 Morris 工具中**没有这条路径**, 且 `moderatorInstruction` 是研究员要 own 的"研究意图定义", 不是机器生成。开这条路径要走 ADR + 新 Morris tool + `needsApproval` 二次确认。
+- "Morris 自动改写已发布 `Survey.instruction`" — 当前不存在这条路径；Morris 仅能在 `createStudyDraft` 中提供待研究员批准的 instruction。开直写路径要走 ADR + 新 Morris tool + `needsApproval` 二次确认。
 - "Morris 影响访谈实时过程" — 不存在的路径。
 - "LiveKit Agent 调 Morris 工具 / 读 Morris memory / 写 Conversation" — 不存在的路径。两条链的 LLM 观测 scope (`morris.*` vs `agent.*`) 也物理隔离。
 - "用 Vercel AI SDK 6 给 LiveKit Agent" 或 "把 Morris 改成 LiveKit Agents SDK" — 同时违反 ADR-0001 / ADR-0002。
@@ -148,7 +148,7 @@ Mastra 与 LiveKit 相关 import (`@mastra/livekit`, `@livekit/agents`, `@liveki
 - Never expose provider secrets, Appwrite API keys, or LiveKit API secrets in client code, logs, test snapshots, build output, or response bodies.
 - **Optimize technology, never change its purpose.** Every artifact in this codebase exists to serve a specific use case. Before adding a new collection / module / spec, ask "what is the existing Merism artifact for, and does it already cover this purpose?" — and if yes, optimize that artifact rather than build a parallel one. Concrete examples to keep front of mind:
   - **`SurveyDraft` (and its persisted shape `Survey + SurveySection + QuestionBlock`) exists so the AI knows what questions to ask in the interview.** It is not a generic "study definition document". Don't add a parallel "interview question list" elsewhere.
-  - **`Survey.flowConfig.{researchGoal, targetAudience, introScript}` exists so the LLM (agent supervisor and analysis Functions) knows the research backdrop.** It is not a "research knowledge base". Don't introduce a separate KB / document store / chunked retrieval system to carry the same researcher intent that already lives on `Survey.flowConfig`.
+  - **`Survey.instruction` exists so the LiveKit Agent and analysis Functions know the research backdrop.** It is not a "research knowledge base". Don't introduce a separate KB / document store / chunked retrieval system to carry the same researcher intent.
   - **`SurveySection.supervisorInstruction` / `sectionInstruction` exist so the agent knows how to run that section.** They are not generic "agent context fields"; they belong to the section. Don't add a top-level `agentSystemContext` parallel to them.
   - **`InterviewLink` exists to grant an anonymous interviewee access.** It is not a personalization key. If per-interviewee customization is needed (different probe context per respondent), extend the link concept (or add a thin sibling table keyed on `linkId + intervieweeIdentifier`) rather than redesigning the link surface.
   - **`AnalysisReport` (with `scope = "session" | "survey"`) is the structured analysis output for a session or a survey rollup.** It is not a generic "research report repository". The `Notebook` collection (researcher-authored ad-hoc question + AI-written report, formerly `Insight`, renamed in the `notebooks` sub-spec) is intentionally separate (ADR-0003 D2). Note: `AnalysisReport.insights[]` (the auto-generated insight items embedded inside a survey-scope analysis report) and the `Notebook` collection are different artifacts despite the historical naming overlap — do not collapse them.
