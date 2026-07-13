@@ -190,14 +190,14 @@ describe("runReadinessChecks (REQ-3)", () => {
 
 describe("livez route", () => {
   it("always returns 200 with http=true", async () => {
-    const { GET } = await import("@/app/_health/livez/route");
+    const { GET } = await import("@/app/%5Fhealth/livez/route");
     const res = await GET();
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ http: true });
   });
 
   it("response body has no traceId", async () => {
-    const { GET } = await import("@/app/_health/livez/route");
+    const { GET } = await import("@/app/%5Fhealth/livez/route");
     const res = await GET();
     const body = (await res.json()) as Record<string, unknown>;
     expect(body.traceId).toBeUndefined();
@@ -225,7 +225,7 @@ describe("readyz route", () => {
   }
 
   it("returns 200 when all deps healthy (default role)", async () => {
-    const { GET } = await import("@/app/_health/readyz/route");
+    const { GET } = await import("@/app/%5Fhealth/readyz/route");
     const res = await GET(makeReq("http://app.test/_health/readyz"));
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
@@ -238,7 +238,7 @@ describe("readyz route", () => {
     writeFileSync(tmpFile, "x");
     vi.stubEnv("MERISM_PRESTOP_MARKER_FILE", tmpFile);
     try {
-      const { GET } = await import("@/app/_health/readyz/route");
+      const { GET } = await import("@/app/%5Fhealth/readyz/route");
       const res = await GET(makeReq("http://app.test/_health/readyz"));
       expect(res.status).toBe(503);
       expect(await res.json()).toEqual({ shutting_down: true });
@@ -248,14 +248,14 @@ describe("readyz route", () => {
   });
 
   it("returns 400 for unknown role", async () => {
-    const { GET } = await import("@/app/_health/readyz/route");
+    const { GET } = await import("@/app/%5Fhealth/readyz/route");
     const res = await GET(makeReq("http://app.test/_health/readyz?role=worker"));
     expect(res.status).toBe(400);
   });
 
   it("returns 503 when a dep is down", async () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("ECONNREFUSED"));
-    const { GET } = await import("@/app/_health/readyz/route");
+    const { GET } = await import("@/app/%5Fhealth/readyz/route");
     const res = await GET(makeReq("http://app.test/_health/readyz"));
     expect(res.status).toBe(503);
     const body = (await res.json()) as Record<string, unknown>;
