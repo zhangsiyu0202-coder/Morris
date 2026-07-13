@@ -28,13 +28,8 @@ async function main(): Promise<void> {
     projectId: project.$id,
     title: "Smoke Survey",
     status: "published",
-    // SurveyDraftSchema enforces researchGoal/targetAudience/introScript non-empty
-    // (validated inside issueLivekitToken.deps.createRoom). Provide minimal text.
-    flowConfig: JSON.stringify({
-      researchGoal: "smoke test research goal",
-      targetAudience: "smoke test audience",
-      introScript: "smoke test intro",
-    }),
+    instruction: "## 研究意图\n验证本地 smoke 访谈链路。",
+    flowConfig: JSON.stringify({}),
     updatedAt: new Date().toISOString(),
   }, ownerPerms);
 

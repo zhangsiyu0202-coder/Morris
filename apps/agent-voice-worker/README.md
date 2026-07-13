@@ -17,9 +17,8 @@ against the same survey/session data.
 This worker does three Merism-specific things:
 
 - reads `InterviewRoomMetadata` from `ctx.room.metadata`
-- builds a session-scoped Mastra agent from `workflowConfig` (or derives it
-  from `runtimeStudy` when `workflowConfig` is absent), mirroring the Python
-  worker's `workflow_config_from_metadata(...)` resolution strategy
+- builds a session-scoped Mastra agent from required `flowConfig`; `runtimeStudy`
+  remains a structural companion for progress and question indexing
 - runs an independent TS speech stack:
   `FunASR websocket ASR + Qwen realtime TTS + Qwen compat LLM`
 
@@ -33,9 +32,8 @@ This worker does three Merism-specific things:
 ## Workspace
 
 - Listed in the root `pnpm-workspace.yaml`; installs via the root `pnpm install`.
-- Depends on `@merism/contracts` (workspace package) for `InterviewRoomMetadata` /
-  `InterviewWorkflowConfig` / `InterviewRuntimeStudy` / `SectionTaskGroupConfig` —
-  the same cross-module contract the Python worker mirrors.
+- Depends on `@merism/contracts` (workspace package) for `InterviewRoomMetadata`,
+  `InterviewFlowConfig`, and `InterviewRuntimeStudy`.
 
 ## Required env
 

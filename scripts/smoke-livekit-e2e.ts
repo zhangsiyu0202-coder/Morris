@@ -97,11 +97,7 @@ const surveyId = `surv-${stamp}`;
 
 const draft: SurveyDraft = {
   title: "e2e smoke study",
-  researchGoal: "verify SurveyDraft → composer → worker → flow-engine chain integrity",
-  targetAudience: "internal dev, LiveKit e2e harness",
-  introScript: "This is an automated smoke run — you can respond with any short answer.",
-  moderatorInstruction:
-    "You are a warm, professional interviewer running a smoke test. Keep responses brief.",
+  instruction: "## Research intent\nVerify the SurveyDraft to flow-engine chain.\n\n## Moderator behavior\nKeep responses brief and professional.",
   sections: [
     {
       title: "Only Section",

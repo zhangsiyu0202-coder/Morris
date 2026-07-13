@@ -26,9 +26,8 @@ import { finalizeInterviewSession } from "../persistence/finalize-client.js";
  * Worker entrypoint. Post ADR-0013 iteration 5 (flow-engine cutover per
  * HANDOFF.md 2026-07-09) this is the ONLY production interview worker,
  * and it consumes the `flowConfig` shape exclusively. `issueLivekitToken`
- * always dispatches `merism-mastra-voice-worker` and always emits
- * `flowConfig` alongside the legacy `runtimeStudy` / `workflowConfig`
- * fields; the worker fail-closes if `flowConfig` is missing.
+ * always dispatches `merism-mastra-voice-worker` and emits `flowConfig`; the
+ * worker fail-closes if it is missing.
  *
  * Turn-detector: `v1-mini` is pinned explicitly. `inference.TurnDetector`
  * without an explicit `version` auto-selects the cloud-hosted `v1` model
@@ -145,7 +144,7 @@ export default createLiveKitWorker({
     if (!flowConfig) {
       refuseJob(
         "missing_flow_config",
-        "room metadata has no flowConfig (post flow-engine cutover the legacy runtimeStudy/workflowConfig paths are not consumed)",
+        "room metadata has no flowConfig",
         ctx,
       );
     }

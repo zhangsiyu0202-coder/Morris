@@ -6,7 +6,7 @@
  * 用法:  set -a && . ./.env && set +a && pnpm exec tsx scripts/verify-survey-editor.ts
  */
 import { Client, Databases, ID, Query } from "node-appwrite";
-import { assembleSurveyDraft } from "../apps/web/lib/survey-draft.js";
+import { assembleSurveyDraft } from "../apps/web/lib/survey/draft.js";
 import type { Survey, SurveySection, QuestionBlock, SurveyDraft } from "@merism/contracts";
 
 const DB = "merism";
@@ -21,23 +21,21 @@ const db = new Databases(new Client().setEndpoint(endpoint).setProject(project).
 
 const sample: SurveyDraft = {
   title: "差旅住宿调研(verify)",
-  researchGoal: "了解预订习惯",
-  targetAudience: "常旅客",
-  introScript: "你好,感谢参与",
+  instruction: "## 研究意图\n了解常旅客的预订习惯。",
   sections: [
     {
       title: "暖场",
       objective: "整体习惯",
       questions: [
-        { questionText: "常用的订房网站?", questionType: "open_ended", probeLevel: "standard", probeInstruction: "", options: [], allowSkip: false },
-        { questionText: "更常用哪个平台?", questionType: "single_choice", probeLevel: "deep", probeInstruction: "追问原因", options: ["Airbnb", "Booking"], allowSkip: true },
+        { questionText: "常用的订房网站?", questionType: "open_ended", probeLevel: "standard", probeInstruction: "", options: [], allowSkip: false, branchRules: [] },
+        { questionText: "更常用哪个平台?", questionType: "single_choice", probeLevel: "deep", probeInstruction: "追问原因", options: ["Airbnb", "Booking"], allowSkip: true, branchRules: [] },
       ],
     },
     {
       title: "深入",
       objective: "细节",
       questions: [
-        { questionText: "最抓狂的事?", questionType: "open_ended", probeLevel: "standard", probeInstruction: "", options: [], allowSkip: false },
+        { questionText: "最抓狂的事?", questionType: "open_ended", probeLevel: "standard", probeInstruction: "", options: [], allowSkip: false, branchRules: [] },
       ],
     },
   ],
@@ -52,7 +50,7 @@ async function main() {
   // --- write (mirrors lib/actions/survey.ts) ---
   const survey = await db.createDocument(DB, "surveys", ID.unique(), {
     ownerUserId: OWNER, projectId: "default", title: sample.title, status: "draft",
-    flowConfig: JSON.stringify({ researchGoal: sample.researchGoal, targetAudience: sample.targetAudience, introScript: sample.introScript }),
+    instruction: sample.instruction, flowConfig: JSON.stringify({}),
     version: 1, updatedAt: new Date().toISOString(),
   });
   const surveyId = survey.$id;
@@ -78,7 +76,7 @@ async function main() {
   const doc = (await db.getDocument(DB, "surveys", surveyId)) as unknown as Record<string, unknown>;
   const surveyObj: Survey = {
     $id: surveyId, projectId: "default", title: String(doc.title), status: "draft",
-    flowConfig: parse<Record<string, unknown>>(doc.flowConfig, {}), version: 1, updatedAt: String(doc.updatedAt),
+    flowConfig: parse<Record<string, unknown>>(doc.flowConfig, {}), instruction: String(doc.instruction), version: 1, updatedAt: String(doc.updatedAt),
   };
   const secs = await db.listDocuments(DB, "survey_sections", [Query.equal("surveyId", surveyId), Query.orderAsc("order"), Query.limit(500)]);
   const qs = await db.listDocuments(DB, "question_blocks", [Query.equal("surveyId", surveyId), Query.orderAsc("order"), Query.limit(2000)]);
@@ -90,8 +88,7 @@ async function main() {
   // --- assert ---
   const errors: string[] = [];
   if (draft.title !== sample.title) errors.push("title mismatch");
-  if (draft.researchGoal !== sample.researchGoal) errors.push("researchGoal mismatch");
-  if (draft.introScript !== sample.introScript) errors.push("introScript mismatch");
+  if (draft.instruction !== sample.instruction) errors.push("instruction mismatch");
   if (draft.sections.length !== 2) errors.push(`section count ${draft.sections.length}`);
   if (draft.sections[0]?.questions.length !== 2) errors.push("s0 question count");
   if (draft.sections[0]?.questions[1]?.options.join(",") !== "Airbnb,Booking") errors.push("options mismatch");

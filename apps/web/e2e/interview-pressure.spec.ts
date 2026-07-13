@@ -80,11 +80,8 @@ async function createPressureSurvey(): Promise<TestSurveyHandle> {
     projectId: project.$id,
     title: "Pressure Survey",
     status: "published",
-    flowConfig: JSON.stringify({
-      researchGoal: "压力测试速达外卖访谈流程",
-      targetAudience: "试用 7 天的城市白领",
-      introScript: "你好，我准备问你几个关于速达外卖体验的问题。准备好了我们就开始。",
-    }),
+    instruction: "## 研究意图\n压力测试速达外卖访谈流程。\n\n## 访谈对象\n试用 7 天的城市白领。",
+    flowConfig: JSON.stringify({}),
     updatedAt: new Date().toISOString(),
   }, ownerPerms);
   const section = await db.createDocument(DB, "survey_sections", ID.unique(), {

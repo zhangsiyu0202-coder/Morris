@@ -48,11 +48,8 @@ async function main(): Promise<void> {
       projectId: project.$id,
       title: "Stress Survey",
       status: "published",
-      flowConfig: JSON.stringify({
-        researchGoal: "concurrency contract",
-        targetAudience: "stress test",
-        introScript: "go",
-      }),
+      instruction: "## 研究意图\n验证并发契约。",
+      flowConfig: JSON.stringify({}),
       updatedAt: new Date().toISOString(),
     },
     ownerPerms,

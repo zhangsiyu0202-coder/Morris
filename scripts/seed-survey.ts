@@ -18,40 +18,36 @@ const db = new Databases(
 const drafts: SurveyDraft[] = [
   {
     title: "差旅住宿预订习惯调研",
-    researchGoal: "了解商旅人群选择住宿平台的决策路径",
-    targetAudience: "每月至少出差一次的职场人士",
-    introScript: "你好,感谢抽时间参与这次访谈。我们想聊聊你订住宿的习惯。",
+    instruction: "## 研究意图\n了解商旅人群选择住宿平台的决策路径。\n\n## 访谈对象\n每月至少出差一次的职场人士。",
     sections: [
       {
         title: "整体预订习惯",
         objective: "了解常用平台与决策因素",
         questions: [
-          { questionText: "找住处时,你常用的网站或 App 有哪些?", questionType: "open_ended", probeLevel: "standard", probeInstruction: "确认是否提到具体平台名", options: [], allowSkip: false },
-          { questionText: "订住宿时最让你抓狂的是什么?", questionType: "open_ended", probeLevel: "deep", probeInstruction: "追问具体场景与情绪", options: [], allowSkip: false },
-          { questionText: "更偏好哪类住宿?", questionType: "single_choice", probeLevel: "standard", probeInstruction: "", options: ["酒店", "民宿", "公寓"], allowSkip: true },
+          { questionText: "找住处时,你常用的网站或 App 有哪些?", questionType: "open_ended", probeLevel: "standard", probeInstruction: "确认是否提到具体平台名", options: [], allowSkip: false, branchRules: [] },
+          { questionText: "订住宿时最让你抓狂的是什么?", questionType: "open_ended", probeLevel: "deep", probeInstruction: "追问具体场景与情绪", options: [], allowSkip: false, branchRules: [] },
+          { questionText: "更偏好哪类住宿?", questionType: "single_choice", probeLevel: "standard", probeInstruction: "", options: ["酒店", "民宿", "公寓"], allowSkip: true, branchRules: [] },
         ],
       },
       {
         title: "Airbnb 任务",
         objective: "观察真实搜索过程",
         questions: [
-          { questionText: "假设要去巴黎住一周,演示一下你会怎么搜?", questionType: "open_ended", probeLevel: "deep", probeInstruction: "观察流程,不打断", options: [], allowSkip: false },
-          { questionText: "完成这个任务的难易程度?", questionType: "rating", probeLevel: "standard", probeInstruction: "请其解释打分原因", options: [], allowSkip: false },
+          { questionText: "假设要去巴黎住一周,演示一下你会怎么搜?", questionType: "open_ended", probeLevel: "deep", probeInstruction: "观察流程,不打断", options: [], allowSkip: false, branchRules: [] },
+          { questionText: "完成这个任务的难易程度?", questionType: "rating", probeLevel: "standard", probeInstruction: "请其解释打分原因", options: [], allowSkip: false, branchRules: [] },
         ],
       },
     ],
   },
   {
     title: "新用户引导体验访谈",
-    researchGoal: "定位新用户首次使用的卡点",
-    targetAudience: "近两周注册的新用户",
-    introScript: "你好!想请你回顾一下刚开始使用我们产品时的体验。",
+    instruction: "## 研究意图\n定位新用户首次使用的卡点。\n\n## 访谈对象\n近两周注册的新用户。",
     sections: [
       {
         title: "首次印象",
         objective: "捕捉第一步的困惑",
         questions: [
-          { questionText: "第一次打开时,你的第一感觉是什么?", questionType: "open_ended", probeLevel: "standard", probeInstruction: "", options: [], allowSkip: false },
+          { questionText: "第一次打开时,你的第一感觉是什么?", questionType: "open_ended", probeLevel: "standard", probeInstruction: "", options: [], allowSkip: false, branchRules: [] },
         ],
       },
     ],
@@ -64,11 +60,8 @@ async function seedOne(draft: SurveyDraft) {
     projectId: "default",
     title: draft.title,
     status: "draft",
-    flowConfig: JSON.stringify({
-      researchGoal: draft.researchGoal,
-      targetAudience: draft.targetAudience,
-      introScript: draft.introScript,
-    }),
+    instruction: draft.instruction,
+    flowConfig: JSON.stringify({}),
     version: 1,
     updatedAt: new Date().toISOString(),
   });

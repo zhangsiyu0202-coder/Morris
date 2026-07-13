@@ -62,9 +62,8 @@ export function parseMerismRoomMetadata(rawMetadata: string | undefined | null):
  * the legacy Python fallback path has been removed and the TS worker only
  * consumes the flow-engine shape.
  *
- * `issueLivekitToken` always emits `flowConfig` alongside the legacy
- * `runtimeStudy` / `workflowConfig` (per `buildInterviewRoomMetadataFromDraft`
- * P3 slice), so under normal operation this returns non-null.
+ * `issueLivekitToken` always emits `flowConfig`. `runtimeStudy` remains only
+ * for structured progress and question indexing, so normal jobs have a flow.
  */
 export function flowConfigFromMerismRoomMetadata(
   metadata: InterviewRoomMetadata | null,
@@ -104,13 +103,9 @@ function buildFlowOutline(config: InterviewFlowConfig): string {
 /**
  * Build a session-scoped Mastra `Agent` from a flow config.
  *
- * Per HANDOFF.md § key design decision 2, the instructions are composed
- * from `moderatorInstruction` (researcher-authored persona + operational
- * rules pre-composed on the TS side by `buildInterviewFlowConfigFromDraft`).
- * The word "supervisor" is intentionally dropped — it referred to the
- * pre-flow-engine architecture where a `LiveKit Supervisor` owned the
- * cursor. In the flow-engine world the cursor is owned by `run_flow`, and
- * the Agent only speaks the questions on demand.
+ * The flow config carries the researcher-authored instruction verbatim. In
+ * the flow-engine world the cursor is owned by `run_flow`, and the Agent only
+ * speaks the questions on demand.
  *
  * The returned agent is only the LLM loop. The actual state machine
  * (step traversal / probe rounds / condition eval / first-writer-wins)

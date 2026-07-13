@@ -54,7 +54,7 @@ from qwen_tts_realtime_tts import QwenTtsRealtimeTTS  # noqa: E402
 QWEN_OMNI_BASE_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
 QWEN_OMNI_MODEL = "qwen3-omni-flash-realtime"
 
-# 模拟 supervisorRole — 在生产里这一段会从 InterviewWorkflowConfig.supervisorRole 拿
+# 模拟 instruction — 生产里来自 flowConfig.moderatorInstruction。
 INSTRUCTIONS = (
     "你是一个名叫小绿的 AI 访谈员。"
     "保持友好、简洁、口语化。"
