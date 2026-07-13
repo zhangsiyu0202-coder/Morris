@@ -9,8 +9,6 @@ import { SurveyDraftSchema, type SurveyDraft } from "@merism/contracts";
 export interface SurveyRow {
   $id: string;
   title: string;
-  /** Persisted as JSON string in Appwrite. Parsed by the caller. */
-  flowConfig: { researchGoal?: string; targetAudience?: string; introScript?: string } | undefined;
   /**
    * Researcher-authored AI moderator persona / tone / pacing directives.
    * Stored on Appwrite as a dedicated top-level column (NOT inside the
@@ -35,7 +33,7 @@ export interface SurveyRow {
    * composer's fallback reconstructs a supervisor instruction from the
    * legacy fields via `buildInterviewWorkflowConfigFromDraft`.
    */
-  instruction?: string;
+  instruction: string;
 }
 
 export interface SectionRow {
@@ -101,23 +99,9 @@ export interface BuildSurveyDraftInput {
  */
 export function buildSurveyDraftFromDocs(input: BuildSurveyDraftInput): SurveyDraft {
   const { survey, sections, questions } = input;
-  const flow = survey.flowConfig ?? {};
-
   const draft = {
     title: survey.title,
-    researchGoal: flow.researchGoal ?? "",
-    targetAudience: flow.targetAudience ?? "",
-    introScript: flow.introScript ?? "",
-    // Survey-level AI moderator persona. Empty string is the schema
-    // default and is legal (SurveyDraftSchema.moderatorInstruction defaults
-    // to ""); the composer treats an empty value as "use the operational
-    // base only". Dropping this field entirely (as the mapper used to)
-    // silently discarded the researcher's persona for every session.
-    moderatorInstruction: "",
-    // ADR-0015 primary field. Passes through directly; legacy composer
-    // fallback (in `buildInterviewFlowConfigFromDraft`) handles the case
-    // where this field is empty on a pre-migration row.
-    instruction: survey.instruction ?? "",
+    instruction: survey.instruction,
     sections: [...sections]
       .sort((a, b) => a.order - b.order)
       .map((section) => ({

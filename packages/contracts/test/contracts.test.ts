@@ -11,7 +11,6 @@ import {
   RunDashboardWidgetsOutputSchema,
   buildInterviewRoomMetadataFromDraft,
   buildInterviewRuntimeStudy,
-  buildInterviewWorkflowConfigFromDraft,
   canTransitionSurveyStatus,
   NotebookSchema,
   notebookReportSchema,
@@ -211,9 +210,7 @@ describe("contracts: survey draft shape", () => {
   it("accepts a qualitative interview draft", () => {
     const draft = SurveyDraftSchema.parse({
       title: "Coffee subscription onboarding research",
-      researchGoal: "Understand how new subscribers evaluate coffee delivery services.",
-      targetAudience: "People who subscribed to a coffee delivery service in the last 3 months.",
-      introScript: "Thanks for joining. I want to learn about your recent experience.",
+        instruction: "## 研究意图\n了解新订阅者如何评估咖啡配送服务。",
       sections: [
         {
           title: "Warm-up",
@@ -236,9 +233,7 @@ describe("contracts: survey draft shape", () => {
   it("trims surrounding whitespace and rejects blank-only strings", () => {
     const draft = SurveyDraftSchema.parse({
       title: "  Coffee study  ",
-      researchGoal: "  Understand subscribers.  ",
-      targetAudience: " Recent subscribers ",
-      introScript: " Thanks for joining. ",
+        instruction: "  ## 研究意图\n了解订阅者。  ",
       sections: [
         {
           title: " Warm-up ",
@@ -256,9 +251,7 @@ describe("contracts: survey draft shape", () => {
     expect(
       SurveyDraftSchema.safeParse({
         title: "Blank question draft",
-        researchGoal: "Goal.",
-        targetAudience: "Anyone.",
-        introScript: "Hello.",
+        instruction: "## 研究意图\nGoal.",
         sections: [
           {
             title: "Section 1",
@@ -274,9 +267,7 @@ describe("contracts: survey draft shape", () => {
     expect(
       SurveyDraftSchema.safeParse({
         title: "Bad draft",
-        researchGoal: "Test validation.",
-        targetAudience: "Anyone.",
-        introScript: "Hello.",
+        instruction: "## 研究意图\nTest validation.",
         sections: [
           {
             title: "Section 1",
@@ -300,9 +291,7 @@ describe("contracts: survey draft shape", () => {
       surveyId: "survey-1",
       draft: SurveyDraftSchema.parse({
         title: "Concept reaction study",
-        researchGoal: "Understand reactions to a new concept.",
-        targetAudience: "Existing customers.",
-        introScript: "Thanks for joining this interview.",
+        instruction: "## 研究意图\n了解用户对新概念的反应。",
         sections: [
           {
             title: "Warm-up",
@@ -324,56 +313,13 @@ describe("contracts: survey draft shape", () => {
     expect(runtime.sections[0]?.questions[0]?.questionId).toBe("question-1-1");
   });
 
-  it("maps a study draft to a workflow config for the LiveKit agent", () => {
-    const workflow = buildInterviewWorkflowConfigFromDraft({
-      surveyId: "survey-1",
-      sessionId: "session-1",
-      draft: SurveyDraftSchema.parse({
-        title: "Onboarding study",
-        researchGoal: "Learn about onboarding friction.",
-        targetAudience: "New users.",
-        introScript: "Thanks for speaking with me today.",
-        sections: [
-          {
-            title: "Opening",
-            objective: "Get orientation and context.",
-            questions: [
-              {
-                questionText: "Tell me about your first week using the product.",
-                questionType: "open_ended",
-                probeLevel: "deep",
-                probeInstruction: "Ask what surprised them and what blocked them.",
-              },
-              {
-                questionText: "Which onboarding step was hardest?",
-                questionType: "single_choice",
-                probeLevel: "standard",
-                probeInstruction: "",
-                options: ["Signup", "Setup", "First task"],
-              },
-            ],
-          },
-        ],
-      }),
-    });
-
-    expect(workflow.sections[0]?.questions[0]?.probeConfig?.level).toBe("deep");
-    expect(workflow.sections[0]?.questions[0]?.questionContent).toContain("first week");
-    // Structured-rendering fix: choice options propagate into the workflow's
-    // QuestionTaskConfig (so the voice prompt can read them out).
-    expect(workflow.sections[0]?.questions[1]?.options).toEqual(["Signup", "Setup", "First task"]);
-    expect(workflow.sections[0]?.questions[0]?.options).toEqual([]);
-  });
-
-  it("builds room metadata that bundles runtime and workflow state", () => {
+  it("builds flow-only room metadata while retaining runtime question progress", () => {
     const metadata = buildInterviewRoomMetadataFromDraft({
       surveyId: "survey-1",
       sessionId: "session-1",
       draft: SurveyDraftSchema.parse({
         title: "Retention study",
-        researchGoal: "Understand what keeps users active.",
-        targetAudience: "Recently activated users.",
-        introScript: "Thanks for talking with me today.",
+        instruction: "## 研究意图\n了解用户持续活跃的原因。",
         sections: [
           {
             title: "Opening",
@@ -392,52 +338,8 @@ describe("contracts: survey draft shape", () => {
     });
 
     expect(metadata.runtimeStudy?.sections[0]?.questions[0]?.questionId).toBe("question-1-1");
-    expect(metadata.workflowConfig?.sections[0]?.questions[0]?.questionId).toBe("question-1-1");
-  });
-
-  it("composes moderatorInstruction into supervisorInstruction (persona prepended), default empty", () => {
-    const baseDraft = {
-      title: "Retention study",
-      researchGoal: "Understand what keeps users active.",
-      targetAudience: "Recently activated users.",
-      introScript: "Thanks for talking with me today.",
-      sections: [
-        {
-          title: "Opening",
-          objective: "Get grounded in a recent experience.",
-          questions: [
-            {
-              questionText: "Tell me about a recent time you used the product.",
-              questionType: "open_ended",
-              probeLevel: "standard",
-              probeInstruction: "Ask what they were trying to accomplish.",
-            },
-          ],
-        },
-      ],
-    };
-
-    // default "" => operational base only, no persona prefix.
-    const draftNoMod = SurveyDraftSchema.parse(baseDraft);
-    expect(draftNoMod.moderatorInstruction).toBe("");
-    const wfNoMod = buildInterviewWorkflowConfigFromDraft({
-      surveyId: "survey-1",
-      sessionId: "session-1",
-      draft: draftNoMod,
-    });
-    expect(wfNoMod.supervisorInstruction.startsWith("Guide a qualitative interview")).toBe(true);
-
-    // present => persona prepended, operational base still present.
-    const wfMod = buildInterviewWorkflowConfigFromDraft({
-      surveyId: "survey-1",
-      sessionId: "session-1",
-      draft: SurveyDraftSchema.parse({
-        ...baseDraft,
-        moderatorInstruction: "Warm, unhurried; let pauses breathe; never read questions verbatim.",
-      }),
-    });
-    expect(wfMod.supervisorInstruction.startsWith("Warm, unhurried")).toBe(true);
-    expect(wfMod.supervisorInstruction).toContain("Guide a qualitative interview");
+    expect(metadata).not.toHaveProperty("workflowConfig");
+    expect(metadata.flowConfig?.moderatorInstruction).toBe("## 研究意图\n了解用户持续活跃的原因。");
   });
 });
 

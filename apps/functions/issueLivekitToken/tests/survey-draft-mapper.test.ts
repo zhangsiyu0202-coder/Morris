@@ -10,7 +10,7 @@ import { buildSurveyDraftFromDocs, type SurveyRow } from "../src/survey-draft-ma
 const baseSurvey = {
   $id: "sv1",
   title: "Survey",
-  flowConfig: { researchGoal: "g", targetAudience: "t", introScript: "i" },
+  instruction: "## 研究意图\n测试说明。",
 };
 const baseSection = {
   $id: "sec1",
@@ -108,30 +108,13 @@ describe("buildSurveyDraftFromDocs — section objective fallback", () => {
   });
 });
 
-describe("buildSurveyDraftFromDocs — flowConfig parsing", () => {
-  it("uses researchGoal/targetAudience/introScript from parsed flowConfig", () => {
-    const draft = buildSurveyDraftFromDocs({
-      survey: {
-        $id: "sv1",
-        title: "Survey",
-        flowConfig: { researchGoal: "G", targetAudience: "A", introScript: "I" },
-      },
+describe("buildSurveyDraftFromDocs — instruction boundary", () => {
+  it("rejects a blank persisted instruction", () => {
+    expect(() => buildSurveyDraftFromDocs({
+      survey: { ...baseSurvey, instruction: "" },
       sections: [baseSection],
       questions: [baseQuestion],
-    });
-    expect(draft.researchGoal).toBe("G");
-    expect(draft.targetAudience).toBe("A");
-    expect(draft.introScript).toBe("I");
-  });
-
-  it("rejects when flowConfig is empty (researchGoal/min(1) violation)", () => {
-    expect(() =>
-      buildSurveyDraftFromDocs({
-        survey: { $id: "sv1", title: "Survey", flowConfig: {} },
-        sections: [baseSection],
-        questions: [baseQuestion],
-      }),
-    ).toThrow();
+    })).toThrow();
   });
 });
 
@@ -312,51 +295,6 @@ describe("buildSurveyDraftFromDocs — branchRules / stableId / stimulus read pa
   });
 });
 
-describe("buildSurveyDraftFromDocs — Survey.moderatorInstruction read path (persona chain regression)", () => {
-  // Before this fix, `SurveyRow` had no moderatorInstruction field and the
-  // SDK wrapper did not pass one through, so every published survey lost
-  // the researcher's persona directive on its way to the flow-engine.
-  // AGENTS.md § "Instruction 字段链" step 3 literally warns: "这一步漏一
-  // 字段就会让研究员的 persona 整条链被静默丢掉". These tests pin the fix.
-
-  it("propagates a non-empty moderatorInstruction to the draft", () => {
-    const draft = buildSurveyDraftFromDocs({
-      survey: { ...baseSurvey, moderatorInstruction: "warm, professional, no clinical language" },
-      sections: [baseSection],
-      questions: [baseQuestion],
-    });
-    expect(draft.moderatorInstruction).toBe("warm, professional, no clinical language");
-  });
-
-  it("treats missing moderatorInstruction as empty string (schema default) for legacy surveys", () => {
-    // moderatorInstruction is optional on the SurveyRow shape; omit it
-    // entirely to simulate a legacy row that predates the column.
-    const { moderatorInstruction: _drop, ...withoutField } = baseSurvey as SurveyRow & {
-      moderatorInstruction?: string;
-    };
-    void _drop;
-    const draft = buildSurveyDraftFromDocs({
-      survey: withoutField,
-      sections: [baseSection],
-      questions: [baseQuestion],
-    });
-    expect(draft.moderatorInstruction).toBe("");
-  });
-
-  it("passes through a whitespace-heavy moderatorInstruction that the schema trims", () => {
-    // SurveyDraftSchema.moderatorInstruction has .trim() — verify the
-    // schema-level trim happens rather than the mapper silently
-    // trimming out of turn (which would be surprising to a caller who
-    // wrote leading whitespace deliberately).
-    const draft = buildSurveyDraftFromDocs({
-      survey: { ...baseSurvey, moderatorInstruction: "   keep-me   " },
-      sections: [baseSection],
-      questions: [baseQuestion],
-    });
-    expect(draft.moderatorInstruction).toBe("keep-me");
-  });
-});
-
 describe("buildSurveyDraftFromDocs — Survey.instruction (ADR-0015 primary field)", () => {
   // The ADR-0015 rollout adds a new top-level `Survey.instruction` column
   // carrying the CLAUDE.md-style AI moderator operating manual. The mapper
@@ -382,30 +320,15 @@ describe("buildSurveyDraftFromDocs — Survey.instruction (ADR-0015 primary fiel
     expect(draft.instruction).toBe(markdown);
   });
 
-  it("defaults to '' when survey has no instruction column (legacy row)", () => {
+  it("rejects a missing instruction column", () => {
     const { instruction: _drop, ...withoutField } = baseSurvey as SurveyRow & {
       instruction?: string;
     };
     void _drop;
-    const draft = buildSurveyDraftFromDocs({
+    expect(() => buildSurveyDraftFromDocs({
       survey: withoutField,
       sections: [baseSection],
       questions: [baseQuestion],
-    });
-    expect(draft.instruction).toBe("");
-  });
-
-  it("preserves instruction independently of moderatorInstruction (both fields coexist during migration)", () => {
-    const draft = buildSurveyDraftFromDocs({
-      survey: {
-        ...baseSurvey,
-        moderatorInstruction: "legacy persona",
-        instruction: "new markdown manual",
-      },
-      sections: [baseSection],
-      questions: [baseQuestion],
-    });
-    expect(draft.moderatorInstruction).toBe("legacy persona");
-    expect(draft.instruction).toBe("new markdown manual");
+    })).toThrow();
   });
 });

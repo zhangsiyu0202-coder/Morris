@@ -266,22 +266,6 @@ export const SurveyDraftSectionSchema = z.object({
 export const SurveyDraftSchema = z.object({
   title: z.string().trim().min(1),
   /**
-   * @deprecated Use `instruction`; retained for ADR-0015 W5a backfill only.
-   */
-  researchGoal: z.string().trim().min(1),
-  /**
-   * @deprecated Use `instruction`; retained for ADR-0015 W5a backfill only.
-   */
-  targetAudience: z.string().trim().min(1),
-  /**
-   * @deprecated Use `instruction`; retained for ADR-0015 W5a backfill only.
-   */
-  introScript: z.string().trim().min(1),
-  /**
-   * @deprecated Use `instruction`; retained for ADR-0015 W5a backfill only.
-   */
-  moderatorInstruction: z.string().trim().default(""),
-  /**
    * `instruction` — the CLAUDE.md-style single free-form markdown document
    * that carries the full AI moderator operating manual for this study:
    * "what this study is about / notes / research goal / who is being
@@ -301,7 +285,7 @@ export const SurveyDraftSchema = z.object({
    *   - New drafts populated by the guide editor / Morris (post-Wave 2)
    *     set this field directly with the researcher-approved markdown.
    */
-  instruction: z.string().default(""),
+  instruction: z.string().trim().min(1),
   sections: z.array(SurveyDraftSectionSchema).min(1),
 }).superRefine((draft, ctx) => {
   // Collect all stableIds in the draft; then verify every branchRule
@@ -943,10 +927,7 @@ export function buildInterviewWorkflowConfigFromDraft(
   // researcher on the survey. Prepended so it frames the whole interview; the
   // operational base still follows. An explicit `supervisorInstruction` arg wins
   // outright (used by callers that already composed their own).
-  const moderator = draft.moderatorInstruction?.trim();
-  const composedInstruction = moderator
-    ? `${moderator}\n\n${operationalInstruction}`
-    : operationalInstruction;
+  const composedInstruction = draft.instruction;
 
   return InterviewWorkflowConfigSchema.parse({
     surveyId,
@@ -1039,14 +1020,7 @@ export function buildInterviewFlowConfigFromDraft(
   //      back to the same string the old `buildInterviewWorkflowConfigFromDraft`
   //      would build. Keeps existing surveys working through the deprecation
   //      cycle.
-  const operationalInstruction = `Guide a qualitative interview for "${draft.title}". Use the intro script, follow the section order, and use probe instructions when configured.`;
-  const moderatorPersona = draft.moderatorInstruction?.trim();
-  const composedInstruction = moderatorPersona
-    ? `${moderatorPersona}\n\n${operationalInstruction}`
-    : operationalInstruction;
-  const trimmedInstruction = draft.instruction?.trim() ?? "";
-  const finalModerator = overrideModerator
-    ?? (trimmedInstruction.length > 0 ? trimmedInstruction : composedInstruction);
+  const finalModerator = overrideModerator ?? draft.instruction;
 
   // Walk the draft directly (rather than via runtimeStudy) so we have access
   // to `branchRules` and `stableId`. Section is a UI-grouping concern; the
