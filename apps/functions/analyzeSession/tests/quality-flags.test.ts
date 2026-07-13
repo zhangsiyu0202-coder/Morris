@@ -30,7 +30,6 @@ const surveyContext: SurveyContext = {
   title: "test survey",
   flowConfig: {},
   instruction: "",
-  moderatorInstruction: "",
   sections: [],
   questionBlocks: [],
 };

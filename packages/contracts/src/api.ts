@@ -274,16 +274,7 @@ export const SurveyDraftSchema = z.object({
    * Notebook, and Morris analysis tools — **one source of truth for
    * the study-wide research intent**.
    *
-   * ADR-0015 (instruction-as-context-document) supersedes the four
-   * legacy fields (`moderatorInstruction`, `researchGoal`,
-   * `targetAudience`, `introScript`) which are being sunset over one
-   * deprecation cycle. During the migration:
-   *   - `instruction` is optional (default "") so legacy drafts still
-   *     validate — the composer's fallback path (see
-   *     `buildInterviewFlowConfigFromDraft`) reconstructs a supervisor
-   *     instruction from the four legacy fields when this one is empty.
-   *   - New drafts populated by the guide editor / Morris (post-Wave 2)
-   *     set this field directly with the researcher-approved markdown.
+   * This is the required, researcher-approved source of study context.
    */
   instruction: z.string().trim().min(1),
   sections: z.array(SurveyDraftSectionSchema).min(1),
@@ -389,10 +380,8 @@ export const InterviewRoomMetadataSchema = z.object({
   sessionId: z.string(),
   surveyId: z.string(),
   runtimeStudy: InterviewRuntimeStudySchema.optional(),
-  // Flow-engine config: new (steps + edges) shape consumed by the Python
-  // flow_engine. When present, this OVERRIDES `runtimeStudy` / `workflowConfig`
-  // on the agent side. Kept optional so issueLivekitToken can migrate over in
-  // a follow-up slice without breaking existing in-flight sessions.
+  // Flow-engine configuration is the sole moderation path. `runtimeStudy`
+  // remains only for progress and structural question indexing.
   flowConfig: z.lazy(() => InterviewFlowConfigSchema).optional(),
 });
 

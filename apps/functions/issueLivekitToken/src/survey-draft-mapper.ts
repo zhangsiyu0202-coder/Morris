@@ -10,28 +10,9 @@ export interface SurveyRow {
   $id: string;
   title: string;
   /**
-   * Researcher-authored AI moderator persona / tone / pacing directives.
-   * Stored on Appwrite as a dedicated top-level column (NOT inside the
-   * flowConfig JSON bucket — see packages/appwrite-schema/src/schema.ts).
-   * Historically the mapper's SurveyRow shape did not declare this field
-   * and the SDK wrapper did not pass it through, so every published survey
-   * silently lost the researcher's persona on its way to the LiveKit
-   * worker. Companion fix to the branchRules read-path repair in commit
-   * 34ff5aa. Guarded by the moderatorInstruction round-trip test in
-   * survey-draft-mapper.test.ts.
-   *
-   * Legacy field, being sunset per ADR-0015 (instruction-as-context-doc);
-   * once `instruction` is populated, this field is ignored downstream.
-   */
-  /**
    * `instruction` — the CLAUDE.md-style single free-form markdown document
-   * that carries the full AI moderator operating manual. Per ADR-0015
-   * supersedes the four legacy fields (moderatorInstruction /
-   * researchGoal / targetAudience / introScript). The mapper prefers this
-   * value when non-empty; when empty (legacy row that predates the
-   * column), the mapper leaves `draft.instruction` empty and the
-   * composer's fallback reconstructs a supervisor instruction from the
-   * legacy fields via `buildInterviewWorkflowConfigFromDraft`.
+   * that carries the full AI moderator operating manual. It is required
+   * before interview metadata can be issued.
    */
   instruction: string;
 }

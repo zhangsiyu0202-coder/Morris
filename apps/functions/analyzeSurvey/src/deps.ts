@@ -3,7 +3,6 @@ import { Client, Databases, ID, Permission, Query, Role } from "node-appwrite";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { generateText, Output } from "ai";
 import { withLLMCall, createLogger } from "@merism/observability";
-import { resolveResearchIntent } from "@merism/contracts";
 import type {
   AnalyzeSurveyDeps,
   AssignThemesInput,

@@ -46,15 +46,8 @@ export interface SurveyContext {
   ownerUserId: string;
   title: string;
   flowConfig: Record<string, unknown>;
-  /**
-   * ADR-0015 single research-intent document (`Survey.instruction`). Empty
-   * string for pre-migration surveys — the handler then composes a fallback
-   * from the legacy `flowConfig` fields + `moderatorInstruction` via
-   * `resolveResearchIntent`.
-   */
+  /** Researcher-authored context document (`Survey.instruction`). */
   instruction: string;
-  /** Legacy persona field, being sunset per ADR-0015. Used only as fallback. */
-  moderatorInstruction: string;
   sections: Array<{ $id: string; surveyId: string; title: string; description: string; order: number }>;
   questionBlocks: Array<{
     $id: string;
