@@ -47,8 +47,7 @@ const DESCRIPTION =
   "# 何时调用\n" +
   "- 用户说「帮我设计/创建一个调研」「我想了解 X 是怎么做的」「访谈用户搞清楚 Y」时。\n" +
   "# 你要生成什么\n" +
-  "- 一份结构化 SurveyDraft:标题、研究目标(researchGoal)、目标人群(targetAudience)、" +
-  "开场白(introScript)、若干 section(每节含 title/objective 与 3-6 个开放式问题)。\n" +
+  "- 一份结构化 SurveyDraft:标题、完整 instruction Markdown、若干 section(每节含 title/objective 与 3-6 个开放式问题)。\n" +
   "- 问题要贴合 goal、口语化、开放式,避免诱导性或是非题;按要问的顺序排列。\n" +
   "- 选择题(single_choice/multi_choice/ranking)必须给至少两个 options。\n" +
   "# 重要\n" +
@@ -80,12 +79,6 @@ async function withBaselineInstruction(draft: SurveyDraft): Promise<SurveyDraft>
       traceId: log.traceId,
       surveyTitle: draft.title,
       questions,
-      legacy: {
-        researchGoal: draft.researchGoal,
-        targetAudience: draft.targetAudience,
-        introScript: draft.introScript,
-        moderatorInstruction: draft.moderatorInstruction,
-      },
     });
     return { ...draft, instruction };
   } catch (err) {

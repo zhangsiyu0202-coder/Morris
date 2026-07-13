@@ -96,12 +96,7 @@ export function createRealDeps(): AnalyzeSurveyDeps {
     async findSurveyContext(surveyId: string): Promise<SurveyContextLite | null> {
       try {
         const survey = (await db.getDocument(DB, "surveys", surveyId)) as any;
-        const flow = parseJson<{
-          topics?: string[];
-          researchGoal?: string;
-          targetAudience?: string;
-          introScript?: string;
-        }>(survey.flowConfig, {});
+        const flow = parseJson<{ topics?: string[] }>(survey.flowConfig, {});
         const questionsRes = await db.listDocuments(DB, "question_blocks", [
           Query.equal("surveyId", surveyId),
           Query.orderAsc("order"),
@@ -132,14 +127,7 @@ export function createRealDeps(): AnalyzeSurveyDeps {
             config: parseJson(q.config, {}),
           })),
           topics: flow.topics ?? [],
-          researchIntent: resolveResearchIntent({
-            instruction: typeof survey.instruction === "string" ? survey.instruction : "",
-            researchGoal: flow.researchGoal,
-            targetAudience: flow.targetAudience,
-            introScript: flow.introScript,
-            moderatorInstruction:
-              typeof survey.moderatorInstruction === "string" ? survey.moderatorInstruction : "",
-          }),
+          researchIntent: typeof survey.instruction === "string" ? survey.instruction : "",
         };
       } catch (e: any) {
         if (e?.code === 404) return null;

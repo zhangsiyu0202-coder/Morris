@@ -200,16 +200,7 @@ export function createRealDeps(): IssueDeps {
           survey: {
             $id: survey.$id,
             title: survey.title,
-            flowConfig: parseJson<{
-              researchGoal?: string;
-              targetAudience?: string;
-              introScript?: string;
-            }>(survey.flowConfig, {}),
-            // ADR-0015 primary column. When non-empty this becomes the
-            // agent's full operating manual (CLAUDE.md-style); when empty
-            // (legacy row) the composer's fallback reconstructs from the
-            // four legacy fields.
-            instruction: typeof survey.instruction === "string" ? survey.instruction : undefined,
+            instruction: typeof survey.instruction === "string" ? survey.instruction : "",
           },
           sections: sectionsRes.documents.map((s: any) => ({
             $id: s.$id,

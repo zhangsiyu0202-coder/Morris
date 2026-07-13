@@ -79,12 +79,6 @@ export async function generateInstructionBaselineAction(
       traceId: log.traceId,
       surveyTitle: loaded.draft.title,
       questions,
-      legacy: {
-        researchGoal: loaded.draft.researchGoal,
-        targetAudience: loaded.draft.targetAudience,
-        introScript: loaded.draft.introScript,
-        moderatorInstruction: loaded.draft.moderatorInstruction,
-      },
     });
     log.info("instruction.baseline.generated", {
       surveyId,

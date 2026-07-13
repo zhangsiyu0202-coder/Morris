@@ -134,11 +134,7 @@ export async function saveSurveyDraft(surveyId: string, draftInput: SurveyDraft)
 
   await database.updateDocument(DATABASE_ID, SURVEYS, surveyId, {
     title: draft.title,
-    flowConfig: JSON.stringify({
-      researchGoal: draft.researchGoal,
-      targetAudience: draft.targetAudience,
-      introScript: draft.introScript,
-    }),
+    flowConfig: JSON.stringify({}),
     // ADR-0015 (instruction-as-context-document) primary column. During
     // the Wave 1 rollout the guide-editor UI still writes the four legacy
     // fields, so `draft.instruction` will typically arrive as "" for

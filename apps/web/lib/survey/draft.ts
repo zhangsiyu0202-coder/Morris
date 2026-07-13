@@ -13,7 +13,7 @@ import { createLogger } from "@merism/observability";
  * 组装为编辑态 `SurveyDraft`(纯函数,无 SDK,可单测)。
  *
  * 映射约定见 survey-editor design §4：
- * - draft 顶层 meta(researchGoal/targetAudience/introScript)存于 `Survey.flowConfig`
+ * - study-wide moderator context lives in `Survey.instruction`
  * - section.objective ← `SurveySection.description`，按 `order` 排序
  * - 每节问题按 `orderInSection` 排序
  * - question 选项/allowSkip 存于 `QuestionBlock.config`
@@ -37,11 +37,6 @@ function toDraftQuestionType(type: string): StudyQuestionType {
   return "open_ended";
 }
 
-function flowString(flowConfig: Record<string, unknown>, key: string): string {
-  const v = flowConfig[key];
-  return typeof v === "string" ? v : "";
-}
-
 function configOptions(config: Record<string, unknown> | undefined): string[] {
   if (!config) return [];
   const v = config.options;
@@ -55,21 +50,15 @@ export function assembleSurveyDraft(
   sections: SurveySection[],
   questions: QuestionBlock[],
 ): SurveyDraft {
-  const flow = (survey.flowConfig ?? {}) as Record<string, unknown>;
-
   const orderedSections = [...sections].sort((a, b) => a.order - b.order);
 
   return {
     title: survey.title,
-    researchGoal: flowString(flow, "researchGoal"),
-    targetAudience: flowString(flow, "targetAudience"),
-    introScript: flowString(flow, "introScript"),
-    moderatorInstruction: "",
     // ADR-0015 primary field. Read straight from the Survey column;
     // legacy Survey rows return "" (schema default) and the composer's
     // fallback rebuilds from the four legacy fields at flow-config
     // build time.
-    instruction: survey.instruction ?? "",
+    instruction: survey.instruction,
     sections: orderedSections.map((section) => {
       const sectionQuestions = questions
         .filter((q) => q.sectionId === section.$id)

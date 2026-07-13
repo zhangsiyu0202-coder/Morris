@@ -157,15 +157,9 @@ function makeDeps(): IssueDeps {
         const questionsRes = await db.listDocuments(DB, "question_blocks", [
           Query.equal("surveyId", base.surveyId),
         ]);
-        const flow = parseJson<{ researchGoal?: string; targetAudience?: string; introScript?: string }>(
-          survey.flowConfig as string,
-          {},
-        );
         const draft = SurveyDraftSchema.parse({
           title: survey.title as string,
-          researchGoal: flow.researchGoal ?? "",
-          targetAudience: flow.targetAudience ?? "",
-          introScript: flow.introScript ?? "",
+          instruction: survey.instruction as string,
           sections: sectionsRes.documents
             .slice()
             .sort((a, b) => (a.order as number) - (b.order as number))

@@ -187,8 +187,6 @@ export function createRealDeps(): AnalyzeSessionDeps {
           title: survey.title,
           flowConfig: parseJson(survey.flowConfig, {}),
           instruction: typeof survey.instruction === "string" ? survey.instruction : "",
-          moderatorInstruction:
-            typeof survey.moderatorInstruction === "string" ? survey.moderatorInstruction : "",
           sections: sectionsRes.documents.map((s: any) => ({
             $id: s.$id,
             surveyId: s.surveyId,
