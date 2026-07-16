@@ -35,6 +35,7 @@ import {
   ThemeAssignmentListSchema,
 } from "./rollup.js";
 import { ROLLUP_LLM_TEMPERATURE } from "./constants.js";
+import { createAiHubMixReranker } from "./reranker.js";
 
 const DB = "merism";
 
@@ -45,6 +46,9 @@ interface Env {
   DEEPSEEK_API_KEY: string;
   DEEPSEEK_MODEL?: string;
   DEEPSEEK_BASE_URL?: string;
+  AIHUBMIX_API_KEY: string;
+  AIHUBMIX_BASE_URL?: string;
+  ANALYSIS_RERANK_MODEL?: string;
 }
 
 function req(k: string): string {
@@ -61,6 +65,9 @@ function requireEnv(): Env {
     DEEPSEEK_API_KEY: req("DEEPSEEK_API_KEY"),
     DEEPSEEK_MODEL: process.env.DEEPSEEK_MODEL,
     DEEPSEEK_BASE_URL: process.env.DEEPSEEK_BASE_URL,
+    AIHUBMIX_API_KEY: req("AIHUBMIX_API_KEY"),
+    AIHUBMIX_BASE_URL: process.env.AIHUBMIX_BASE_URL,
+    ANALYSIS_RERANK_MODEL: process.env.ANALYSIS_RERANK_MODEL,
   };
 }
 
@@ -88,9 +95,16 @@ export function createRealDeps(): AnalyzeSurveyDeps {
     ...(env.DEEPSEEK_BASE_URL ? { baseURL: env.DEEPSEEK_BASE_URL } : {}),
   });
   const modelName = env.DEEPSEEK_MODEL ?? "deepseek-chat";
+  const rerankModel = env.ANALYSIS_RERANK_MODEL ?? "cohere-rerank-v4.0-fast";
+  const reranker = createAiHubMixReranker({
+    apiKey: env.AIHUBMIX_API_KEY,
+    baseUrl: env.AIHUBMIX_BASE_URL,
+    model: rerankModel,
+  });
 
   return {
     now: () => Date.now(),
+    rerankModel,
 
     async findSurveyContext(surveyId: string): Promise<SurveyContextLite | null> {
       try {
@@ -302,6 +316,23 @@ export function createRealDeps(): AnalyzeSurveyDeps {
           }),
       );
       return ComposeInsightsOutputSchema.parse(experimental_output);
+    },
+
+    async rerankFindings(input) {
+      const log = createLogger("function.analyzeSurvey.rerank");
+      const result = await withLLMCall(
+        {
+          scope: "function.analyzeSurvey.rerank",
+          traceId: log.traceId,
+          defaultModel: rerankModel,
+          provider: "cohere",
+        },
+        async () => ({
+          response: { modelId: rerankModel },
+          rankedFindings: await reranker(input),
+        }),
+      );
+      return result.rankedFindings;
     },
 
     async upsertSurveyReport({ surveyId, ownerUserId, body, generatedAt, generationMeta }) {

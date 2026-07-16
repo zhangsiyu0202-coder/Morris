@@ -5,5 +5,5 @@ export default defineConfig({
   format: ["esm"],
   clean: true,
   noExternal: [/@merism\//],
-  external: ["node-appwrite", "@ai-sdk/deepseek", "ai", "@google/genai"],
+  external: ["node-appwrite", "@google/genai"],
 });

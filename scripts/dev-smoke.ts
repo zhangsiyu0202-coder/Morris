@@ -70,7 +70,7 @@ async function main(): Promise<void> {
   await run("tsx", ["scripts/smoke.mts"]);
   console.log("Smoke 3/3: dispatched LiveKit worker flow...");
   await run("tsx", ["scripts/smoke-livekit-e2e.ts"]);
-  console.log("DEV SMOKE OK — Web, Appwrite, deployed Functions, LiveKit, Mastra, and voice worker passed.");
+  console.log("DEV SMOKE OK — Web, Appwrite, deployed Functions, LiveKit, and Gemini Live voice worker passed.");
 }
 
 if (process.argv[1]?.endsWith("dev-smoke.ts")) {

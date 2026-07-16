@@ -19,12 +19,11 @@ import {
 import {
   type LLMCallEvent,
   type LLMCallStatusValue,
+  type LLMCallProviderValue,
   sinkOrDefault,
 } from "./llm-call.js";
 import { llmGate } from "./concurrency.js";
 import { extractDebugSnippets } from "./debug-snippets.js";
-
-const PROVIDER = "deepseek" as const; // ADR-0002 锁定
 
 /** Vercel AI SDK 6 generateText / streamText 的 result 最小子集. */
 export interface VercelAIUsage {
@@ -50,6 +49,8 @@ export interface WithLLMCallOpts {
   attempt?: number;
   /** 调用方默认 model name (用于错误 event — 错误时拿不到 result.response.modelId). */
   defaultModel?: string;
+  /** Provider identifier for the emitted event. Defaults to Morris/text-analysis DeepSeek. */
+  provider?: LLMCallProviderValue;
   /** 给 debug-snippets 提取用. 不会进 default event. */
   prompt?: string;
 }
@@ -109,7 +110,7 @@ export async function withLLMCall<T extends VercelAIResultLike>(
     const event: LLMCallEvent = {
       scope: opts.scope,
       model: result.response?.modelId ?? opts.defaultModel ?? "unknown",
-      provider: PROVIDER,
+      provider: opts.provider ?? "deepseek",
       status: "success",
       latencyMs,
       inputTokens,
@@ -131,7 +132,7 @@ export async function withLLMCall<T extends VercelAIResultLike>(
     const event: LLMCallEvent = {
       scope: opts.scope,
       model: opts.defaultModel ?? "unknown",
-      provider: PROVIDER,
+      provider: opts.provider ?? "deepseek",
       status: cls.status,
       latencyMs,
       inputTokens: 0,

@@ -17,13 +17,13 @@ interface Env {
   LIVEKIT_API_KEY: string;
   LIVEKIT_API_SECRET: string;
   /**
-   * Registered agent name of the Mastra voice worker. Post ADR-0013 the worker
+   * Registered agent name of the Gemini Live voice worker. The worker
    * is dispatched unconditionally on every token issuance — the historical
    * "only if this env is set" gating existed because two workers (Python auto
    * + TS explicit) could otherwise join the same room. Now there is only one
    * worker; the env stays overridable for rollout drills / local canaries.
    */
-  MERISM_TS_VOICE_AGENT_NAME: string;
+  MERISM_VOICE_AGENT_NAME: string;
 }
 
 function req(k: string): string {
@@ -41,10 +41,10 @@ function requireEnv(): Env {
     LIVEKIT_INTERNAL_URL: process.env.LIVEKIT_INTERNAL_URL,
     LIVEKIT_API_KEY: req("LIVEKIT_API_KEY"),
     LIVEKIT_API_SECRET: req("LIVEKIT_API_SECRET"),
-    // Registered name of apps/agent-voice-worker (see src/mastra/voice-worker.ts).
+    // Registered name of the Python Gemini Live video worker.
     // Overridable only for rollout drills; the default is the production name.
-    MERISM_TS_VOICE_AGENT_NAME:
-      process.env.MERISM_TS_VOICE_AGENT_NAME ?? "merism-mastra-voice-worker",
+    MERISM_VOICE_AGENT_NAME:
+      process.env.MERISM_VOICE_AGENT_NAME ?? "merism-gemini-live-video-worker",
   };
 }
 
@@ -279,15 +279,15 @@ export function createRealDeps(): IssueDeps {
         maxParticipants: 5,
       });
 
-      // Post ADR-0013 the Mastra voice worker is the ONLY interview worker.
+      // The Gemini Live worker is the ONLY interview worker.
       // `issueLivekitToken` dispatches it explicitly on every token issuance
       // — no auto-dispatch, no fan-out, no double-worker race that the older
       // "Python worker auto-dispatches + TS worker sometimes explicit-dispatches"
       // topology could produce. Per LiveKit Server SDK docs, explicit dispatch
       // requires the worker to be registered with an `agentName` — which
-      // `apps/agent-voice-worker/src/mastra/voice-worker.ts` does under the
-      // same `MERISM_TS_VOICE_AGENT_NAME` value.
-      await dispatch.createDispatch(room, env.MERISM_TS_VOICE_AGENT_NAME, {
+      // `apps/agent/agent/main.py` registers under the same
+      // `MERISM_VOICE_AGENT_NAME` value.
+      await dispatch.createDispatch(room, env.MERISM_VOICE_AGENT_NAME, {
         metadata: buildVoiceWorkerDispatchMetadata(finalMetadata),
       });
     },

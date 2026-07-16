@@ -1,5 +1,4 @@
 packages:
   - "packages/*"
   - "apps/web"
-  - "apps/agent-voice-worker"
   - "apps/functions/*"

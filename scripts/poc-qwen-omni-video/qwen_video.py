@@ -29,7 +29,8 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 # --- minimal local copies of the agent observability primitives -------------
-# (POC runs standalone; when promoted, import from agent.logging / agent.retry.)
+# (POC runs standalone; a production promotion must define its owning logging
+# and retry boundary instead of importing worker-private code.)
 
 
 def mask_secret(value: str, visible: int = 4) -> str:

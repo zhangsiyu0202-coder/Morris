@@ -11,6 +11,7 @@ import type {
   ExtractedThemes,
   ThemeAssignments,
 } from "../src/rollup";
+import type { RerankFindings } from "../src/rerank";
 
 const baseSurvey: SurveyContextLite = {
   surveyId: "sv1",
@@ -81,7 +82,15 @@ const baseAssignments: ThemeAssignments = {
 };
 
 const baseCompose: ComposeInsightsOutput = {
-  insights: [{ id: "i1", title: "Top driver", text: "Choice", confidence: 0.7 }],
+  insights: [
+    {
+      id: "i1",
+      title: "Top driver",
+      text: "Choice",
+      confidence: 0.7,
+      supportingThemeIds: ["t1"],
+    },
+  ],
   citations: [],
   topics: ["LLM topic"],
   sentimentBreakdown: [
@@ -101,6 +110,7 @@ interface Overrides {
   assign?: (input?: any) => Promise<ThemeAssignments>;
   combine?: (input: any) => Promise<ExtractedThemes>;
   compose?: any;
+  rerank?: RerankFindings;
   upsert?: (args: any) => Promise<{ reportId: string }>;
 }
 
@@ -110,11 +120,13 @@ function makeDeps(overrides: Overrides = {}): AnalyzeSurveyDeps & {
   assignSpy: ReturnType<typeof vi.fn>;
   composeSpy: ReturnType<typeof vi.fn>;
   combineSpy: ReturnType<typeof vi.fn>;
+  rerankSpy: ReturnType<typeof vi.fn>;
 } {
   const upsertSpy = vi.fn(overrides.upsert ?? (async () => ({ reportId: "ar-survey" })));
   const extractSpy = vi.fn(overrides.extract ?? (async () => baseExtracted));
   const assignSpy = vi.fn(overrides.assign ?? (async () => baseAssignments));
   const composeSpy = vi.fn(overrides.compose ?? (async () => baseCompose));
+  const rerankSpy = vi.fn(overrides.rerank ?? (async () => []));
   // Wave F: combine 默认 spy — N≤THRESHOLD 走单 chunk 路径时不会被调用,
   // 默认实现取第一份 raw themes 透传。
   const combineSpy = vi.fn(
@@ -131,12 +143,15 @@ function makeDeps(overrides: Overrides = {}): AnalyzeSurveyDeps & {
     assignThemesWithLLM: assignSpy,
     combineThemesWithLLM: combineSpy,
     composeInsightsWithLLM: composeSpy,
+    rerankModel: "cohere-rerank-v4.0-pro",
+    rerankFindings: rerankSpy,
     upsertSurveyReport: upsertSpy,
     upsertSpy,
     extractSpy,
     assignSpy,
     composeSpy,
     combineSpy,
+    rerankSpy,
   } as any;
 }
 
@@ -225,6 +240,83 @@ describe("analyzeSurvey handler", () => {
     expect(upsertCall.body.completedRespondents).toBe(2);
     expect(upsertCall.body.questionStats[0].summary).toBe("Even split between A and B.");
     expect(upsertCall.body.topics).toEqual(["LLM topic"]);
+  });
+
+  it("persists a complete evidence-backed reranking after citations pass validation", async () => {
+    const deps = makeDeps({
+      assign: async () => ({
+        assignments: [
+          {
+            themeId: "t1",
+            sessionIds: ["sess1", "sess2"],
+            evidenceRefs: [{ transcriptId: "sess1", segmentIndex: 0 }],
+          },
+          {
+            themeId: "t2",
+            sessionIds: ["sess1"],
+            evidenceRefs: [{ transcriptId: "sess1", segmentIndex: 1 }],
+          },
+        ],
+      }),
+      rerank: async () => [
+        { kind: "insight", sourceId: "i1", rank: 1, relevanceScore: 0.95 },
+        { kind: "theme", sourceId: "t1", rank: 2, relevanceScore: 0.8 },
+        { kind: "theme", sourceId: "t2", rank: 3, relevanceScore: 0.7 },
+      ],
+    });
+
+    const result = await analyzeSurvey({ surveyId: "sv1" }, deps);
+
+    expect(result.status).toBe(200);
+    expect(deps.rerankSpy).toHaveBeenCalledTimes(1);
+    expect(deps.rerankSpy.mock.calls[0]?.[0].query).toContain("Test Study");
+    expect(deps.upsertSpy.mock.calls[0]?.[0].body.rankedFindings).toEqual([
+      { kind: "insight", sourceId: "i1", rank: 1, relevanceScore: 0.95 },
+      { kind: "theme", sourceId: "t1", rank: 2, relevanceScore: 0.8 },
+      { kind: "theme", sourceId: "t2", rank: 3, relevanceScore: 0.7 },
+    ]);
+  });
+
+  it("returns a generic error and does not persist when reranking fails", async () => {
+    const deps = makeDeps({
+      assign: async () => ({
+        assignments: [
+          {
+            themeId: "t1",
+            sessionIds: ["sess1"],
+            evidenceRefs: [{ transcriptId: "sess1", segmentIndex: 0 }],
+          },
+        ],
+      }),
+      rerank: async () => {
+        throw new Error("provider diagnostic must not escape");
+      },
+    });
+
+    const result = await analyzeSurvey({ surveyId: "sv1" }, deps);
+
+    expect(result).toEqual({ status: 500, body: { error: "reranker_unavailable" } });
+    expect(deps.upsertSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects an insight that points to a theme missing from the generated report", async () => {
+    const deps = makeDeps({
+      compose: async () => ({
+        ...baseCompose,
+        insights: [
+          {
+            ...baseCompose.insights[0]!,
+            supportingThemeIds: ["theme-that-does-not-exist"],
+          },
+        ],
+      }),
+    });
+
+    const result = await analyzeSurvey({ surveyId: "sv1" }, deps);
+
+    expect(result).toEqual({ status: 409, body: { error: "analysis_rejected" } });
+    expect(deps.rerankSpy).not.toHaveBeenCalled();
+    expect(deps.upsertSpy).not.toHaveBeenCalled();
   });
 
   it("clamps theme share to <= 100 (P-ANL-04, normalized in enrichSurveyThemes)", async () => {

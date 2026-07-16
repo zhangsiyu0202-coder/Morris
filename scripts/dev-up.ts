@@ -34,7 +34,7 @@ function portIsAvailable(port: number): Promise<boolean> {
 }
 
 async function assertApplicationPortsAreAvailable(): Promise<void> {
-  const ports = [3000, 4111, 8082];
+  const ports = [3000, 8082];
   const unavailable = (await Promise.all(ports.map(async (port) => ({ port, available: await portIsAvailable(port) }))))
     .filter((entry) => !entry.available)
     .map((entry) => entry.port);
@@ -132,7 +132,7 @@ async function main(): Promise<void> {
       console.log(`${definition.component} ready.`);
     }
 
-    console.log("All development services are ready. Press Ctrl-C to stop Web, Mastra, and voice worker; Docker stays running.");
+    console.log("All development services are ready. Press Ctrl-C to stop Web and the Gemini Live voice worker; Docker stays running.");
     process.exitCode = await waitForShutdown(processes);
   } catch (error) {
     stopProcesses(processes);

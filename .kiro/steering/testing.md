@@ -35,12 +35,12 @@ For every Function, agent workflow component, and contract change, the following
 
 The property tests for each Function live next to the unit tests (`apps/functions/<name>/tests/`). The cross-cutting ones (permission, secret leakage) live in the workspace root `tests/properties/`.
 
-Reference templates already in the repo: `tests/properties/`, `apps/agent-voice-worker/tests/properties/` (pending — port from the deleted Python suite as part of the ADR-0013 rollout wave). New property tests follow the same fast-check style.
+Reference templates already in the repo: `tests/properties/` for TypeScript contracts and Functions, plus `apps/agent/tests/` for the Python Gemini Live worker. New Python flow branching or validation invariants ship with focused pytest coverage in that worker package.
 
 ## Live integration gating (binding)
 
 - Live integration tests MUST be gated by `MERISM_LIVE_TESTS=1`. The default `pnpm test` run MUST pass without any Docker dependency.
-- Post ADR-0013 there is no `pnpm test:py` and no `--extra realtime` gating — the interview worker is TypeScript and runs on the workspace's normal `pnpm test` matrix.
+- Per ADR-0019, run Python worker coverage with `uv run --project apps/agent pytest`; it has no provider-key requirement. The normal `pnpm test` matrix covers the TypeScript workspace.
 - Live integration test scripts:
   ```bash
   pnpm stack:up                                  # Appwrite + LiveKit via Docker
@@ -48,7 +48,7 @@ Reference templates already in the repo: `tests/properties/`, `apps/agent-voice-
   MERISM_LIVE_TESTS=1 pnpm test:properties       # permission matrix, token leakage
   pnpm smoke                                     # researcher → survey → link → token end-to-end
   ```
-- Live tests MUST NOT use real provider keys (DeepSeek / Qwen). Use the `MERISM_FAKE_PROVIDERS=1` flag to substitute deterministic fakes.
+- Live tests MUST NOT use real provider keys by default. Use deterministic fakes where available; explicitly requested manual provider connectivity checks remain local-only and never enter CI.
 
 ## Test naming and placement (binding)
 
@@ -61,7 +61,7 @@ Reference templates already in the repo: `tests/properties/`, `apps/agent-voice-
 
 - Pure-core handlers (`apps/functions/*/src/handler.ts`): **100%** branch coverage. Tested via in-memory `Deps`.
 - zod schemas with `superRefine`: every clause has at least one positive test (input that passes) and one negative test (input that fails with the expected issue path).
-- Pure flow-engine functions in `apps/agent-voice-worker/src/interview/flow-engine/{state,edges,probe,condition-eval}.ts`: every branching function has unit + property test in `tests/properties/flow-engine/`.
+- Pure flow-engine functions in `apps/agent/agent/flow.py`: every changed branch has focused pytest coverage in `apps/agent/tests/test_flow.py`; add property-style generated cases when a new graph invariant is introduced.
 - SDK wrappers (`main.ts`, `appwrite_repository.py` `from_env`): integration tested only — no need for branch coverage on the env wiring.
 
 ## Test double pattern (binding)

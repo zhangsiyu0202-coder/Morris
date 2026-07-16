@@ -9,9 +9,9 @@ pnpm dev:up
 It validates required environment variables and fixed local endpoints, starts
 Docker infrastructure, waits for Appwrite and LiveKit HTTP readiness, applies
 the Appwrite schema, confirms all production-path Function deployments are
-ready, then starts and waits for Web, Mastra, and the voice worker in that
-order. The managed ports are fixed: Web `3000`, Mastra `4111`, and voice worker
-health `8082`. `Ctrl-C` stops only those three managed Node processes; Docker
+ready, then starts and waits for Web and the Python Gemini Live video worker in that
+order. The managed ports are fixed: Web `3000` and voice worker health `8082`.
+`Ctrl-C` stops only those two managed processes; Docker
 continues to run.
 
 `dev:up` intentionally refuses to take over an occupied managed port. Run

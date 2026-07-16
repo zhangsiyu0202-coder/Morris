@@ -72,7 +72,7 @@ function makeDeps(): IssueDeps {
     env.LIVEKIT_API_KEY,
     env.LIVEKIT_API_SECRET,
   );
-  const agentName = process.env.MERISM_TS_VOICE_AGENT_NAME ?? "merism-mastra-voice-worker";
+  const agentName = process.env.MERISM_VOICE_AGENT_NAME ?? "merism-gemini-live-video-worker";
 
   return {
     livekitUrl: env.LIVEKIT_URL,

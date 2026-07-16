@@ -4,7 +4,10 @@ Date: 2026-06-22
 
 ## Status
 
-Accepted. Supersedes ADR-0004 (provider locked to Gemini) and ADR-0005 D2 (Gemini file lifecycle).
+Superseded by ADR-0017. This proposal was not the shipped runtime path: the
+TypeScript Gemini Files implementation remained active. ADR-0017 makes that
+actual path authoritative and removes its remaining DeepSeek consolidation
+call.
 
 ## Context
 

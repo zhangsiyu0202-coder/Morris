@@ -4,7 +4,7 @@ Date: 2026-06-13
 
 ## Status
 
-**Accepted** (2026-06-13). Approved by the product owner (Jia).
+**Superseded by ADR-0019** (2026-07-16).
 
 This ADR is the gate required by `.kiro/steering/architecture.md` ("Globally
 forbidden: A second LLM provider beyond DeepSeek **without ADR**; A second

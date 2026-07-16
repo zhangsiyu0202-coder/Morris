@@ -19,8 +19,8 @@ Module boundaries, Function shape, agent realtime↔persistence boundary, concur
 | Observability | `packages/observability` | `createLogger`, `withRetry`, `withErrorBoundary`, `maskSecret`, `traceId` | business logic, provider calls |
 | Appwrite schema | `packages/appwrite-schema` | declarative collections + permissions + buckets, `apply` / `verify` | runtime data writes |
 | Functions | `apps/functions/<name>` | request → response surfaces; pure core in `handler.ts`, SDK wrapper in `main.ts` | shared state across invocations; SDK imports in `handler.ts` |
-| Agent | `apps/agent-voice-worker` | Mastra `Agent` + `@mastra/livekit` realtime interview worker; declarative flow engine (`src/interview/flow-engine/`) runs the step graph; `LiveKitFlowHost` (`src/interview/livekit-flow-host.ts`) is the LLM/publish/RPC seam; `FlowEngineDriver` (`src/interview/flow-driver.ts`) is the session driver plugged into `onSessionStart` | Appwrite writes for turn-by-turn state; LangGraph / second controller framework; static greeting on unknown metadata; letting the LLM prompt drive step order (the engine owns the cursor) |
-| Web | `apps/web` | Next.js: researcher UI, Morris (Mastra `Agent`, post ADR-0013), interviewee surfaces, analysis surfaces | domain logic that belongs in a Function; client-side writes for anonymous interviewees; `@mastra/livekit` / `@livekit/agents` / `@livekit/rtc-node` imports (realtime worker boundary) |
+| Agent | `apps/agent` | Python LiveKit Agents + official Gemini plugin realtime interview worker; `FlowRunner` owns the step graph and `LiveKitFlowHost` is the Gemini/video/publish/RPC seam | Appwrite writes for turn-by-turn state; LangGraph / second controller framework; static greeting on unknown metadata; letting the LLM prompt drive step order (the engine owns the cursor) |
+| Web | `apps/web` | Next.js: researcher UI, Morris (Mastra `Agent`), interviewee surfaces, analysis surfaces | domain logic that belongs in a Function; client-side writes for anonymous interviewees; LiveKit Agent SDK imports (realtime worker boundary) |
 
 Cross-module data flows ONLY through `packages/contracts`. Cross-module side effects flow ONLY through Functions or the agent. There is no shared mutable singleton anywhere.
 
@@ -55,7 +55,7 @@ grep -RIn 'from "node-appwrite"\|from "appwrite"\|from "livekit-server-sdk"' app
 
 ## Agent realtime ↔ persistence boundary (binding)
 
-Per ADR-0013 (supersedes ADR-0001) + ADR-0014 (iteration 5 flow-engine cutover) the realtime interview is a **declarative flow engine** hosted on **Mastra `Agent` + `@mastra/livekit`**. The engine's `run_flow` main loop lives in `apps/agent-voice-worker/src/interview/flow-engine/engine.ts` and walks a graph of `QuestionStep` / `ProbeStep` / `ConditionStep` nodes; the LLM only evaluates natural-language conditions and probe judgments (never chooses the next step). No LangGraph, no second controller framework, no letting the LLM prompt drive step order.
+Per ADR-0019 the realtime interview is a **declarative flow engine** hosted on **Python LiveKit Agents + Gemini Live**. `apps/agent/agent/flow.py::FlowRunner` walks a graph of `QuestionStep` / `ProbeStep` / `ConditionStep` nodes; Gemini only evaluates natural-language conditions and probe judgments (never chooses the next step). `RoomOptions(video_input=True)` forwards the latest camera or screen-share track. No LangGraph, no second controller framework, no letting the LLM prompt drive step order.
 
 Stays inside the LiveKit room (room metadata + participant attributes + RPC):
 - Turn-by-turn conversation state
@@ -75,9 +75,7 @@ NEVER:
 - Persist partial / streaming transcript per turn
 - Share mutable state across sessions on the agent worker process
 
-Pure flow-engine runtime (step traversal, edge lookup, probe loop, condition prompt) lives in `apps/agent-voice-worker/src/interview/flow-engine/` and is side-effect free (`types.ts` / `state.ts` / `edges.ts` / `probe.ts` / `condition-eval.ts` / `engine.ts`). Side effects (LiveKit calls, Appwrite Function invocations, attribute publish, RPC handler) live in `livekit-flow-host.ts` + `flow-driver.ts` + `transport/*.ts` + `persistence/finalize-client.ts` and go through the engine's `FlowEngineHost` seam, so every state transition delegates back to the pure flow-engine code path.
-
-Lazy loading is no longer relevant post-ADR-0013 — the worker is TypeScript and runs on the workspace's normal `pnpm test` matrix; no `--extra realtime` opt-in.
+Pure flow traversal is in `apps/agent/agent/flow.py`; side effects (Gemini, LiveKit attribute/RPC, finalization Function) are isolated in `livekit_host.py` and `finalize.py`. Python tests run with `uv run --project apps/agent pytest`.
 
 ## Concurrency contract (binding)
 
@@ -105,8 +103,7 @@ NEVER:
 
 ## Globally forbidden
 
-- A second LLM provider beyond the primary cascade LLM (Qwen-VL, per ADR-0011; DeepSeek is a dormant secondary) without ADR.
-- A second ASR/TTS provider beyond Qwen (without ADR).
+- A realtime LLM/ASR/TTS provider beyond Gemini Live without ADR-0019 amendment or a new ADR.
 - LangGraph as the realtime interview controller.
 - Direct Appwrite collection writes from anonymous (interviewee) clients — Functions only.
 - Module-level mutable singletons that survive across requests / sessions.
@@ -122,7 +119,7 @@ NEVER:
 | Reusable observability helper | `packages/observability/src/` |
 | Appwrite collection / index / bucket declaration | `packages/appwrite-schema/src/schema.ts` |
 | Server-side request/response surface | `apps/functions/<name>/` (pure core + SDK wrapper) |
-| Realtime interview behaviour | `apps/agent-voice-worker/src/interview/flow-engine/*.ts` (pure runtime) + `apps/agent-voice-worker/src/interview/{livekit-flow-host,flow-driver,interview-driver}.ts` (host + driver) + `apps/agent-voice-worker/src/transport/*.ts` (attribute publish + RPC) |
+| Realtime interview behaviour | `apps/agent/agent/flow.py` (pure runtime) + `apps/agent/agent/livekit_host.py` (Gemini/video/attribute/RPC host) + `apps/agent/agent/finalize.py` |
 | Researcher UI scene | `apps/web/app/<route>/` + `apps/web/components/<feature>/` |
 | LLM 调用观测 (任何新加的 generateText/streamText) | 走 `packages/observability::withLLMCall` (调用点可见) 或 `wrapLanguageModel({middleware: llmObservabilityMiddleware(...)})` (调用点不可见). scope 命名规范 `morris.*` / `function.*` / `action.*`. 参 `.kiro/specs/morris-llm-observability/` |
 | Morris 长期记忆 (跨对话 user-级事实 + manageMemories 工具) | `apps/web/lib/memories/{server,actions,embed}.ts` + `apps/web/lib/assistant/tools/manage-memories.ts`. embedding 复用 Qwen text-embedding-v3 (与 Notebook 同), cosine 检索 + fulltext fallback. 不引入 LangGraph onboarding flow. 参 `.kiro/specs/morris-memory/` |

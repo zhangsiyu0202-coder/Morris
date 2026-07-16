@@ -24,8 +24,9 @@ import type { AgentContext } from "./agent-context";
  * Morris researcher assistant — post ADR-0013 built on **Mastra `Agent`**.
  *
  * The prior Vercel AI SDK 6 `ToolLoopAgent` implementation was superseded by
- * ADR-0013 which unifies the agent runtime across the realtime interview worker
- * (`apps/agent-voice-worker`) and this page assistant. Runtime is Mastra;
+ * ADR-0013 which unified the agent runtime across the realtime interview worker
+ * and this page assistant. The realtime worker is now Python Gemini Live;
+ * Morris itself remains Mastra.
  * the tool declarations still use AI SDK 6 `tool({...})` because Mastra
  * accepts VercelToolV5-shaped tools directly (`ToolsInput = Record<string,
  * ToolAction | VercelTool | VercelToolV5 | ProviderDefinedTool>`).

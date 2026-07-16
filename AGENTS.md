@@ -22,11 +22,11 @@
 MerismV2 is an AI-driven voice interview qualitative research platform. The intended architecture is:
 
 - Researcher web app: Next.js App Router + TypeScript + Tailwind + shadcn/ui (`apps/web`, present).
-- Realtime interview layer: LiveKit server + TypeScript LiveKit Agent Worker (`apps/agent-voice-worker`, `@mastra/livekit` + Mastra Agent). Post ADR-0013 this is the ONLY interview worker; the Python worker (`apps/agent`) has been deleted.
-- Interview orchestration: a **flow engine** in `apps/agent-voice-worker/src/interview/flow-engine/` runs a declarative graph of `QuestionStep` / `ProbeStep` / `ConditionStep` nodes (per HANDOFF.md § flow-engine-ts-reimpl, iteration 5 of ADR-0013). `LiveKitFlowHost` (`src/interview/livekit-flow-host.ts`) implements the engine's host seam over Mastra `Agent` + LiveKit `Room`; `FlowEngineDriver` (`src/interview/flow-driver.ts`) is the session-scoped driver that plugs into the worker's `onSessionStart` lifecycle. First-writer-wins between voice and UI submission is preserved. Mastra `Agent` is the LLM adapter, not the orchestrator; LangGraph and any second controller framework remain forbidden.
+- Realtime interview layer: LiveKit server + Python LiveKit Agent Worker (`apps/agent`, `livekit-agents[google,images]`). Per ADR-0019 this is the ONLY interview worker because the official Python Gemini plugin forwards camera and screen-share video to Gemini Live.
+- Interview orchestration: `apps/agent/agent/flow.py::FlowRunner` runs a declarative graph of `QuestionStep` / `ProbeStep` / `ConditionStep` nodes. `LiveKitFlowHost` (`agent/livekit_host.py`) implements Gemini/video/publish/RPC effects. First-writer-wins between voice and UI submission is preserved. Gemini is the provider adapter, not the orchestrator; LangGraph and any second controller framework remain forbidden.
 - Page assistant ("Morris"): Mastra `Agent` + DeepSeek for sidebar/standalone researcher workflows. See `docs/adr/0013-migrate-realtime-and-page-assistant-to-mastra.md` (supersedes ADR-0002). During iteration-2 of the migration Morris still ships the Vercel AI SDK 6 `ToolLoopAgent` code in `apps/web/lib/assistant/agent.ts`; the swap is executed in the same migration wave.
 - Backend single source of truth: self-hosted Appwrite for Auth, Database, Storage, Realtime, and Functions.
-- Shared contracts: `packages/contracts` is the TypeScript/zod source for cross-module API and data shapes. Post ADR-0013 there is no Python mirror; `apps/agent/agent/contracts.py` has been deleted.
+- Shared contracts: `packages/contracts` is the TypeScript/zod source for cross-module API and data shapes. Python validates only the room-metadata and RPC subset it consumes, with the same camelCase wire fields.
 
 The product is for qualitative voice interviews: survey design, anonymous interview links, realtime AI voice interviews, transcripts/recordings, and structured analysis reports.
 
@@ -37,12 +37,12 @@ MerismV2 拥有**两条彼此独立的 LLM 链路**。它们不是同一个 agen
 | 维度 | **Morris** (页面助理) | **LiveKit Agent** (语音访谈主持人) |
 |---|---|---|
 | 责任 | 帮研究员**操作 Merism 数据**(起草 study / 检索访谈 / 触发分析 / 长期记忆) | 在 LiveKit room 内**与匿名 interviewee 实时语音交谈**, 按 Survey 推进访谈 |
-| 进程 | Next.js Node runtime (`apps/web`) | 独立 Node.js 进程 (`apps/agent-voice-worker`) |
-| 启动方式 | 随 `apps/web` Next.js 进程; 用户访问 `/assistant` 或侧边栏 dock | `cd apps/agent-voice-worker && pnpm dev` (Mastra HTTP) + `pnpm dev:worker` (LiveKit worker 进程) |
-| 入口 | `apps/web/app/assistant/` (standalone) + `apps/web/components/assistant/*` (sidebar dock) + `apps/web/app/api/assistant/route.ts` (POST chat endpoint) | `apps/functions/issueLivekitToken` 发 short-lived JWT + 显式 dispatch `merism-mastra-voice-worker` → interviewee join LiveKit room → agent worker 同 room join |
-| 框架 | Mastra `Agent` (per ADR-0013; supersedes ADR-0002 Vercel AI SDK 6 `ToolLoopAgent` — migration in-flight) | Mastra `Agent` + `@mastra/livekit` `createLiveKitWorker`,访谈 orchestration 由 `src/interview/flow-engine/` (declarative graph runtime) + `src/interview/livekit-flow-host.ts` + `src/interview/flow-driver.ts` 拥有 (per ADR-0013 + ADR-0014; supersedes ADR-0001 Python LiveKit Supervisor + TaskGroup + AgentTask) — **不是 LangGraph** |
-| LLM provider | DeepSeek (`apps/web/lib/assistant/model.ts::CHAT_MODEL`/`REASONING_MODEL`) | Qwen-VL primary cascade (per ADR-0011); DeepSeek dormant secondary |
-| ASR / TTS | — (纯文本聊天) | Qwen (DashScope) |
+| 进程 | Next.js Node runtime (`apps/web`) | 独立 Python 进程 (`apps/agent`) |
+| 启动方式 | 随 `apps/web` Next.js 进程; 用户访问 `/assistant` 或侧边栏 dock | `cd apps/agent && uv run python -m agent.main start` |
+| 入口 | `apps/web/app/assistant/` (standalone) + `apps/web/components/assistant/*` (sidebar dock) + `apps/web/app/api/assistant/route.ts` (POST chat endpoint) | `apps/functions/issueLivekitToken` 发 short-lived JWT + 显式 dispatch `merism-gemini-live-video-worker` → interviewee join LiveKit room → agent worker 同 room join |
+| 框架 | Mastra `Agent` (per ADR-0013; supersedes ADR-0002 Vercel AI SDK 6 `ToolLoopAgent` — migration in-flight) | Python LiveKit Agents + official Gemini plugin; `FlowRunner` + `LiveKitFlowHost` 拥有访谈编排 (ADR-0019) — **不是 LangGraph** |
+| LLM provider | DeepSeek (`apps/web/lib/assistant/model.ts::CHAT_MODEL`/`REASONING_MODEL`) | Gemini Live native audio; Gemini text model handles bounded flow decisions |
+| ASR / TTS | — (纯文本聊天) | Gemini Live native audio |
 | 使用者 | 登录态研究员 (Appwrite Account) | 匿名 interviewee (**无账号**, 凭 `InterviewLink` 拿 JWT) |
 | 观测 scope | `morris.*` (per `morris-llm-observability` 注册表: `morris.toolloop` / `morris.toolloop.reasoner` / `morris.title.*`; 另有 `action.*` / `function.*` 等非 Morris-工具的 LLM 调用) | `agent.*` (Python `agent/logging.py::create_logger`; 当前主要是 `agent.main` 等模块前缀, LLM 调用尚未接 `morris-llm-observability` Wave B) |
 | `traceId` 命名空间 | 一次 Morris 请求 / Server Action / Function 调用一个 | 一次访谈 session 一个 |
@@ -67,35 +67,32 @@ MerismV2 拥有**两条彼此独立的 LLM 链路**。它们不是同一个 agen
 
 新增 Morris 工具必须自证"为什么归 Morris 而不是 server action / Function"(per `scope.md::borrow-or-build`), 并同步在 `tool-metadata.ts` 登记 + `tool-enrich-urls.ts` 同步(per `morris-tool-metadata` sub-spec)。
 
-### LiveKit Agent 单一 worker 实现 (post ADR-0013, binding)
+### LiveKit Agent 单一 worker 实现 (post ADR-0019, binding)
 
-"LiveKit Agent" 这条链目前**只有一个** worker 进程 (`apps/agent-voice-worker`, TypeScript + Mastra), 消费 `InterviewRoomMetadata`。历史的 Python worker (`apps/agent/`) 在 ADR-0013 中被删除;`issueLivekitToken` 无条件显式 dispatch `merism-mastra-voice-worker` 名字。
+"LiveKit Agent" 这条链目前**只有一个** worker 进程 (`apps/agent`, Python + LiveKit Agents + Gemini Live), 消费 `InterviewRoomMetadata`;`issueLivekitToken` 无条件显式 dispatch `merism-gemini-live-video-worker`。
 
-| 维度 | TS worker (`apps/agent-voice-worker`) |
+| 维度 | Python worker (`apps/agent`) |
 |---|---|
-| 框架 | `@mastra/livekit` `createLiveKitWorker` + Mastra `Agent`;访谈状态机由 `src/interview/flow-engine/` (declarative graph, `run_flow` main loop) 拥有,`LiveKitFlowHost` 提供 LLM / publish / RPC 侧的 host seam (不由 LLM prompt 驱动) |
-| 启动 | `cd apps/agent-voice-worker && pnpm dev` (Mastra HTTP) + `pnpm dev:worker` (LiveKit worker 进程) |
-| LLM | Qwen compat (`qwen-plus` via DashScope OpenAI-compatible HTTP) — Qwen-VL cascade primary (per ADR-0011) |
-| ASR/TTS | FunASR websocket ASR (`paraformer-realtime-v2`) + Qwen realtime TTS (DashScope 原生 websocket, 非 OpenAI-compatible 路由) |
-| 端到端判停 | `inference.TurnDetector({ version: "v1-mini" })` — pin 到本地模型, 跳过需要 LiveKit Cloud 账号的 `v1` 云端尝试(自托管 LiveKit 环境下 `v1` 会 401)|
-| 房间 dispatch | `issueLivekitToken` 总是显式 dispatch `MERISM_TS_VOICE_AGENT_NAME` (默认 `merism-mastra-voice-worker`) — no auto-dispatch, no fan-out |
-| Workflow config 来源 | `src/mastra/merism-room-metadata.ts::flowConfigFromMerismRoomMetadata` — 消费 TS 端 (`buildInterviewFlowConfigFromDraft` in `packages/contracts/src/api.ts`) 合成好的 `flowConfig` (steps + edges + moderatorInstruction);缺 flowConfig 时 worker fail-close 拒绝 job (post-iteration-5 无 fallback) |
-| Contracts 依赖 | `@merism/contracts` (workspace 包,直接消费 TS 类型;无 Python mirror) |
+| 框架 | `livekit-agents[google,images]` + `AgentSession`;访谈状态机由 `agent/flow.py::FlowRunner` 拥有,`agent/livekit_host.py::LiveKitFlowHost` 提供 Gemini / video / publish / RPC seam (不由 LLM prompt 驱动) |
+| 启动 | `cd apps/agent && uv run python -m agent.main start` |
+| LLM | Gemini Live native audio；Gemini text model 仅用于条件与追问判断 |
+| ASR/TTS | Gemini Live native audio |
+| 端到端判停 | Gemini Live server-side VAD / turn-taking；不加载本地或云端 LiveKit turn detector，避免双重判停 |
+| 视频 | `RoomOptions(video_input=True)` 转发当前 camera / screen-share 视频帧给 Gemini Live |
+| 房间 dispatch | `issueLivekitToken` 总是显式 dispatch `MERISM_VOICE_AGENT_NAME` (默认 `merism-gemini-live-video-worker`) — no auto-dispatch, no fan-out |
+| Workflow config 来源 | `agent/metadata.py::parse_room_metadata` 消费 TS 端 (`buildInterviewFlowConfigFromDraft` in `packages/contracts/src/api.ts`) 合成好的 `flowConfig`;缺 flowConfig 时 worker fail-close 拒绝 job |
+| Contracts 依赖 | `packages/contracts` 为 wire source of truth; Python 只做窄 Pydantic boundary validation |
 | 持久化 | 通过 `apps/functions/finalizeInterviewSession` Function 单向落 Appwrite(one-way append-only, per `architecture.md::Realtime ↔ persistence boundary`)|
 
-### LiveKit Agent 关键代码点 (`apps/agent-voice-worker/src/`)
+### LiveKit Agent 关键代码点 (`apps/agent/agent/`)
 
-- `mastra/voice-worker.ts` — worker entrypoint;`createLiveKitWorker` 挂 `onSessionStart` / `onCallEnd` 两个 hook;fail-closed on bad metadata;无静态 greeting
-- `mastra/merism-room-metadata.ts` — metadata 解析(`parseMerismRoomMetadata` 返回 discriminated result — 不再静默 catch)+ `flowConfigFromMerismRoomMetadata`(pick out flowConfig,缺 flowConfig 时 worker fail-close)+ `buildMerismVoiceAgent(flowConfig, sessionId)` per-session Mastra `Agent` 工厂(用 `flowConfig.moderatorInstruction` 作 instructions)
-- `interview/flow-engine/` — **纯** flow-engine runtime,无 side effect。`types.ts` (`FlowEngineHost` seam + envelope types), `state.ts` (`FlowState` + `stepAnswer` / `readAnswerFromState`), `edges.ts` (`locateStep` / `followEdge` / `resolveAnswerEdge` / `resolveDefaultEdge` 纯 lookup), `probe.ts` (`runProbeLoop` + `parseYesNo` + `buildProbeGenerationPrompt` + `buildJudgePrompt`), `condition-eval.ts` (`buildConditionPrompt`), `engine.ts` (`runFlow` main loop)。**修改 edges / probe 判定 semantics 会破坏 `tests/properties/flow-engine/{engine-loop,condition-eval,probe-loop}.test.ts` 的 31 tests**。
-- `interview/interview-driver.ts` — `InterviewDriver` interface (`begin` / `handleUiSubmission` / `snapshot` / `shutdown` / `hasActiveTask` / `currentQuestionId`),抽象出来让 worker `onSessionStart` 无需知道具体状态机实现
-- `interview/flow-driver.ts` — `FlowEngineDriver`:session-scoped driver 实现 InterviewDriver。构造 `LiveKitFlowHost`,起 `runFlow(config, host, ctx)` 后台任务,handleUiSubmission 委托给 host
-- `interview/livekit-flow-host.ts` — `LiveKitFlowHost implements FlowEngineHost`:LLM 侧走 Mastra `Agent` (condition eval + probe generate/judge 都走 `agent.generate`),publish 侧走 `InterviewStateSink` (extracted interface),UI-RPC 侧走 `#pendingAnswer` deferred pattern。**askQuestion 必须先 set pending 再 publish** — 反向会引入 race,由 `livekit-flow-host.test.ts` 3 tests 守护
-- `transport/attribute-publisher.ts` — `InterviewStatePublisher` 实现 `InterviewStateSink`:发布 `merism.interviewState` attribute
-- `transport/submit-answer-rpc.ts` — 注册 `merism.submit_answer` RPC handler,两级 gate(schema parse + `shouldAcceptUiAnswer`)后转 driver.handleUiSubmission
-- `persistence/finalize-client.ts` — 唯一 Appwrite 出口:调 `apps/functions/finalizeInterviewSession` Function
+- `main.py` — worker entrypoint; fail-closed metadata, per-session Gemini Live session, background flow and terminal finalization.
+- `runtime.py` — official `RealtimeModel` and `RoomOptions(video_input=True)` construction.
+- `flow.py` — side-effect-free graph traversal and bounded loop guard.
+- `livekit_host.py` — Gemini speech/text, video-enabled session, `merism.interviewState`, `merism.submit_answer`, final transcript and first-writer-wins gate.
+- `finalize.py` — 唯一 Appwrite 出口:调 `apps/functions/finalizeInterviewSession` Function.
 
-Mastra 与 LiveKit 相关 import (`@mastra/livekit`, `@livekit/agents`, `@livekit/rtc-node`) **禁止在 `apps/web`** 出现 — 属实时 worker 边界。
+LiveKit 与 Gemini realtime 相关 import (`@livekit/agents`, `@livekit/rtc-node`, `@livekit/agents-plugin-google`) **禁止在 `apps/web`** 出现 — 属实时 worker 边界。
 
 ### Instruction 字段链 — 谁写, 谁读 (容易栽跟头的一组)
 
@@ -107,8 +104,8 @@ Mastra 与 LiveKit 相关 import (`@mastra/livekit`, `@livekit/agents`, `@liveki
 2. **`apps/web/lib/actions/survey.ts` 写入 Appwrite** Survey / SurveySection / QuestionBlock 行
 3. **`apps/functions/issueLivekitToken/src/survey-draft-mapper.ts::buildSurveyDraftFromDocs`** 把行映射成 `SurveyDraft`; `section.objective = section.description || section.sectionInstruction || ""`; `draft.instruction = survey.instruction`。空 instruction 由 `SurveyDraftSchema` 拒绝，不能签发访谈。
 4. **`apps/functions/issueLivekitToken/src/deps.ts::createRoom`** 调 `buildInterviewRoomMetadataFromDraft` (`@merism/contracts/src/api.ts`) — composer 直接把非空 `draft.instruction` 复制为 `flowConfig.moderatorInstruction`，并仅发送 `runtimeStudy`（progress / question index）与 `flowConfig`。经 `JSON.stringify` 送进 LiveKit dispatch metadata。
-5. **`apps/agent-voice-worker/src/mastra/merism-room-metadata.ts::flowConfigFromMerismRoomMetadata`** 只读 `metadata.flowConfig`。缺 `flowConfig` 时 worker **fail-close 拒绝 job**(不再 fallback 到 `runtimeStudy`,post-iteration-5 无 fallback path)。
-6. **`apps/agent-voice-worker/src/mastra/merism-room-metadata.ts::buildMerismVoiceAgent(flowConfig, sessionId)`** 用 `flowConfig.moderatorInstruction`（即研究员的 `Survey.instruction`，加 sessionId / surveyId / flow outline）初始化 Mastra `Agent` 的 `instructions`。
+5. **`apps/agent/agent/metadata.py::parse_room_metadata`** 只读 `metadata.flowConfig`。缺 `flowConfig` 时 worker **fail-close 拒绝 job**(不再 fallback 到 `runtimeStudy`)。
+6. **`apps/agent/agent/main.py::_instructions`** 用 `flowConfig.moderatorInstruction`（即研究员的 `Survey.instruction`）初始化 Gemini Live instructions；`FlowRunner` 仍拥有问题顺序。
 
 **Morris 与这条链的关系: 不写、不读、不参与**。
 
@@ -135,7 +132,7 @@ Mastra 与 LiveKit 相关 import (`@mastra/livekit`, `@livekit/agents`, `@liveki
 - "Morris 影响访谈实时过程" — 不存在的路径。
 - "LiveKit Agent 调 Morris 工具 / 读 Morris memory / 写 Conversation" — 不存在的路径。两条链的 LLM 观测 scope (`morris.*` vs `agent.*`) 也物理隔离。
 - "用 Vercel AI SDK 6 给 LiveKit Agent" 或 "把 Morris 改成 LiveKit Agents SDK" — 同时违反 ADR-0001 / ADR-0002。
-- "DeepSeek 是项目唯一 LLM" — **已不再准确**: Qwen-VL (per ADR-0011) 是 LiveKit Agent cascade 的 primary; DeepSeek 留作 dormant revert path。Morris 端仍用 DeepSeek。本文件下文若仍出现"DeepSeek is the only LLM" 措辞, 以 `.kiro/steering/errors-and-observability.md::Provider adapter rules` 为准 (steering 文件先于本文件 reflect ADR-0011)。
+- "DeepSeek 是项目唯一 LLM" — **不准确**：Morris 使用 DeepSeek；实时访谈使用 Gemini Live native audio，且用 Gemini text model 完成 flow 的有界判断；视觉分析另见 ADR-0017。
 
 ## Hard Architecture Rules
 
@@ -179,7 +176,7 @@ Mastra 与 LiveKit 相关 import (`@mastra/livekit`, `@livekit/agents`, `@liveki
 - `packages/contracts`: zod schemas and TypeScript types for entities, API contracts, and shared interview workflow state.
 - `packages/observability`: TypeScript logger, retry, and function error-boundary helpers.
 - `packages/appwrite-schema`: declarative Appwrite schema (collections, attributes, indexes, permissions, storage buckets) with `apply` / `verify` tooling under `src/`.
-- `apps/agent-voice-worker`: TypeScript LiveKit Agent Worker (post ADR-0013 唯一 interview worker). `src/mastra/` 挂 `@mastra/livekit` `createLiveKitWorker` + Mastra `Agent` + DashScope Qwen LLM / FunASR realtime STT / Qwen realtime TTS. `src/interview/` 拥有 flow-engine runtime (declarative graph of QuestionStep/ProbeStep/ConditionStep) + `LiveKitFlowHost` (LLM/publish/RPC seams) + `FlowEngineDriver` (session driver). `src/transport/` 发布 `merism.interviewState` 与注册 `merism.submit_answer` RPC. `src/persistence/finalize-client.ts` 调 `apps/functions/finalizeInterviewSession` Function 单向落 Appwrite. `src/health.ts` 挂 `/_livez` / `/_readyz` + SIGTERM drain.
+- `apps/agent`: Python LiveKit Agent Worker (ADR-0019 唯一 interview worker). `runtime.py` 挂官方 Gemini Live 与视频输入，`flow.py` 拥有 graph runtime，`livekit_host.py` 发布 `merism.interviewState` 和注册 `merism.submit_answer`，`finalize.py` 单向调用 `finalizeInterviewSession` Function，`health.py` 挂 `/_livez` / `/_readyz`。
 - `apps/functions/issueLivekitToken`: example Appwrite Function with pure-core / SDK-wrapper split.
 - `apps/web`: Next.js 15 (App Router) researcher web app. Hosts the page assistant Morris (`app/api/assistant/route.ts` + `lib/assistant/*` + `components/assistant/*` + standalone `/assistant`), the interviewee surfaces (`/interview` + `components/interview/*`; UI follows the *Design Interviewer Page* prototype — pre-interview flow, camera self-view + screen share, two-pane room, per `docs/design/multimodal-interview-and-structured-rendering.md §9`), the editor surfaces (`/home`, `/studies/[id]`, `components/studies/*`), and the analysis surfaces (`/insights`, `/insights/[id]`, `/report`). The current editor is a v0-generated draft slated for redesign; do not treat its persistence layer (Drizzle/Postgres) as the architectural target.
 - `docs/adr/`: architecture decision records. `0001` (interview controller), `0002` (page assistant stack), `0003` (analysis report), `0004`/`0005` (Gemini visual analysis + durability), `0006` (workspaces / billing), `0007` (Gemini Live), `0008` (ParticipantEgress for recording).
@@ -205,7 +202,7 @@ Current gaps and known drifts:
 - **Local researcher login (manual QA):** see `docs/dev/local-researcher-account.md` (`researcher@merism.local` / pre-created on local Appwrite).
 - Stop local infra without deleting volumes: `pnpm stack:down`.
 - Reset local infra volumes: `pnpm stack:reset`.
-- Run TS agent voice worker (dev): `cd apps/agent-voice-worker && pnpm dev` (Mastra HTTP) + `pnpm dev:worker` (LiveKit worker).
+- Run Python agent voice worker (dev): `cd apps/agent && uv run python -m agent.main start`.
 
 Before running commands that require Docker, network access, or dependency downloads, expect that sandbox approval may be needed.
 
@@ -221,11 +218,10 @@ Before running commands that require Docker, network access, or dependency downl
 
 - Read the relevant foundation spec before implementing a new module.
 - For new cross-module behavior, define the contract in `packages/contracts` first.
-- For Python agent behavior that depends on contracts, mirror only the necessary schema in `apps/agent/agent/contracts.py` and keep field names aligned with zod schemas.
-- For realtime voice interviews, model the conversation with a long-lived LiveKit supervisor agent, ordered `TaskGroup`s for sections/blocks, and focused `AgentTask`s for reusable collection or interview tasks. Do not introduce LangGraph as the main realtime interview controller unless the architecture is explicitly revised again.
+- For realtime voice interviews, keep the declarative Python `FlowRunner` as the sole orchestrator and use the LiveKit + Gemini adapter only for realtime media and bounded LLM seams. Do not introduce LangGraph or a second controller framework.
 - For Appwrite schema and permissions, keep declaration, apply, and verify logic idempotent and non-destructive by default.
 - For frontend work, build the actual workflow surface, not marketing pages. Use existing design-system conventions once `apps/web` exists.
-- For AI or provider integrations, keep provider adapters behind narrow interfaces. All LLM calls use DeepSeek; Qwen is reserved for ASR/TTS unless a future ADR changes this.
+- For AI or provider integrations, keep provider adapters behind narrow interfaces. Morris uses DeepSeek; the realtime worker uses Gemini per ADR-0019; other provider choices require an ADR.
 
 ---
 
@@ -342,19 +338,18 @@ The reference shape is `apps/functions/issueLivekitToken`. Every new Function fo
 - Permission grants follow the principle of least privilege: each collection grants exactly the role/team needed. Anonymous role gets read-only on a narrow set, never write.
 - Storage buckets carry MIME-type and size restrictions matching the declared use (e.g. recordings: audio MIME, max size).
 
-### Agent (`apps/agent`)
+### Realtime worker (`apps/agent`)
 
-- Realtime interview controller is **LiveKit Supervisor + ordered TaskGroups + focused AgentTasks**. No LangGraph, no custom state machines.
-- Per-session state lives on the agent instance. Do not share mutable state across sessions.
-- Persisted artifacts (transcript segments, recordings, final answers) flow out of the agent into Appwrite collections via Functions, never via direct SDK writes from the agent process.
-- Pydantic models in `agent/contracts.py` mirror `packages/contracts`. Field names are identical. The mirror only contains schemas the agent actually uses.
-- The realtime extra is opt-in: `uv sync --extra realtime`. Foundation tests must run without it. Do not move realtime imports to module top-level.
-- Logging uses `agent.logging.create_logger(scope)`, mirrors the TS observability shape (`scope`, `traceId`, structured fields).
+- The declarative Python `FlowRunner` owns interview order. LiveKit Python Agents + Gemini Live is only the realtime media/provider adapter. `RoomOptions(video_input=True)` carries camera/screen-share frames. No LangGraph or second controller framework.
+- Per-session state lives on `FlowRunner`, `LiveKitFlowHost`, and `AgentSession`; do not share mutable state across sessions.
+- Persisted artifacts (transcript segments, recordings, final answers) flow out of the worker into Appwrite collections via Functions, never via direct SDK writes from the worker process.
+- `packages/contracts` owns the wire contract; Python's Pydantic models validate only the consumed metadata/RPC subset with the same wire fields.
+- Logging must use structured session-scoped fields and never include raw prompts, outputs, or secrets.
 
 ### Provider adapters (LLM, ASR, TTS)
 
-- Every provider lives behind a narrow interface defined in TS contracts (or Python protocol). The adapter implements one provider; swapping providers means writing a new adapter, not editing call sites.
-- **DeepSeek** is the only LLM. **Qwen** is reserved for ASR/TTS. Changing either requires a new ADR in `docs/adr/`.
+- Every provider lives behind a narrow interface. The adapter implements one provider; swapping providers means writing a new adapter, not editing call sites.
+- Morris uses DeepSeek; the realtime worker uses Gemini Live native audio/video plus a Gemini text adapter as specified by ADR-0019. Changing a provider still requires an ADR in `docs/adr/`.
 - Provider failures use explicit error types. Retries go through `packages/observability/retry`, not ad-hoc loops. Backoff and jitter are configured at the call site, not inside the adapter.
 - Adapters never log raw prompts or generated text at info level — those go to debug only, gated by an env flag, never enabled in production.
 

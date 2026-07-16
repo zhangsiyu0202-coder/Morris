@@ -161,7 +161,7 @@ Net: 14 `createLogger` migrations + 2 `nosemgrep:` (the template file's two call
 After all edits applied:
 
 ```bash
-pnpm semgrep:warn 2>&1 | grep -E "Ran.*findings" 
+pnpm semgrep:warn 2>&1 | grep -E "Ran.*findings"
 # Expect: "Ran 2 rules on N files: 0 findings."
 
 pnpm semgrep

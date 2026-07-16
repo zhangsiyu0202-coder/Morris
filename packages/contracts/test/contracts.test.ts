@@ -421,6 +421,64 @@ describe("contracts: SurveyAnalysisReportOutput discriminated union", () => {
     expect(SurveyAnalysisReportOutputSchema.parse(minimal)).toEqual(minimal);
   });
 
+  it("accepts evidence-backed ranked findings without breaking historic reports", () => {
+    const report = {
+      surveyId: "survey-1",
+      surveyTitle: "Checkout study",
+      totalRespondents: 2,
+      completedRespondents: 2,
+      avgDurationLabel: "5 min",
+      lastUpdatedLabel: "just now",
+      topics: [],
+      questionStats: [],
+      sentimentBreakdown: [],
+      themes: [
+        { id: "theme-pricing", label: "Hidden fees", mentions: 2, pct: 100, sentiment: "negative" },
+      ],
+      insights: [
+        {
+          id: "insight-trust",
+          title: "Late fees reduce trust",
+          text: "Participants lost trust when fees appeared at checkout.",
+          confidence: 0.9,
+          supportingThemeIds: ["theme-pricing"],
+        },
+      ],
+      citations: [],
+      rendered: null,
+      rankedFindings: [
+        { kind: "insight", sourceId: "insight-trust", rank: 1, relevanceScore: 0.91 },
+        { kind: "theme", sourceId: "theme-pricing", rank: 2, relevanceScore: 0.72 },
+      ],
+    };
+
+    expect(SurveyAnalysisReportOutputSchema.parse(report)).toMatchObject({
+      rankedFindings: report.rankedFindings,
+      insights: [{ supportingThemeIds: ["theme-pricing"] }],
+    });
+  });
+
+  it("rejects ranked findings that point at missing report objects or skip a rank", () => {
+    const invalid = {
+      surveyId: "survey-1",
+      surveyTitle: "Checkout study",
+      totalRespondents: 1,
+      completedRespondents: 1,
+      avgDurationLabel: "5 min",
+      lastUpdatedLabel: "just now",
+      topics: [],
+      questionStats: [],
+      sentimentBreakdown: [],
+      themes: [{ id: "theme-1", label: "Pricing", mentions: 1, pct: 100, sentiment: "negative" }],
+      insights: [],
+      citations: [],
+      rendered: null,
+      rankedFindings: [{ kind: "insight", sourceId: "missing", rank: 2, relevanceScore: 0.9 }],
+    };
+
+    expect(SurveyAnalysisReportOutputSchema.safeParse(invalid).success).toBe(false);
+  });
+
   it("discriminates choice / rating / nps question stats", () => {
     const stats = SurveyQuestionStatSchema.array().parse([
       {

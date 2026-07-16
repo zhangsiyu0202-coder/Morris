@@ -30,7 +30,7 @@ export default async function main({ req, res, log, error }: Ctx) {
   }
 
   const boundary = await withErrorBoundary("analyzeSessionVisual", async (logger) => {
-    const result = await analyzeSessionVisual(input, createRealDeps());
+    const result = await analyzeSessionVisual(input, createRealDeps({ traceId: logger.traceId }));
     if (result.status === 200) {
       logger.info("visual job processed", {
         jobId: result.body.jobId,

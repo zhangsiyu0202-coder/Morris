@@ -2,6 +2,9 @@
 
 ## Status
 
+The realtime-worker portion is superseded by ADR-0018. This ADR remains active
+for the Morris page-assistant migration.
+
 Accepted (2026-07-12).
 
 Supersedes:

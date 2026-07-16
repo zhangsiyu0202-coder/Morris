@@ -1,8 +1,8 @@
-// Consolidation prompt for DeepSeek.
+// Consolidation prompt for Gemini.
 //
 // Mirrors PostHog's video summary consolidation step: takes the per-segment
 // outputs Gemini produced and synthesizes a session-level visual narrative.
-// Pure text reasoning — no video, no Gemini.
+// This is a text-only Gemini request; the video is not re-uploaded.
 
 import type { SegmentLlmOutput } from "../gemini/types.js";
 import { VISUAL_TAG_TAXONOMY } from "@merism/contracts";

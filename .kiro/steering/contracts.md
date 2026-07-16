@@ -4,7 +4,7 @@ inclusion: always
 
 # Contracts (binding)
 
-`packages/contracts` (zod) is the single source of truth for every cross-module shape. Post ADR-0013 there is no Python mirror — `apps/agent/agent/contracts.py` has been deleted with the Python worker. This file defines the schema-first workflow, the invariant placement rules, and the deprecation pattern. Read together with `architecture.md` Cross-module change order.
+`packages/contracts` (zod) is the single source of truth for every cross-module shape. Per ADR-0019, the Python realtime worker validates only the room-metadata and RPC subset it consumes; those Pydantic models preserve the canonical camelCase wire fields and never become a second public contract. This file defines the schema-first workflow, the invariant placement rules, and the deprecation pattern. Read together with `architecture.md` Cross-module change order.
 
 ## Source-of-truth rule (binding)
 
@@ -45,16 +45,16 @@ Rules:
 - Validation logic MUST NOT live in the calling Function, the agent, or the UI. Calling code only does `Schema.safeParse(input)` and reacts to `success: false`.
 - If an invariant cannot be expressed in zod (e.g. requires DB lookup), define a typed predicate in `packages/contracts` (pure function, no I/O) and have callers invoke it explicitly.
 
-## Historical Python mirror (removed 2026-07-12)
+## Python consumer boundary (ADR-0019)
 
-The `apps/agent/agent/contracts.py` pydantic mirror was deleted together with
-the Python worker per ADR-0013. Every cross-module shape now lives in
-`packages/contracts` (zod) only. There is no `pnpm test:py` and no
-`--extra realtime` gating.
+`apps/agent/agent/metadata.py` and `apps/agent/agent/rpc.py` contain narrow
+Pydantic validation for the room metadata and RPC payloads consumed by the
+Python worker. They are consumer boundaries, not independent domain schemas:
 
-If a future ADR re-introduces a non-TypeScript runtime that consumes these
-contracts, define the mirror discipline in that ADR — do not reintroduce
-this section without an ADR.
+- add or alter the canonical shape in `packages/contracts` first;
+- preserve camelCase wire keys in Python;
+- validate only fields the worker consumes; and
+- cover changed Python validation with `uv run --project apps/agent pytest`.
 
 ## JSON-shaped fields are temporary (binding)
 

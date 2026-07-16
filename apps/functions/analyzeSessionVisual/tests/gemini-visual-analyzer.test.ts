@@ -3,6 +3,7 @@ import { uploadVideoToGemini } from "../src/gemini/upload-video";
 import { analyzeVideoSegment } from "../src/gemini/analyze-segment";
 import {
   createGeminiVisualAnalyzer,
+  geminiVisualConfigFromEnv,
   type GeminiVisualConfig,
 } from "../src/gemini-visual-analyzer";
 import type { GeminiClient } from "../src/gemini/client";
@@ -31,6 +32,18 @@ function makeClient(overrides: Partial<GeminiClient> = {}): GeminiClient & {
   } as GeminiClient;
   return Object.assign(client as any, { uploadSpy, getSpy, deleteSpy, generateSpy });
 }
+
+describe("geminiVisualConfigFromEnv", () => {
+  it("uses the economical Gemini Flash Lite model by default", () => {
+    expect(
+      geminiVisualConfigFromEnv({
+        GEMINI_VISUAL_ANALYSIS_ENABLED: "true",
+        GEMINI_API_KEY: "test-key",
+        GEMINI_API_BASE_URL: "https://gemini.example/v1beta",
+      }),
+    ).toMatchObject({ model: "gemini-2.5-flash-lite" });
+  });
+});
 
 describe("uploadVideoToGemini", () => {
   it("polls until ACTIVE and returns the file uri", async () => {
@@ -293,6 +306,32 @@ describe("createGeminiVisualAnalyzer (orchestrator)", () => {
     expect(result.segments).toHaveLength(2);
     expect(result.segments[0]?.id).toBe("vseg_1");
     expect(result.modelId).toBe("gemini-3.1-flash-lite");
+  });
+
+  it("uses the same Gemini client for production consolidation when no test override is supplied", async () => {
+    const client = makeClient();
+    client.uploadSpy.mockResolvedValueOnce({
+      name: "files/abc",
+      uri: "https://gem/files/abc",
+      state: "ACTIVE",
+      mimeType: "video/mp4",
+    });
+    const segment = {
+      text: JSON.stringify({ title: "T", description: "D", observations: [], issueLevel: "none", candidateMoments: [] }),
+    };
+    const consolidated = {
+      text: JSON.stringify({ summary: "Gemini summary", sentiment: "neutral", tags: [], keyMoments: [] }),
+    };
+    client.generateSpy.mockResolvedValueOnce(segment).mockResolvedValueOnce(segment).mockResolvedValueOnce(consolidated);
+
+    const result = await createGeminiVisualAnalyzer({ client, config })(baseInput);
+
+    expect(client.generateSpy).toHaveBeenCalledTimes(3);
+    expect(client.generateSpy.mock.calls[2]?.[0]).toMatchObject({
+      model: "gemini-3.1-flash-lite",
+      config: { responseMimeType: "application/json", responseJsonSchema: expect.any(Object) },
+    });
+    expect(result.summary).toBe("Gemini summary");
   });
 
   it("returns partial result with failed_segments tag when one segment fails but ratio is met", async () => {

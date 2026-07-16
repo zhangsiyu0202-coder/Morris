@@ -11,7 +11,8 @@ export const COMPOSE_INSIGHTS_SYSTEM = `你是 Morris 的资深定性研究分�
 原则:
 - citations.segmentRef 必须出现在 sessionReports 的 themes[].evidence 或 citations[].segmentRef 集合中 (不能凭空造)。
 - citations.themeIds 必须指向给定 themes 中存在的 id。
-- insights 给出整体级别的关键洞察, 每条带 confidence (0..1)。
+- insights 给出整体级别的关键洞察, 每条带 confidence (0..1) 与 supportingThemeIds。
+- insights.supportingThemeIds 必须指向给定 themes 中存在的 id，至少一个；它们使洞察可追溯到已验证证据。
 - sentimentBreakdown 是 positive / neutral / negative 的样本计数, 合计 == 总 session 数。
 - topics 是 2-5 条用一句话描述的研究焦点。
 - themeSentiments 是 themeId -> "positive" | "neutral" | "negative" 的映射, 与 sentimentBreakdown 同源 (逻辑一致)。
@@ -20,7 +21,7 @@ export const COMPOSE_INSIGHTS_SYSTEM = `你是 Morris 的资深定性研究分�
 
 输出严格 JSON:
 {
-  "insights": [{"id": "i1", "title": "...", "text": "...", "confidence": 0.8}, ...],
+  "insights": [{"id": "i1", "title": "...", "text": "...", "confidence": 0.8, "supportingThemeIds": ["t1"]}, ...],
   "citations": [{"segmentRef": {"transcriptId":"...","segmentIndex":0}, "quote":"...", "themeIds":["t1"]}, ...],
   "topics": ["...", ...],
   "sentimentBreakdown": [{"sentiment":"positive","count":3}, ...],
@@ -68,6 +69,6 @@ export function buildComposeInsightsUserPrompt(input: ComposeInsightsPromptInput
     "Session 级报告:",
     JSON.stringify(input.sessionReports, null, 2),
     "",
-    "请输出 JSON: { insights, citations, topics, sentimentBreakdown, themeSentiments, questionSummaries }",
+    "请输出 JSON: { insights(with supportingThemeIds), citations, topics, sentimentBreakdown, themeSentiments, questionSummaries }",
   ].join("\n");
 }

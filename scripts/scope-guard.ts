@@ -54,12 +54,9 @@ const EXEMPT_PREFIXES = [
   // field-name guard below still runs.
   "apps/functions/analyzeSession/",
   "apps/functions/analyzeSurvey/",
-  // Post ADR-0013 the Mastra TS voice worker is the only interview worker.
-  // The finalize path emits ADR-0006 UsageEvents from the worker via the
-  // finalizeInterviewSession Function; the worker itself only speaks to
-  // that Function boundary. The three deleted `apps/agent/agent/...`
-  // exemptions that used to live here were removed with the Python worker.
-  "apps/agent-voice-worker/",
+  // The Python Gemini Live worker only speaks to the
+  // finalizeInterviewSession Function boundary for persistence.
+  "apps/agent/",
   // ADR-0006 web surface. This repo has no top-level products/ dir; the
   // workspaces-billing UI + data seams live under apps/web. Exempt exactly the
   // billing/members surface so the lifted concepts are allowed here only.

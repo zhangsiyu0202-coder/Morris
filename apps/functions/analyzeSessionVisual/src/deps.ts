@@ -1,6 +1,5 @@
-// Real deps: Appwrite Server SDK + Gemini Files API + DeepSeek consolidator.
+// Real deps: Appwrite Server SDK + Gemini Files API.
 import { Client, Databases, Permission, Query, Role, Storage } from "node-appwrite";
-import { createDeepSeek } from "@ai-sdk/deepseek";
 import {
   MAX_VISUAL_ANALYSIS_ATTEMPTS,
   visualAnalysisJobId,
@@ -19,7 +18,6 @@ import {
   createGeminiVisualAnalyzer,
   geminiVisualConfigFromEnv,
 } from "./gemini-visual-analyzer.js";
-import { createDeepSeekConsolidator } from "./gemini/deepseek-consolidator.js";
 
 const DB = "merism";
 const COLLECTION = "visual_analysis_jobs";
@@ -44,20 +42,13 @@ function parseJson<T>(raw: unknown, fallback: T): T {
   }
 }
 
-export function createRealDeps(): AnalyzeSessionVisualDeps {
+export function createRealDeps(inputs: { traceId?: string } = {}): AnalyzeSessionVisualDeps {
   const endpoint = req("APPWRITE_ENDPOINT");
   const project = req("APPWRITE_PROJECT_ID");
   const apiKey = req("APPWRITE_API_KEY");
   const client = new Client().setEndpoint(endpoint).setProject(project).setKey(apiKey);
   const db = new Databases(client);
   const storage = new Storage(client);
-
-  const deepseek = createDeepSeek({
-    apiKey: req("DEEPSEEK_API_KEY"),
-    ...(process.env.DEEPSEEK_BASE_URL ? { baseURL: process.env.DEEPSEEK_BASE_URL } : {}),
-  });
-  const deepseekModel = deepseek(process.env.DEEPSEEK_MODEL ?? "deepseek-chat");
-  const consolidator = createDeepSeekConsolidator({ model: deepseekModel });
 
   const config = geminiVisualConfigFromEnv(process.env);
   if (!config) {
@@ -209,8 +200,8 @@ export function createRealDeps(): AnalyzeSessionVisualDeps {
     // Per-invocation analyzer so the upload hook is bound to this session's job row.
     analyzeRecordingVisuals: (input: VisualAnalysisInput) =>
       createGeminiVisualAnalyzer({
-        consolidator,
         config,
+        traceId: inputs.traceId,
         hooks: { onFileUploaded: (name: string) => patchJobFile(input.sessionId, name) },
       })(input),
 

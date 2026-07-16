@@ -18,6 +18,7 @@ import type { GeminiClient } from "./gemini/client.js";
 import { createGeminiClient } from "./gemini/client.js";
 import { uploadVideoToGemini, deleteGeminiFile } from "./gemini/upload-video.js";
 import { analyzeVideoSegment } from "./gemini/analyze-segment.js";
+import { createGeminiConsolidator } from "./gemini/gemini-consolidator.js";
 import { buildFallbackSummary, validateAndClampConsolidatedSummary, type Consolidator } from "./gemini/consolidate.js";
 import type {
   SegmentLlmFailure,
@@ -39,19 +40,22 @@ export interface GeminiVisualConfig {
   minSuccessRatio: number;
 }
 
-const DEFAULT_MODEL = "gemini-3.1-flash-lite";
+const DEFAULT_MODEL = "gemini-2.5-flash-lite";
 const DEFAULT_MAX_BYTES = 2 * 1024 * 1024 * 1024; // 2 GB (Gemini Files API limit)
 const DEFAULT_UPLOAD_MAX_WAIT_SEC = 300;
 const DEFAULT_SEGMENT_PARALLELISM = 4;
 const DEFAULT_MIN_SUCCESS_RATIO = 0.5;
 
 export interface GeminiVisualAnalyzerDeps {
-  consolidator: Consolidator;
+  /** Test-only override; production always uses the Gemini consolidator. */
+  consolidator?: Consolidator;
   /** Optional: inject a prebuilt client for tests. */
   client?: GeminiClient;
   /** Optional: inject a factory for tests. */
   buildClient?: (config: GeminiVisualConfig) => Promise<GeminiClient>;
   config: GeminiVisualConfig;
+  /** Invocation trace propagated from the Function error boundary. */
+  traceId?: string;
   /**
    * Lifecycle hooks. `onFileUploaded` fires with the Gemini file name before
    * the ACTIVE-wait so the caller (analyzeSessionVisual) can persist it to the
@@ -141,7 +145,12 @@ export function createGeminiVisualAnalyzer(deps: GeminiVisualAnalyzerDeps): Visu
       const transcriptText = stitchTranscript(input.transcript);
       let consolidated;
       try {
-        consolidated = await deps.consolidator({
+        const consolidator = deps.consolidator ?? createGeminiConsolidator({
+          client,
+          model: config.model,
+          traceId: deps.traceId,
+        });
+        consolidated = await consolidator({
           segments: succeeded,
           expectedSegmentCount: segmentResults.length,
           transcriptText,
@@ -162,7 +171,7 @@ export function createGeminiVisualAnalyzer(deps: GeminiVisualAnalyzerDeps): Visu
         ]);
       }
 
-      // Validate/clamp once, centrally — guards both the DeepSeek and fallback
+      // Validate/clamp once, centrally — guards both the Gemini and fallback
       // paths so LLM output can't contradict the deterministic segment evidence.
       consolidated = validateAndClampConsolidatedSummary(consolidated, succeeded);
 
@@ -295,7 +304,7 @@ function truncate(s: string, max: number): string {
 // --- env-driven factory ---------------------------------------------------
 
 export interface CreateGeminiVisualAnalyzerFromEnvInputs {
-  consolidator: Consolidator;
+  consolidator?: Consolidator;
   env?: NodeJS.ProcessEnv;
 }
 

@@ -58,6 +58,7 @@ export const ComposeInsightsOutputSchema = z.object({
       title: z.string(),
       text: z.string(),
       confidence: z.number().min(0).max(1),
+      supportingThemeIds: z.array(z.string()).min(1),
     }),
   ),
   citations: z.array(
@@ -196,6 +197,7 @@ export function buildGenerationMeta(args: {
     assign: string;
     compose: string;
     combine?: string;
+    rerank?: string;
   };
   /** Number of extract LLM calls (>=1). Default 1 (single-chunk path). */
   extractChunkCount?: number;
@@ -219,6 +221,9 @@ export function buildGenerationMeta(args: {
     createdWith.push({ stage: "assign", model: args.models.assign });
   }
   createdWith.push({ stage: "compose", model: args.models.compose });
+  if (args.models.rerank) {
+    createdWith.push({ stage: "rerank", model: args.models.rerank });
+  }
   return {
     promptVersion: args.promptVersion,
     attemptCount: args.attemptCount,

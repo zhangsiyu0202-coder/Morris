@@ -26,7 +26,16 @@ export type GeminiClient = {
       model: string;
       contents: unknown;
       config?: Record<string, unknown>;
-    }): Promise<{ text?: string; candidates?: unknown }>;
+    }): Promise<{
+      text?: string;
+      candidates?: unknown;
+      usageMetadata?: {
+        promptTokenCount?: number;
+        candidatesTokenCount?: number;
+        totalTokenCount?: number;
+        cachedContentTokenCount?: number;
+      };
+    }>;
   };
 };
 

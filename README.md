@@ -13,19 +13,20 @@ sub-specs (see [Sub-spec roadmap](#sub-spec-roadmap)).
 
 - **Backend (single source of truth):** self-hosted **Appwrite** — Auth, Database,
   Storage, Realtime, Functions.
-- **Realtime media:** self-hosted **LiveKit** + a TypeScript **LiveKit Agent Worker**
-  (`apps/agent-voice-worker`) built on **`@mastra/livekit`** + Mastra `Agent`.
-  A declarative flow engine (`src/interview/flow-engine/`) walks a graph of
+- **Realtime media:** self-hosted **LiveKit** + a Python **LiveKit Agent Worker**
+  (`apps/agent`) built on **LiveKit Agents + Gemini Live**. The official Python
+  plugin forwards camera and screen-share input through `RoomOptions(video_input=True)`.
+  A declarative flow engine (`agent/flow.py`) walks a graph of
   `QuestionStep` / `ProbeStep` / `ConditionStep` nodes; the engine, not the
   LLM prompt, owns the cursor. `LiveKitFlowHost` is the host seam that
-  routes LLM calls (condition eval / probe judge) through Mastra `Agent`,
-  publishes `merism.interviewState` via `InterviewStateSink`, and gates
+  routes bounded condition/probe decisions through a Gemini text adapter,
+  publishes `merism.interviewState`, and gates
   `merism.submit_answer` RPC with first-writer-wins between voice and UI
   submission (see ADR-0014, iteration 5 of ADR-0013). Per-session recording
   uses LiveKit `ParticipantEgressRequest` (server-side ffmpeg, no Chromium
   re-render); see `docs/adr/0008-participant-egress-for-interview-recording.md`.
-  Post ADR-0013 this is the only interview worker; the Python worker in
-  `apps/agent/` has been deleted.
+  Post ADR-0019 this is the only interview worker; the Node worker is retired
+  from the production path.
 - **Functions:** five Appwrite Functions deployed via OpenRuntimes
   (`issueLivekitToken`, `finalizeInterviewSession`, `analyzeSession`,
   `analyzeSurvey`, `analyzeSessionVisual`). Local-stack deploy steps in
@@ -38,22 +39,20 @@ sub-specs (see [Sub-spec roadmap](#sub-spec-roadmap)).
   references Vercel AI SDK 6 `ToolLoopAgent` in `apps/web/lib/assistant/` —
   those files are being swapped in the same wave.
 - **Contracts:** `packages/contracts` (zod) is the cross-module boundary and
-  the only definition of interview shapes. Post ADR-0013 there is no Python
-  mirror.
+  source of truth; Python validates only the metadata/RPC subset it consumes.
 
 See `.kiro/specs/foundation-setup/design.md` for the full architecture.
 
 ## Prerequisites
 
-Node 22 + pnpm 10, Docker. (Post ADR-0013 there is no Python worker in this
-repo; Python + uv are no longer required.)
+Node 22 + pnpm 10, Python 3.11+ + uv, Docker.
 
 ## Quickstart
 
 ```bash
 cp .env.example .env        # fill in real Appwrite project/key + provider keys
 pnpm install
-pnpm dev:up                 # infra + schema + Web + Mastra + voice worker, readiness-gated
+pnpm dev:up                 # infra + schema + Web + Gemini Live voice worker, readiness-gated
 pnpm dev:smoke              # full local verification including deployed Function + worker flow
 ```
 
@@ -64,7 +63,7 @@ pnpm dev:smoke              # full local verification including deployed Functio
 | `pnpm dev` | Run the Next.js app |
 | `pnpm dev:up` | Start the complete local stack in dependency order; waits for application readiness |
 | `pnpm dev:status` | Report readiness and deployed Function failures by component |
-| `pnpm dev:smoke` | Verify Web, Appwrite, deployed Functions, LiveKit, Mastra, and voice worker |
+| `pnpm dev:smoke` | Verify Web, Appwrite, deployed Functions, LiveKit, and Gemini Live voice worker |
 | `pnpm build` / `pnpm typecheck` / `pnpm lint` | Build / typecheck / lint all packages |
 | `pnpm test` | Vitest (unit + property) across the workspace |
 | `pnpm test:properties` | Property-based tests in `tests/properties/` |
@@ -93,14 +92,11 @@ Use it if later TS migration work goes wrong and you need to recover the
 apps/
   web/                     Next.js 15 (App Router) — researcher UI, page assistant
                            Morris (/assistant), interviewee landing (/interview)
-  agent-voice-worker/      TypeScript LiveKit Agent Worker (@mastra/livekit + Mastra
-                           Agent) — the ONLY production interview worker post
-                           ADR-0013. Runs a declarative flow engine (QuestionStep /
-                           ProbeStep / ConditionStep graph, engine owns cursor)
-                           over Mastra Agent + LiveKit Room with DashScope Qwen LLM
-                           + FunASR realtime STT + Qwen realtime TTS. Registered as
-                           agent name merism-mastra-voice-worker; dispatched by
-                           issueLivekitToken on every token issuance.
+  agent/                   Python LiveKit Agent Worker (official Gemini plugin) — the ONLY
+                           production interview worker post ADR-0019. Runs a declarative
+                           QuestionStep / ProbeStep / ConditionStep flow graph and forwards
+                           LiveKit camera/screen-share video to Gemini Live. Registered as
+                           merism-gemini-live-video-worker; dispatched by issueLivekitToken.
   functions/
     issueLivekitToken/     Appwrite Function: validate link, create session, sign JWT
 packages/
@@ -126,7 +122,7 @@ Each sub-spec references this foundation as a prerequisite (see
 |---|---|---|
 | **survey-editor** ✅ | three-column editor, question types, page-assistant tools, **AI moderator instruction** (`Survey.instruction` → `flowConfig.moderatorInstruction`). No declarative skip logic — the AI moderator decides coverage dynamically. See `.kiro/specs/survey-editor/`. | foundation-setup |
 | **interviewee-portal** ✅ | `/interview?link=<token>` landing, pre-interview flow (screen-share permission, device check, consent), camera self-view + screen share, two-pane interview room (transcript + stimulus), session join, reconnect — live-wired via `lib/interview/transport.ts`. Spec governs the existing impl; **no per-interviewee personalization** (interviewees are anonymous). Receiver-side live e2e tracked as NEXT. See `.kiro/specs/interviewee-portal/` and `docs/design/multimodal-interview-and-structured-rendering.md §9`. | foundation-setup |
-| **ai-interview-engine** ✅ | Agent Worker + realtime interview orchestration. Original Python `LiveKit Supervisor/TaskGroup/AgentTask` implementation superseded by ADR-0013 (Mastra Agent + `@mastra/livekit`) and ADR-0014 (declarative flow engine over graph of QuestionStep/ProbeStep/ConditionStep). Spec pins non-goals (no LangGraph, no second provider, no Vapi/webhook). `moderatorInstruction` reaches the agent via `flowConfig.moderatorInstruction`. Live voice e2e (fake providers) tracked as NEXT. See `.kiro/specs/ai-interview-engine/` + `docs/adr/0013-migrate-realtime-and-page-assistant-to-mastra.md` + `docs/adr/0014-declarative-flow-engine.md`. | foundation-setup, survey-editor, interviewee-portal |
+| **ai-interview-engine** ✅ | Agent Worker + realtime interview orchestration. Original Python implementation was replaced by the declarative flow engine (ADR-0014); ADR-0018 hosts it in LiveKit Node Agents + Gemini Live. Spec pins non-goals (no LangGraph, no second controller, no Vapi/webhook). `moderatorInstruction` reaches Gemini via `flowConfig.moderatorInstruction`. See `.kiro/specs/ai-interview-engine/` + `docs/adr/0018-livekit-gemini-live-realtime-interview.md` + `docs/adr/0014-declarative-flow-engine.md`. | foundation-setup, survey-editor, interviewee-portal |
 | **analysis-report** ✅ | DeepSeek thematic coding via `analyzeSession` + `analyzeSurvey` Functions, citations, report viewer at `/reports/[surveyId]`, Morris read tools, Insights migrated to Appwrite. PDF/MD rendering deferred. See `.kiro/specs/analysis-report/` and `docs/adr/0003-analysis-report-architecture.md`. | foundation-setup, ai-interview-engine |
 | **morris-tool-metadata** ✅ | Per-tool metadata (annotations / scopes / enrichUrl / enabled) drives system prompt + UI + approval. Borrowed from PostHog `tools.yaml` shape. See `.kiro/specs/morris-tool-metadata/`. | foundation-setup |
 | **morris-llm-observability** ✅ | `withLLMCall` + `llmObservabilityMiddleware` 集中观测 LLM 调用 (latency/tokens/error). 借鉴 PostHog `ai_observability/llm/Client + AnalyticsContext`. 仅基础设施层. See `.kiro/specs/morris-llm-observability/`. | foundation-setup |

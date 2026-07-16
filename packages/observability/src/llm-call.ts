@@ -33,8 +33,12 @@ export const LLMCallStatus = z.enum([
 ]);
 export type LLMCallStatusValue = z.infer<typeof LLMCallStatus>;
 
-/** ADR-0002 锁定 DeepSeek 唯一 LLM provider; 改要新 ADR. */
-export const LLMCallProvider = z.enum(["deepseek"]);
+/**
+ * Registered production LLM providers. DeepSeek owns Morris/text analysis;
+ * Gemini owns the post-session visual-analysis pipeline (ADR-0017); Cohere
+ * ranks evidence-backed survey findings through the AiHubMix adapter.
+ */
+export const LLMCallProvider = z.enum(["deepseek", "gemini", "cohere"]);
 export type LLMCallProviderValue = z.infer<typeof LLMCallProvider>;
 
 const DebugSnippetsSchema = z

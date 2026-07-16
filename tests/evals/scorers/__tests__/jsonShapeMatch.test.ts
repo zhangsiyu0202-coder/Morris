@@ -4,9 +4,7 @@ import { jsonShapeMatchScorer } from "../jsonShapeMatch";
 describe("jsonShapeMatch scorer", () => {
   const goodSurveyDraft = {
     title: "用户访谈大纲",
-    researchGoal: "了解用户痛点",
-    targetAudience: "中小企业研究员",
-    introScript: "您好,感谢您接受访谈。",
+    instruction: "研究目标：了解中小企业研究员的用户痛点；以简短、友好的开场开始访谈。",
     sections: [
       {
         title: "背景",

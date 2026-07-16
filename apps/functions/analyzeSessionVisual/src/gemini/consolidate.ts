@@ -1,9 +1,9 @@
 // Consolidate per-segment Gemini outputs into a session-level visual summary.
 //
-// PostHog's a6_consolidate_video_segments uses Gemini for this step too,
-// because Gemini is the only LLM in their stack. Merism diverges: this step
-// is pure text reasoning over the per-segment outputs (no video) and we run
-// it on DeepSeek. This file holds the shared Consolidator interface, the
+// PostHog's a6_consolidate_video_segments uses Gemini for this step too.
+// Merism follows that boundary: the same Gemini model handles the video
+// observations and the text-only consolidation. This file holds the shared
+// Consolidator interface, the
 // PostHog-parity validate/clamp (sentiment + numeric frustration floors + tag
 // sanitization), and a deterministic fallback used when the LLM consolidator
 // fails.
@@ -44,7 +44,7 @@ const OUTCOME_SCORE_FLOORS: Record<NonNullable<ConsolidatedSummary["outcome"]>, 
  * signals. Mirrors PostHog's `_validate_and_clamp_sentiment`: the LLM's
  * free-form output must not contradict the deterministic segment evidence.
  *
- * Applied once, centrally, in the orchestrator — guards BOTH the DeepSeek path
+ * Applied once, centrally, in the orchestrator — guards BOTH the Gemini path
  * and the deterministic fallback path:
  *   - sentiment cannot be "positive" when a segment carries a major issue.
  *   - keyMoments drop-empty / sorted / capped.

@@ -141,7 +141,15 @@ describe("Morris tools factory: signed-in path", () => {
       themes: [
         { id: "t1", label: "Pricing", mentions: 3, pct: 60, sentiment: "negative" },
       ],
-      insights: [{ id: "i1", title: "Top driver", text: "...", confidence: 0.7 }],
+      insights: [
+        {
+          id: "i1",
+          title: "Top driver",
+          text: "...",
+          confidence: 0.7,
+          supportingThemeIds: ["t1"],
+        },
+      ],
       citations: [],
       rendered: null,
     });

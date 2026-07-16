@@ -43,6 +43,11 @@ import {
   HALLUCINATION_RATIO_THRESHOLD,
 } from "./constants.js";
 import { PROMPT_VERSION } from "./prompts/version.js";
+import {
+  buildFindingRerankQuery,
+  buildRerankCandidates,
+  type RerankFindings,
+} from "./rerank.js";
 
 export interface SessionDigest {
   sessionId: string;
@@ -120,6 +125,8 @@ export interface AnalyzeSurveyDeps {
   /** Wave F (D15): chunked extract 后合并多份 themes 为统一一份。 */
   combineThemesWithLLM(input: CombineThemesInput): Promise<ExtractedThemes>;
   composeInsightsWithLLM(input: ComposeInsightsInput): Promise<ComposeInsightsOutput>;
+  rerankModel: string;
+  rerankFindings: RerankFindings;
   upsertSurveyReport(args: {
     surveyId: string;
     ownerUserId: string;
@@ -269,6 +276,18 @@ export async function analyzeSurvey(
     };
   }
 
+  // The compose schema guarantees at least one supportingThemeId per insight,
+  // but the LLM response is still external input. Reject dangling references
+  // before persistence so the additive survey-report contract remains readable.
+  const generatedThemeIds = new Set(enriched.themes.map((theme) => theme.id));
+  if (
+    compose.insights.some((insight) =>
+      insight.supportingThemeIds.some((themeId) => !generatedThemeIds.has(themeId)),
+    )
+  ) {
+    return { status: 409, body: { error: "analysis_rejected" } };
+  }
+
   // sentiment 回填 (C1/I3 修订: themes 落库形态 = preSentiment + themeSentiments)
   const themesFinal = applyThemeSentiments(enriched.themes, compose.themeSentiments);
 
@@ -277,6 +296,26 @@ export async function analyzeSurvey(
     ...stat,
     summary: compose.questionSummaries[stat.questionId] ?? stat.summary,
   }));
+
+  const rerankCandidates = buildRerankCandidates({
+    themes: themesFinal,
+    themeContexts: enriched.themeContexts,
+    insights: compose.insights,
+  });
+  let rankedFindings: NonNullable<SurveyAnalysisReportOutput["rankedFindings"]> = [];
+  if (rerankCandidates.length > 0) {
+    try {
+      rankedFindings = await deps.rerankFindings({
+        query: buildFindingRerankQuery({
+          surveyTitle: survey.title,
+          researchIntent: survey.researchIntent,
+        }),
+        candidates: rerankCandidates,
+      });
+    } catch {
+      return { status: 500, body: { error: "reranker_unavailable" } };
+    }
+  }
 
   const generationMeta = buildGenerationMeta({
     promptVersion: PROMPT_VERSION,
@@ -287,6 +326,7 @@ export async function analyzeSurvey(
       assign: "deepseek-chat",
       compose: "deepseek-chat",
       combine: "deepseek-chat",
+      ...(rerankCandidates.length > 0 ? { rerank: deps.rerankModel } : {}),
     },
     extractChunkCount,
     assignChunkCount,
@@ -306,6 +346,7 @@ export async function analyzeSurvey(
     themes: themesFinal,
     insights: compose.insights,
     citations: compose.citations,
+    rankedFindings,
     rendered: null,
   };
 
@@ -324,4 +365,3 @@ export async function analyzeSurvey(
 
   return { status: 200, body: { reportId: saved.reportId, scope: "survey" } };
 }
-

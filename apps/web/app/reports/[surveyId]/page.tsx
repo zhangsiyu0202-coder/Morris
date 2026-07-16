@@ -10,6 +10,7 @@ import {
 import { ReportHeader } from "@/components/report/report-header";
 import { SummarySection } from "@/components/report/summary-section";
 import { HighlightsSection } from "@/components/report/highlights-section";
+import { RankedFindingsSection } from "@/components/report/ranked-findings-section";
 import { FindingsSection } from "@/components/report/findings-section";
 import { AnalysisSection } from "@/components/report/analysis-section";
 import { EvidenceList } from "@/components/report/evidence-list";
@@ -57,6 +58,11 @@ export default async function ReportDetailPage({
         <BackLink />
         <ReportHeader report={body} />
         <SummarySection report={body} />
+        <RankedFindingsSection
+          rankedFindings={body.rankedFindings}
+          themes={body.themes}
+          insights={body.insights}
+        />
         <HighlightsSection insights={body.insights} />
         <FindingsSection stats={body.questionStats} />
         <AnalysisSection sentiment={body.sentimentBreakdown} themes={body.themes} />

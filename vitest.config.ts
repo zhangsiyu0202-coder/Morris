@@ -32,6 +32,8 @@ export default defineConfig({
     exclude: ["**/node_modules/**", "**/dist/**", "**/.next/**", "**/e2e/**"],
     passWithNoTests: true,
     testTimeout: 60_000,
-    setupFiles: ["./tests/setup/jsdom-shims.ts"],
+    // Vitest resolves relative setup files from the caller's cwd. Package-local
+    // test scripts run from their package, so retain a root-absolute path.
+    setupFiles: [path.resolve(__dirname, "tests/setup/jsdom-shims.ts")],
   },
 });

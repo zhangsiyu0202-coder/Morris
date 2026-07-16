@@ -14,6 +14,7 @@ const localEnvironment = {
   APPWRITE_ENDPOINT: "http://localhost:8080/v1",
   APP_URL: "http://localhost:3000",
   LIVEKIT_URL: "ws://localhost:7880",
+  GEMINI_API_KEY: "test-key",
 };
 
 describe("local dev orchestration contract", () => {
@@ -26,13 +27,12 @@ describe("local dev orchestration contract", () => {
       { component: "Appwrite", url: "http://localhost:8080/v1/health/version" },
       { component: "LiveKit", url: "http://localhost:7880/" },
       { component: "Web", url: "http://localhost:3000/_health/readyz?role=web" },
-      { component: "Mastra", url: "http://localhost:4111/api/agents?partial=true" },
       { component: "Voice worker", url: "http://localhost:8082/_readyz" },
     ]);
   });
 
-  it("allows Mastra's first bundle more time without slowing every failure", () => {
-    expect(readinessTimeoutMs("Mastra")).toBe(300_000);
+  it("uses one bounded readiness timeout for every local service", () => {
+    expect(readinessTimeoutMs("Voice worker")).toBe(90_000);
     expect(readinessTimeoutMs("Web")).toBe(90_000);
   });
 
@@ -41,9 +41,11 @@ describe("local dev orchestration contract", () => {
       ...localEnvironment,
       APPWRITE_ENDPOINT: "http://localhost:8081/v1",
       LIVEKIT_URL: "wss://staging.example.test",
+      GEMINI_API_KEY: "",
     })).toEqual([
       "APPWRITE_ENDPOINT must be http://localhost:8080/v1 for dev:up (received http://localhost:8081/v1)",
       "LIVEKIT_URL must be ws://localhost:7880 for dev:up (received wss://staging.example.test)",
+      "GEMINI_API_KEY or GOOGLE_API_KEY must be set for the Gemini Live voice worker",
     ]);
   });
 
@@ -94,7 +96,7 @@ describe("local dev orchestration contract", () => {
   it("stops waiting when the managed process exits", async () => {
     let stopped = false;
     const result = await waitForReadiness(
-      async () => ({ component: "Mastra", ok: false, url: "http://localhost:4111/api/agents", reason: "fetch failed" }),
+      async () => ({ component: "Voice worker", ok: false, url: "http://localhost:8082/_readyz", reason: "fetch failed" }),
       {
         intervalMs: 1,
         timeoutMs: 50,

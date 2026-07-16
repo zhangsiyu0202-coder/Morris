@@ -29,7 +29,7 @@ The following concepts were originally in the permanent-exclusion list but were 
 
 | Lifted concept | Allowed surface (mirrored in `scripts/scope-guard.ts::EXEMPT_PREFIXES`) |
 |---|---|
-| Workspaces / Teams (single-tier tenant boundary above `ownerUserId`, backed by Appwrite Teams) | `apps/functions/{createWorkspace,inviteMember,changePlan,stripeWebhook,aggregateWorkspaceUsage,issueLivekitToken,finalizeInterviewSession,analyzeSession,analyzeSurvey}/`, `apps/agent-voice-worker/src/`, `apps/web/{app/settings/{billing,members},components/workspace-billing,lib/{workspace-billing,auth/workspace.ts,actions/{bookmarks,survey},queries/{bookmarks,client,sessions,notebooks,studies},mock/workspace-billing.ts}}`, `packages/{contracts/src/billing.ts,appwrite-schema/src/schema.ts}`, `products/workspaces-billing/`, `scripts/{seed-workspace,seed-plans,migrate-default-workspaces,backfill-workspace-tenancy}.ts` |
+| Workspaces / Teams (single-tier tenant boundary above `ownerUserId`, backed by Appwrite Teams) | `apps/functions/{createWorkspace,inviteMember,changePlan,stripeWebhook,aggregateWorkspaceUsage,issueLivekitToken,finalizeInterviewSession,analyzeSession,analyzeSurvey}/`, `apps/agent/`, `apps/web/{app/settings/{billing,members},components/workspace-billing,lib/{workspace-billing,auth/workspace.ts,actions/{bookmarks,survey},queries/{bookmarks,client,sessions,notebooks,studies},mock/workspace-billing.ts}}`, `packages/{contracts/src/billing.ts,appwrite-schema/src/schema.ts}`, `products/workspaces-billing/`, `scripts/{seed-workspace,seed-plans,migrate-default-workspaces,backfill-workspace-tenancy}.ts` |
 | Three coarse roles (`owner` / `admin` / `member`) | Same surfaces as Workspaces. Per-resource RBAC remains forbidden. |
 | Plans / tiers (`Plus`, `Pro`) — entitlements + feature flags + usage allowance | `packages/contracts/src/billing.ts`, `apps/functions/changePlan/`, `apps/web/app/settings/billing/`, `products/workspaces-billing/spec/prd-pricing.md` |
 | Subscriptions, seats (member-count entitlement) | Same as Plans. Add-on seats beyond the plan band remain PRD-pending. |
@@ -78,7 +78,7 @@ The following requests look reasonable but conflict with the scope rules above. 
 - Collapsing `AnalysisReport.insights[]` (auto-generated insight items inside a survey-scope report) with the `Notebook` collection (researcher-authored). Per ADR-0003 D2 they are intentionally separate.
 - Morris tools that are conversational chat features rather than actions on Merism data (Morris is a `ToolLoopAgent`, not a chat playground).
 - Direct Appwrite collection writes from anonymous (interviewee) clients. The only path is a Function (`issueLivekitToken` is the canonical example).
-- A second LLM provider beyond the primary cascade LLM (Qwen-VL, per ADR-0011; DeepSeek is a dormant secondary), or a second ASR/TTS provider beyond Qwen, without an ADR.
+- A realtime provider beyond Gemini Live (ADR-0019), or a provider outside the existing Morris/analysis/rerank roles, without an ADR.
 
 ## Scope-drift signals (binding)
 

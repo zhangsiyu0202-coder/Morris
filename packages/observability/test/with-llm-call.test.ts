@@ -69,6 +69,20 @@ describe("withLLMCall — success path", () => {
     );
     expect(captured[0].model).toBe("deepseek-chat");
   });
+
+  it("records a registered non-default provider", async () => {
+    installCapture();
+    await withLLMCall(
+      {
+        scope: "function.analyzeSessionVisual.consolidate",
+        traceId: "t-gemini",
+        defaultModel: "gemini-3.1-flash-lite",
+        provider: "gemini",
+      },
+      async () => ({ text: "{}" }),
+    );
+    expect(captured[0]).toMatchObject({ provider: "gemini", model: "gemini-3.1-flash-lite" });
+  });
 });
 
 describe("withLLMCall — error paths", () => {

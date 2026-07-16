@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 
-import { buildComposeInsightsUserPrompt } from "../src/prompts/compose-insights.js";
+import {
+  buildComposeInsightsUserPrompt,
+  COMPOSE_INSIGHTS_SYSTEM,
+} from "../src/prompts/compose-insights.js";
 
 const base = {
   surveyTitle: "差旅住宿调研",
@@ -14,6 +17,13 @@ const base = {
 };
 
 describe("buildComposeInsightsUserPrompt — research-intent backdrop (ADR-0015 Wave 4)", () => {
+  it("requires every generated insight to identify its supporting themes", () => {
+    const prompt = buildComposeInsightsUserPrompt(base);
+
+    expect(prompt).toContain("supportingThemeIds");
+    expect(COMPOSE_INSIGHTS_SYSTEM).toContain("必须指向给定 themes 中存在的 id");
+  });
+
   it("embeds research intent ahead of themes when present", () => {
     const intent = "## 研究意图\n了解差旅用户对价格的敏感度";
     const prompt = buildComposeInsightsUserPrompt({ ...base, researchIntent: intent });

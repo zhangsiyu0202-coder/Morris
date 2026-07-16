@@ -15,6 +15,9 @@
  *       dispatches to worker.
  *   T3. onSessionStart wires driver + publisher: agent joins room and
  *       publishes merism.interviewState via participant attributes.
+ *   T3s. An Appwrite survey-assets image is included in the first question.
+ *        The worker must fetch, decode, and send it to the same Gemini Live
+ *        session before it generates that question.
  *   T4. merism.submit_answer RPC for the first question. flow-engine's
  *       ConditionStep is executed transparently (LLM eval, no publish);
  *       either edge lands on the same target here so the smoke is
@@ -22,25 +25,22 @@
  *   T5. Continuation: after T4 the client reads the new currentQuestionId
  *       from the attribute and submits again, driving the flow to
  *       completion.
- *   T5b. TTS audio track: worker's agent publishes an audio track (Qwen
- *        TTS pipeline reaches the point of publishing) — we don't play
- *        the audio, just observe the track subscribed event. Currently
- *        expected to be 0 because the voice-completion tool loop is
- *        not implemented yet; this observation is informational, not a
- *        failure condition.
+ *   T5b. Gemini Live audio track: worker's agent publishes native audio. We
+ *        do not play it, but require the interviewee client to receive the
+ *        audio track so this cannot pass as a UI-only/isolated worker.
  *
  * Not covered here (harder infra, no interview-user-input mechanism yet):
  *   T6. ASR: needs to publish real audio bytes from interviewee to
  *       worker.
- *   T7. finalize Function e2e (finalize Function is TS but hosted in
- *       OpenRuntimes; the worker calls it via HTTP, verifying that route
- *       requires the Function to be deployed which is a separate
- *       concern).
+ *
+ * T7. Finalization is covered: before dispatch, this smoke creates the same
+ * InterviewSession row that issueLivekitToken would create. After room
+ * teardown it waits for the worker's finalize Function to mark it completed.
  *
  * Assumes:
  *   - LiveKit up on ws://localhost:7880 (from `pnpm stack:up`)
- *   - Worker background-running via HEALTH_PORT=9091 pnpm dev:worker
- *   - .env sourced (LIVEKIT_URL/KEY/SECRET + DASHSCOPE_API_KEY)
+ *   - Python worker background-running via HEALTH_PORT=8082 uv run --project apps/agent python -m agent.main start
+ *   - .env sourced (LiveKit, Gemini, and Appwrite server credentials)
  *
  * Run:
  *   set -a && source .env && set +a
@@ -55,11 +55,18 @@ import {
 import {
   Room,
   RoomEvent,
+  LocalVideoTrack,
+  TrackPublishOptions,
+  TrackSource,
+  VideoBufferType,
+  VideoFrame,
+  VideoSource,
   type RemoteParticipant,
   type RemoteTrack,
   type RemoteTrackPublication,
   type TextStreamReader,
 } from "@livekit/rtc-node";
+import { readFile } from "node:fs/promises";
 import {
   buildInterviewRoomMetadataFromDraft,
   type SurveyDraft,
@@ -79,12 +86,17 @@ const LIVEKIT_WS_URL = must("LIVEKIT_URL");
 const LIVEKIT_HTTP_URL = LIVEKIT_WS_URL.replace(/^ws/, "http");
 const API_KEY = must("LIVEKIT_API_KEY");
 const API_SECRET = must("LIVEKIT_API_SECRET");
-const AGENT_NAME = process.env.MERISM_TS_VOICE_AGENT_NAME ?? "merism-mastra-voice-worker";
+const APPWRITE_ENDPOINT = must("APPWRITE_ENDPOINT");
+const APPWRITE_PROJECT_ID = must("APPWRITE_PROJECT_ID");
+const APPWRITE_API_KEY = must("APPWRITE_API_KEY");
+const AGENT_NAME = process.env.MERISM_VOICE_AGENT_NAME ?? "merism-gemini-live-video-worker";
 
 const stamp = Date.now();
 const roomName = `smoke-e2e-${stamp}`;
 const sessionId = `sess-${stamp}`;
 const surveyId = `surv-${stamp}`;
+const stimulusFileId = `smoke-stimulus-${stamp}`;
+const stimulusUrl = `${APPWRITE_ENDPOINT}/storage/buckets/survey-assets/files/${stimulusFileId}/view`;
 
 // ---------------------------------------------------------------------------
 // SurveyDraft — same shape the guide editor produces. Two questions plus a
@@ -111,6 +123,11 @@ const draft: SurveyDraft = {
           probeInstruction: "",
           options: [],
           allowSkip: false,
+          stimulus: {
+            id: stimulusFileId,
+            type: "image",
+            url: stimulusUrl,
+          },
           branchRules: [
             {
               // The condition text is deliberately generic — the smoke does
@@ -166,6 +183,90 @@ async function waitFor<T>(check: () => T | undefined, label: string, timeoutMs =
   throw new Error(`waitFor timeout: ${label}`);
 }
 
+async function appwrite<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(`${APPWRITE_ENDPOINT}${path}`, {
+    ...init,
+    headers: {
+      "content-type": "application/json",
+      "X-Appwrite-Project": APPWRITE_PROJECT_ID,
+      "X-Appwrite-Key": APPWRITE_API_KEY,
+      ...init.headers,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Appwrite ${init.method ?? "GET"} ${path} failed: ${response.status}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+async function createSmokeSession(): Promise<void> {
+  await appwrite("/databases/merism/collections/interview_sessions/documents", {
+    method: "POST",
+    body: JSON.stringify({
+      documentId: sessionId,
+      data: {
+        surveyId,
+        linkId: "smoke-livekit-e2e",
+        state: "created",
+        livekitRoom: roomName,
+        intervieweeAlias: "smoke interviewee",
+      },
+      permissions: [],
+    }),
+  });
+}
+
+async function createSmokeStimulus(): Promise<void> {
+  // Reuse the repository's existing interview stimulus, uploading it to the
+  // same public survey-assets bucket that researcher question media uses.
+  const png = await readFile(new URL("../apps/web/public/stimuli/collab-ad.png", import.meta.url));
+  const form = new FormData();
+  form.set("fileId", stimulusFileId);
+  form.set("file", new Blob([png], { type: "image/png" }), "smoke-stimulus.png");
+  const response = await fetch(`${APPWRITE_ENDPOINT}/storage/buckets/survey-assets/files`, {
+    method: "POST",
+    headers: {
+      "X-Appwrite-Project": APPWRITE_PROJECT_ID,
+      "X-Appwrite-Key": APPWRITE_API_KEY,
+    },
+    body: form,
+  });
+  if (!response.ok) {
+    throw new Error(`Appwrite stimulus upload failed: ${response.status}`);
+  }
+}
+
+async function waitForFinalization(): Promise<{ state: string; collectedAnswers?: string }> {
+  const started = Date.now();
+  while (Date.now() - started < 20_000) {
+    const session = await appwrite<{ state: string; collectedAnswers?: string }>(
+      `/databases/merism/collections/interview_sessions/documents/${sessionId}`,
+    );
+    if (session.state === "completed") return session;
+    await sleep(250);
+  }
+  throw new Error("waitFor timeout: finalizeInterviewSession completion");
+}
+
+async function deleteSmokeArtifacts(): Promise<void> {
+  for (const path of [
+    `/databases/merism/collections/interview_sessions/documents/${sessionId}`,
+    `/databases/merism/collections/usage_events/documents/usage_${sessionId}`,
+    `/storage/buckets/survey-assets/files/${stimulusFileId}`,
+  ]) {
+    const response = await fetch(`${APPWRITE_ENDPOINT}${path}`, {
+      method: "DELETE",
+      headers: {
+        "X-Appwrite-Project": APPWRITE_PROJECT_ID,
+        "X-Appwrite-Key": APPWRITE_API_KEY,
+      },
+    });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`Appwrite DELETE ${path} failed: ${response.status}`);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -201,13 +302,19 @@ async function waitFor<T>(check: () => T | undefined, label: string, timeoutMs =
   const dispatchSvc = new AgentDispatchClient(LIVEKIT_HTTP_URL, API_KEY, API_SECRET);
   const metadataJson = JSON.stringify(roomMetadata);
 
+  log("T2", "Uploading survey-assets image stimulus …");
+  await createSmokeStimulus();
+  log("T2", "Survey image stimulus uploaded ✅");
+  log("T2", "Creating authoritative InterviewSession for finalization …");
+  await createSmokeSession();
+  log("T2", "InterviewSession created ✅");
   log("T2", "Creating room with composed metadata …", { metadataBytes: metadataJson.length });
   await roomSvc.createRoom({ name: roomName, metadata: metadataJson });
   log("T2", "Room created ✅");
 
   log("T2", "Dispatching worker to room …");
   // Push the same composed payload into dispatch metadata. In the
-  // mastra/livekit worker lifecycle, `ctx.job.metadata` (from dispatch) is
+  // LiveKit Node Agents lifecycle: `ctx.job.metadata` (from dispatch) is
   // available at `agent:` resolve time, while `ctx.room.metadata` is not
   // yet synced. The worker prefers dispatch metadata for that reason
   // (see docs/adr/0014-declarative-flow-engine.md § Room-metadata
@@ -272,6 +379,27 @@ async function waitFor<T>(check: () => T | undefined, label: string, timeoutMs =
   await room.connect(LIVEKIT_WS_URL, token, { autoSubscribe: true });
   log("T3", `Interviewee connected as ${room.localParticipant?.identity}`);
 
+  // Publish a synthetic camera track before the agent joins. This is the
+  // browser-equivalent input path (camera/screen tracks are selected by the
+  // Python LiveKit Gemini plugin when RoomOptions.video_input=True), without
+  // requiring an actual camera in CI/headless development.
+  const videoSource = new VideoSource(64, 64);
+  const videoTrack = LocalVideoTrack.createVideoTrack("smoke-camera", videoSource);
+  await room.localParticipant!.publishTrack(
+    videoTrack,
+    new TrackPublishOptions({ source: TrackSource.SOURCE_CAMERA }),
+  );
+  const videoFrame = new VideoFrame(
+    new Uint8Array(64 * 64 * 4).fill(0x7f),
+    64,
+    64,
+    VideoBufferType.RGBA,
+  );
+  for (let frame = 0; frame < 4; frame++) {
+    videoSource.captureFrame(videoFrame, BigInt((frame + 1) * 1_000_000));
+  }
+  log("T3v", "Published synthetic camera frames for Gemini Live video input ✅");
+
   log("T3", "Waiting for agent to join …");
   const agentP = await waitFor(
     () => {
@@ -283,6 +411,11 @@ async function waitFor<T>(check: () => T | undefined, label: string, timeoutMs =
     20000,
   );
   log("T3", `Agent joined: ${agentP.identity} ✅`);
+  for (let frame = 0; frame < 3; frame++) {
+    videoSource.captureFrame(videoFrame, BigInt((frame + 5) * 1_000_000));
+    await sleep(300);
+  }
+  log("T3v", "Camera frames remained published after agent joined ✅");
 
   // Helper: read current merism.interviewState from the agent's attributes.
   // Returns { status, currentQuestionId, currentSectionId } or undefined.
@@ -420,24 +553,36 @@ async function waitFor<T>(check: () => T | undefined, label: string, timeoutMs =
     5000,
   );
 
-  // Wait a beat, then observe track presence (agent-side TTS/output).
+  // Wait a beat, then observe Gemini Live native-audio track presence.
   await sleep(500);
   const audioTracks = events.filter(
     (e) =>
       e.type === "track_subscribed" &&
-      (e.details.kind === 0 /* audio */ || e.details.kind === "audio"),
+      (e.details.kind === 1 /* Track.Kind.Audio in rtc-node */ || e.details.kind === "audio"),
   );
-  log("T5b", `agent audio tracks observed: ${audioTracks.length}`, {
+  log("T5b", `Gemini Live audio tracks observed: ${audioTracks.length}`, {
     tracks: audioTracks.map((e) => e.details),
   });
+  if (audioTracks.length === 0) {
+    throw new Error("Gemini Live did not publish an audio track");
+  }
 
   // ------------------------------------------------------------ Cleanup ---
   log("cleanup", "Disconnecting interviewee …");
+  await videoTrack.close();
+  await videoSource.close();
   await room.disconnect();
   await sleep(1000);
 
   log("cleanup", "Deleting room (forces onCallEnd on worker) …");
   await roomSvc.deleteRoom(roomName);
+
+  const finalizedSession = await waitForFinalization();
+  if (!finalizedSession.collectedAnswers || finalizedSession.collectedAnswers === "{}") {
+    throw new Error("finalizeInterviewSession did not persist collected answers");
+  }
+  log("T7", "finalizeInterviewSession completed ✅", { state: finalizedSession.state });
+  await deleteSmokeArtifacts();
 
   // Summary
   console.log("");
@@ -446,15 +591,19 @@ async function waitFor<T>(check: () => T | undefined, label: string, timeoutMs =
   console.log("=".repeat(72));
   console.log(`T1 composer offline check:  ✅  ${conditionSteps.length} ConditionStep(s) in composed flow`);
   console.log(`T2 dispatch:                ✅  dispatchId=${dispatch.id}`);
+  console.log(`T3s survey image stimulus:  ✅  uploaded, composed, and dispatched`);
   console.log(`T3 first attribute publish: ✅  status=collecting q=${firstState.currentQuestionId}`);
   console.log(`T4 submit_answer RPC turns: ${submissions.length}`);
   for (const s of submissions) {
     console.log(`   - ${s.questionId} accepted=${s.accepted} next=${s.nextQuestionId ?? "-"} completed=${s.completed}`);
   }
   console.log(`T5 flow completed publish:  ✅  final status=${finalState.status}`);
-  const audioLabel = audioTracks.length > 0 ? "✅" : "⚠️  0 (TTS may not have spoken; agent still valid)";
-  console.log(`T5b audio tracks observed:   ${audioLabel}  count=${audioTracks.length}`);
+  console.log(`T5b Gemini Live audio track: ✅  count=${audioTracks.length}`);
+  console.log(`T7 Appwrite finalization:     ✅  state=${finalizedSession.state}`);
   console.log("=".repeat(72));
+  // rtc-node retains native handles after disconnect in CLI runs. End the
+  // smoke explicitly so a passing run cannot leave a background Node process.
+  process.exit(0);
 })().catch((err) => {
   console.error("SMOKE FAILED:");
   console.error(err);

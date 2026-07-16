@@ -58,12 +58,22 @@ describe("K-LLMOBS-02: status enum", () => {
   });
 });
 
-describe("K-LLMOBS-04: provider lock", () => {
+describe("K-LLMOBS-04: registered providers", () => {
   it("accepts deepseek", () => {
     expect(LLMCallProvider.parse("deepseek")).toBe("deepseek");
   });
 
-  it("rejects other providers (ADR-0002)", () => {
+  it("accepts gemini for post-session visual analysis", () => {
+    expect(LLMCallProvider.parse("gemini")).toBe("gemini");
+    expect(LLMCallEventSchema.safeParse({ ...validBaseEvent, provider: "gemini" }).success).toBe(true);
+  });
+
+  it("accepts cohere for survey finding reranking", () => {
+    expect(LLMCallProvider.parse("cohere")).toBe("cohere");
+    expect(LLMCallEventSchema.safeParse({ ...validBaseEvent, provider: "cohere" }).success).toBe(true);
+  });
+
+  it("rejects unregistered providers", () => {
     const r = LLMCallEventSchema.safeParse({ ...validBaseEvent, provider: "openai" });
     expect(r.success).toBe(false);
   });

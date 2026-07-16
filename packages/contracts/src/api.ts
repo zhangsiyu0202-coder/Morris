@@ -406,11 +406,10 @@ export const SubmitInterviewAnswerRpcResponseSchema = z.object({
 /**
  * `finalizeInterviewSession` Function contract.
  *
- * Post ADR-0013 this Function is the ONLY path from the Mastra voice worker
+ * This Function is the ONLY path from the Gemini Live worker
  * to Appwrite for terminal-state artifacts (session state + collected answers
  * + optional transcript + optional quality flags). Called from
- * `apps/agent-voice-worker/src/persistence/finalize-client.ts` inside the
- * worker's `onCallEnd` hook.
+ * `apps/agent/agent/finalize.py` during worker shutdown.
  *
  * `terminalStatus` mirrors the SessionState enum but is narrowed to the
  * three legal terminal values — the Function rejects any other value at
@@ -746,6 +745,9 @@ const SurveyInsightItemSchema = z.object({
   title: z.string(),
   text: z.string(),
   confidence: z.number().min(0).max(1),
+  // Added for survey-level finding provenance. The default keeps reports
+  // written before the reranking stage readable without a backfill.
+  supportingThemeIds: z.array(z.string()).default([]),
 });
 
 const SurveyCitationSchema = z.object({
@@ -754,28 +756,103 @@ const SurveyCitationSchema = z.object({
   themeIds: z.array(z.string()),
 });
 
-export const SurveyAnalysisReportOutputSchema = z.object({
-  surveyId: z.string(),
-  surveyTitle: z.string(),
-  totalRespondents: z.number().int().nonnegative(),
-  completedRespondents: z.number().int().nonnegative(),
-  avgDurationLabel: z.string(),
-  studyCount: z.number().int().nonnegative().optional(),
-  lastUpdatedLabel: z.string(),
-  topics: z.array(z.string()),
-  questionStats: z.array(SurveyQuestionStatSchema),
-  sentimentBreakdown: z.array(SurveySentimentDatumSchema),
-  themes: z.array(SurveyThemeSchema),
-  insights: z.array(SurveyInsightItemSchema),
-  citations: z.array(SurveyCitationSchema),
-  rendered: z
-    .object({
-      storageFileId: z.string(),
-      format: z.string(),
-    })
-    .nullable(),
-  generationMeta: GenerationMetaSchema.optional(),
+const RankedFindingSchema = z.object({
+  kind: z.enum(["theme", "insight"]),
+  sourceId: z.string(),
+  rank: z.number().int().positive(),
+  relevanceScore: z.number().min(0).max(1),
 });
+
+export const SurveyAnalysisReportOutputSchema = z
+  .object({
+    surveyId: z.string(),
+    surveyTitle: z.string(),
+    totalRespondents: z.number().int().nonnegative(),
+    completedRespondents: z.number().int().nonnegative(),
+    avgDurationLabel: z.string(),
+    studyCount: z.number().int().nonnegative().optional(),
+    lastUpdatedLabel: z.string(),
+    topics: z.array(z.string()),
+    questionStats: z.array(SurveyQuestionStatSchema),
+    sentimentBreakdown: z.array(SurveySentimentDatumSchema),
+    themes: z.array(SurveyThemeSchema),
+    insights: z.array(SurveyInsightItemSchema),
+    citations: z.array(SurveyCitationSchema),
+    // A reranker is an additive post-processing stage. Historic reports have
+    // no ranking, while newly generated reports carry a full ordered list.
+    rankedFindings: z.array(RankedFindingSchema).optional(),
+    rendered: z
+      .object({
+        storageFileId: z.string(),
+        format: z.string(),
+      })
+      .nullable(),
+    generationMeta: GenerationMetaSchema.optional(),
+  })
+  .superRefine((report, ctx) => {
+    const themeIds = new Set(report.themes.map((theme) => theme.id));
+    const insightIds = new Set(report.insights.map((insight) => insight.id));
+
+    for (const [insightIndex, insight] of report.insights.entries()) {
+      for (const [themeIndex, themeId] of insight.supportingThemeIds.entries()) {
+        if (!themeIds.has(themeId)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["insights", insightIndex, "supportingThemeIds", themeIndex],
+            message: "supportingThemeIds must reference an existing theme",
+          });
+        }
+      }
+    }
+
+    const findings = report.rankedFindings;
+    if (!findings) return;
+
+    const seenSources = new Set<string>();
+    const seenRanks = new Set<number>();
+    for (const [findingIndex, finding] of findings.entries()) {
+      const sourceKey = `${finding.kind}:${finding.sourceId}`;
+      if (seenSources.has(sourceKey)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["rankedFindings", findingIndex],
+          message: "rankedFindings cannot repeat a source",
+        });
+      }
+      seenSources.add(sourceKey);
+
+      if (seenRanks.has(finding.rank)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["rankedFindings", findingIndex, "rank"],
+          message: "rankedFindings cannot repeat a rank",
+        });
+      }
+      seenRanks.add(finding.rank);
+
+      const sourceExists = finding.kind === "theme"
+        ? themeIds.has(finding.sourceId)
+        : insightIds.has(finding.sourceId);
+      if (!sourceExists) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["rankedFindings", findingIndex, "sourceId"],
+          message: "rankedFindings must reference an existing report object",
+        });
+      }
+    }
+
+    for (let rank = 1; rank <= findings.length; rank++) {
+      if (!seenRanks.has(rank)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["rankedFindings"],
+          message: "rankedFindings ranks must be contiguous from 1",
+        });
+        break;
+      }
+    }
+  });
 
 export const INTERVIEW_STATE_ATTRIBUTE = "merism.interviewState";
 export const SUBMIT_ANSWER_RPC_METHOD = "merism.submit_answer";

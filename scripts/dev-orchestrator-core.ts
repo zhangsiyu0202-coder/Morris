@@ -2,7 +2,6 @@ export const LOCAL_DEV_ENDPOINTS = {
   appwrite: "http://localhost:8080/v1",
   web: "http://localhost:3000",
   livekit: "ws://localhost:7880",
-  mastra: "http://localhost:4111",
   voiceWorker: "http://localhost:8082",
 } as const;
 
@@ -10,6 +9,8 @@ type LocalDevEnvironment = {
   APPWRITE_ENDPOINT?: string;
   APP_URL?: string;
   LIVEKIT_URL?: string;
+  GEMINI_API_KEY?: string;
+  GOOGLE_API_KEY?: string;
 };
 
 export type ReadinessResult = {
@@ -36,22 +37,24 @@ export function localReadinessTargets(): ReadinessTarget[] {
     { component: "Appwrite", url: `${LOCAL_DEV_ENDPOINTS.appwrite}/health/version` },
     { component: "LiveKit", url: `${LOCAL_DEV_ENDPOINTS.livekit.replace("ws://", "http://")}/` },
     { component: "Web", url: `${LOCAL_DEV_ENDPOINTS.web}/_health/readyz?role=web` },
-    { component: "Mastra", url: `${LOCAL_DEV_ENDPOINTS.mastra}/api/agents?partial=true` },
     { component: "Voice worker", url: `${LOCAL_DEV_ENDPOINTS.voiceWorker}/_readyz` },
   ];
 }
 
 export function readinessTimeoutMs(component: string): number {
-  return component === "Mastra" ? 300_000 : 90_000;
+  return 90_000;
 }
 
 export function validateLocalDevEnvironment(environment: LocalDevEnvironment): string[] {
-  return requiredEndpointEnvironment.flatMap(([name, expected]) => {
+  const endpointFailures = requiredEndpointEnvironment.flatMap(([name, expected]) => {
     const actual = environment[name];
     if (actual === expected) return [];
 
     return [`${name} must be ${expected} for dev:up (received ${actual ?? "unset"})`];
   });
+  return environment.GEMINI_API_KEY || environment.GOOGLE_API_KEY
+    ? endpointFailures
+    : [...endpointFailures, "GEMINI_API_KEY or GOOGLE_API_KEY must be set for the Gemini Live voice worker"];
 }
 
 export function formatReadinessSummary(results: ReadinessResult[]): string {

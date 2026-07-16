@@ -57,7 +57,7 @@ generativelanguage.googleapis.com  (Google AI Studio)
 
 1. 左侧导航 → **Get API key** → **Create API key**
 2. 关联到一个 Google Cloud Project（没有就创建一个新的，名字随意，如 `merism-dev`）
-3. 拿到形如 `AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX` 的 key
+3. 拿到一个 Gemini API key（不要把完整值写进文档、终端输出或源码）
 4. **立刻保存到密码管理器**——AI Studio 不能再次查看完整 key
 
 ### 2.3 给 Project 启用 Generative Language API

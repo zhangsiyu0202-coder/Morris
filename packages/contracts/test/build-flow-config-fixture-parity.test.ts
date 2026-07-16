@@ -7,7 +7,7 @@
  * ADR-0013 the Python worker was removed; the fixture was preserved into
  * this package so the TS composer still has a golden target. When the
  * flow-engine-ts-reimpl sub-spec lands and re-hosts the E2E on the TS
- * agent-voice-worker, that new E2E will read from the same path.
+ * Python Gemini Live worker, that new E2E will read from the same path.
  *
  * The test regenerates the composer output on every run and asserts
  * structural equality (deep) against the fixture. Two failure modes it
