@@ -19,7 +19,10 @@ uv run python -m agent.main start
 ```
 
 Required environment: `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`,
-and `GEMINI_API_KEY` or `GOOGLE_API_KEY`. `MERISM_VOICE_AGENT_NAME` defaults to
+and `GEMINI_LIVE_API_KEY` or `GOOGLE_API_KEY`. `GEMINI_LIVE_BASE_URL` defaults
+to the official AI Studio endpoint `https://generativelanguage.googleapis.com`.
+These Live-only variables are intentionally separate from any AihubMix visual
+analysis configuration. `MERISM_VOICE_AGENT_NAME` defaults to
 `merism-gemini-live-video-worker` in the dispatching Function.
 
 See ADR-0019 for the migration decision and verification evidence.

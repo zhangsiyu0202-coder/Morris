@@ -79,11 +79,19 @@ async def entrypoint(ctx: JobContext) -> None:
     def _record_completion(task: asyncio.Task[Any]) -> None:
         nonlocal completed, failed
         if task.cancelled():
+            log.warning("agent.flow_cancelled session=%s", metadata.session_id)
             return
-        if task.exception() is None:
+        error = task.exception()
+        if error is None:
             completed = True
         else:
             failed = True
+            log.error(
+                "agent.flow_failed session=%s error=%s",
+                metadata.session_id,
+                type(error).__name__,
+                exc_info=(type(error), error, error.__traceback__),
+            )
 
     flow_task.add_done_callback(_record_completion)
 

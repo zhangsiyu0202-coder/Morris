@@ -21,6 +21,7 @@ def build_gemini_session(
     model = google.realtime.RealtimeModel(
         model=settings.model,
         api_key=settings.api_key,
+        http_options=types.HttpOptions(baseUrl=settings.base_url),
         instructions=instructions or None,
         modalities=["AUDIO"],
         input_audio_transcription=types.AudioTranscriptionConfig(),

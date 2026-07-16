@@ -9,7 +9,11 @@ from agent.settings import GeminiSettings
 def test_build_gemini_session_enables_live_video_and_both_transcriptions() -> None:
     async def build() -> None:
         session, room_options = build_gemini_session(
-            GeminiSettings(api_key="test-key", model="gemini-2.5-flash-native-audio-preview-12-2025")
+            GeminiSettings(
+                api_key="test-key",
+                model="gemini-2.5-flash-native-audio-preview-12-2025",
+                base_url="https://generativelanguage.googleapis.com",
+            )
         )
 
         assert session is not None
