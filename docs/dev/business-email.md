@@ -7,54 +7,36 @@ It does **not** replace Appwrite's built-in auth email flow.
 ## Boundary
 
 - Appwrite continues to handle auth verification / password reset / OTP email.
-- `apps/web/lib/server/email-core.ts` provides a separate Nodemailer-based service for custom business email.
+- `apps/web/lib/server/email-core.ts` provides a separate Resend-based service for custom business email.
 - `apps/web/lib/auth/actions.ts` currently uses that service only for the post-signup welcome email.
 
 This split is intentional:
 
 - Auth email stays on Appwrite's built-in flow.
-- Product/business email uses a normal SMTP transport we fully control.
+- Product/business email uses Resend's server-side API.
 
-## Current provider
+## Provider
 
-The service is designed around Nodemailer's SMTP transport.
-
-QQ Mail works with either:
-
-- `SMTP_SERVICE=QQ`
-- or explicit host config such as `SMTP_HOST=smtp.qq.com`
-
-Optional proxy support is available through:
-
-- `SMTP_PROXY`
-- `HTTP_PROXY`
-- `HTTPS_PROXY`
+The service uses the official Resend Node SDK. Before a real send, add and
+verify a sender domain in Resend (SPF/DKIM as instructed by its dashboard),
+then create a least-privilege sending key. Never expose the key to browser
+code, logs, fixtures, or commits.
 
 ## Required env vars
 
 At minimum:
 
 ```bash
-SMTP_SERVICE=QQ
-SMTP_USER=your@qq.com
-SMTP_PASSWORD=app-specific-password
-SMTP_FROM_EMAIL=your@qq.com
+RESEND_API_KEY=re_xxxxxxxxx
+RESEND_FROM_EMAIL=research@your-verified-domain.example
 APP_URL=http://localhost:3000
 ```
 
 Common optional vars:
 
 ```bash
-SMTP_FROM_NAME=Merism
-SMTP_REPLY_TO=your@qq.com
-SMTP_HOST=smtp.qq.com
-SMTP_PORT=465
-SMTP_SECURE=1
-SMTP_REQUIRE_TLS=0
-SMTP_POOL=1
-SMTP_MAX_CONNECTIONS=5
-SMTP_MAX_MESSAGES=100
-SMTP_PROXY=http://127.0.0.1:7890
+RESEND_FROM_NAME=Merism
+RESEND_REPLY_TO=research@your-verified-domain.example
 ```
 
 `APP_URL` is required for templates that embed absolute product links, such as the researcher welcome email.
@@ -70,7 +52,10 @@ The send path uses `campaignKey` as the logical idempotency key.
 - If no `campaignKey` is provided, email is sent without persistence-backed deduplication.
 - If a `campaignKey` is provided, the service derives a deterministic Appwrite document ID from it.
 - First sender wins by `createDocument`.
-- A second send with the same `campaignKey` returns `status: "duplicate"` and does not call SMTP again.
+- A second send with the same `campaignKey` returns `status: "duplicate"` and does not call Resend again.
+- The same deterministic key is also passed to Resend as its provider
+  `Idempotency-Key`; the Appwrite ledger remains authoritative beyond the
+  provider's shorter idempotency window.
 
 Stored statuses:
 
@@ -82,7 +67,7 @@ Important behavior:
 
 - Deduplication is by `campaignKey`, not by recipient or template content.
 - Reissuing a message intentionally requires a **new** `campaignKey`.
-- If SMTP send succeeds but the `sent` status write-back fails, the API still returns `status: "sent"` and logs the persistence error. We do not rewrite a successfully delivered email to `failed`.
+- If Resend accepts the message but the `sent` status write-back fails, the API still returns `status: "sent"` and logs the persistence error. We do not rewrite a successfully accepted email to `failed`.
 
 ## Schema operations
 
@@ -105,26 +90,25 @@ pnpm -F @merism/web typecheck
 pnpm -F @merism/appwrite-schema typecheck
 ```
 
-For a real SMTP check:
+For an opt-in real Resend check:
 
-1. Put valid SMTP env vars in `.env`.
+1. Verify the sender domain in Resend and put a sending key plus sender address in `.env`.
 2. Run `pnpm schema:apply` once.
-3. Trigger a real send with a fresh `campaignKey`.
+3. Trigger a real send to an operator-controlled address with a fresh `campaignKey`.
 4. Repeat with the same `campaignKey` and confirm the second send returns `duplicate`.
 
 ## Troubleshooting
 
 If email returns `unavailable`:
 
-- check `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`
-- check that either `SMTP_SERVICE` or `SMTP_HOST` is set
+- check `RESEND_API_KEY` and `RESEND_FROM_EMAIL`
 - check `APP_URL` when the template needs absolute links
 
-If SMTP hangs or handshake fails:
+If Resend rejects a request:
 
-- verify outbound access to the SMTP host and port from the current machine
-- try a proxy via `SMTP_PROXY` or `HTTPS_PROXY`
-- confirm the mailbox uses an SMTP app password, not the login password
+- confirm the sender domain is verified and the `from` address belongs to it
+- confirm the API key has sending access for that domain
+- inspect Resend's dashboard logs using the provider message id from the server log
 
 If deduplication blocks an intentional resend:
 

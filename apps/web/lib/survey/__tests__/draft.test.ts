@@ -9,6 +9,7 @@ const survey: Survey = {
   status: "draft",
   flowConfig: {},
   instruction: "## 研究意图\n了解预订习惯",
+  recruitmentCriteria: { genderRequirement: "", participantAllocationNotes: "" },
   version: 1,
   updatedAt: "2024-12-03T00:00:00.000Z",
 };
