@@ -177,7 +177,35 @@ export const ProjectSchema = z.object({
   createdAt: datetime(),
 });
 
-export const SurveySchema = z.object({
+/**
+ * Researcher-authored eligibility criteria used only to compose a recruitment
+ * invitation. This is deliberately separate from the runtime moderator
+ * instruction and flow configuration (ADR-0021).
+ */
+export const RecruitmentCriteriaSchema = z
+  .object({
+    minAge: z.number().int().min(0).max(120).optional(),
+    maxAge: z.number().int().min(0).max(120).optional(),
+    genderRequirement: z.string().trim().max(256).default(""),
+    targetParticipantCount: z.number().int().positive().max(100_000).optional(),
+    participantAllocationNotes: z.string().trim().max(2_000).default(""),
+    updatedAt: datetime().optional(),
+  })
+  .superRefine((criteria, ctx) => {
+    if (
+      criteria.minAge !== undefined &&
+      criteria.maxAge !== undefined &&
+      criteria.maxAge < criteria.minAge
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["maxAge"],
+        message: "maxAge must be greater than or equal to minAge",
+      });
+    }
+  });
+
+const SurveyFieldsSchema = z.object({
   $id: z.string(),
   projectId: z.string(),
   workspaceId: z.string().nullish(),
@@ -192,9 +220,32 @@ export const SurveySchema = z.object({
    * source for an issued interview's flow moderator instruction.
    */
   instruction: z.string().default(""),
+  recruitmentCriteria: RecruitmentCriteriaSchema.default({}),
   version: z.number().int().nonnegative().default(1),
   updatedAt: datetime(),
 });
+
+/**
+ * Appwrite persists recruitment criteria as primitive Survey attributes rather
+ * than a new JSON bucket. This boundary accepts the wire attributes and
+ * exposes the one typed `recruitmentCriteria` shape to all consumers.
+ */
+export const SurveySchema = z.preprocess((value) => {
+  if (!value || typeof value !== "object") return value;
+  const raw = value as Record<string, unknown>;
+  if (raw.recruitmentCriteria !== undefined) return raw;
+  return {
+    ...raw,
+    recruitmentCriteria: {
+      minAge: raw.recruitmentMinAge ?? undefined,
+      maxAge: raw.recruitmentMaxAge ?? undefined,
+      genderRequirement: raw.recruitmentGenderRequirement ?? "",
+      targetParticipantCount: raw.recruitmentTargetParticipantCount ?? undefined,
+      participantAllocationNotes: raw.recruitmentAllocationNotes ?? "",
+      updatedAt: raw.recruitmentCriteriaUpdatedAt ?? undefined,
+    },
+  };
+}, SurveyFieldsSchema);
 
 export const SurveySectionSchema = z.object({
   $id: z.string(),
@@ -569,6 +620,7 @@ export type User = z.infer<typeof UserSchema>;
 export type ResearcherPrefs = z.infer<typeof ResearcherPrefsSchema>;
 export type CurrentResearcher = z.infer<typeof CurrentResearcherSchema>;
 export type Project = z.infer<typeof ProjectSchema>;
+export type RecruitmentCriteria = z.infer<typeof RecruitmentCriteriaSchema>;
 export type Survey = z.infer<typeof SurveySchema>;
 export type SurveySection = z.infer<typeof SurveySectionSchema>;
 export type ProbeLevel = z.infer<typeof ProbeLevel>;

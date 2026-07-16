@@ -115,6 +115,15 @@ export const COLLECTIONS: CollectionDef[] = [
       // "what this study is about / notes / research goal", CLAUDE.md style.
       // It is the sole input to issued interview moderation metadata.
       { key: "instruction", type: "string", size: TEXT_SIZE, required: false, default: "" },
+      // ADR-0021: typed recruitment invitation criteria. Kept as primitive
+      // attributes rather than expanding the existing flowConfig JSON bucket.
+      { key: "recruitmentMinAge", type: "integer", required: false },
+      { key: "recruitmentMaxAge", type: "integer", required: false },
+      { key: "recruitmentGenderRequirement", type: "string", size: 256, required: false, default: "" },
+      { key: "recruitmentTargetParticipantCount", type: "integer", required: false },
+      // Appwrite attribute keys are capped at 36 characters.
+      { key: "recruitmentAllocationNotes", type: "string", size: 2000, required: false, default: "" },
+      { key: "recruitmentCriteriaUpdatedAt", type: "datetime", required: false },
       { key: "version", type: "integer", required: false, default: 1 },
       { key: "updatedAt", type: "datetime", required: true },
     ],

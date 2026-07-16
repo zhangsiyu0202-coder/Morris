@@ -69,6 +69,20 @@ export async function loadSurveyDraft(surveyId: string): Promise<LoadedSurvey | 
     status: (doc.status as Survey["status"]) ?? "draft",
     flowConfig: parseJson<Record<string, unknown>>(doc.flowConfig, {}),
     instruction: String(doc.instruction ?? ""),
+    recruitmentCriteria: {
+      minAge: typeof doc.recruitmentMinAge === "number" ? doc.recruitmentMinAge : undefined,
+      maxAge: typeof doc.recruitmentMaxAge === "number" ? doc.recruitmentMaxAge : undefined,
+      genderRequirement: String(doc.recruitmentGenderRequirement ?? ""),
+      targetParticipantCount:
+        typeof doc.recruitmentTargetParticipantCount === "number"
+          ? doc.recruitmentTargetParticipantCount
+          : undefined,
+      participantAllocationNotes: String(doc.recruitmentAllocationNotes ?? ""),
+      updatedAt:
+        typeof doc.recruitmentCriteriaUpdatedAt === "string"
+          ? doc.recruitmentCriteriaUpdatedAt
+          : undefined,
+    },
     version: Number(doc.version ?? 1),
     updatedAt: String(doc.updatedAt ?? new Date().toISOString()),
   };
