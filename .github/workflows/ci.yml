@@ -129,7 +129,7 @@ jobs:
       - run: pnpm -F @merism/web exec playwright install --with-deps chromium
       - run: pnpm -F @merism/web build
       - run: pnpm e2e
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-report
@@ -176,7 +176,7 @@ jobs:
       - name: Upload stack logs on failure
         if: failure()
         run: docker compose -f infra/docker/docker-compose.yml logs > docker-compose.log || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: docker-compose-logs
