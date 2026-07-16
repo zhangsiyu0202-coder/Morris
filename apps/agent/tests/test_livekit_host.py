@@ -2,6 +2,7 @@ import asyncio
 import json
 
 from agent.answer_gate import AnswerGate
+from agent.flow_control import FlowControlGate
 from agent.flow import AnswerRecord
 from agent.livekit_host import LiveKitFlowHost
 
@@ -12,6 +13,15 @@ class _Session:
 
     async def interrupt(self) -> None:
         self.interrupted = True
+
+
+class _ControlSession:
+    def __init__(self) -> None:
+        self.instructions: list[str] = []
+
+    def generate_reply(self, *, instructions: str, allow_interruptions: bool) -> None:
+        assert allow_interruptions is True
+        self.instructions.append(instructions)
 
 
 class _Invocation:
@@ -80,17 +90,15 @@ def test_question_image_is_sent_to_gemini_before_the_question_is_generated() -> 
     asyncio.run(run())
 
 
-def test_condition_provider_failure_propagates_to_the_flow_boundary() -> None:
+def test_condition_waits_for_the_matching_in_session_function_result() -> None:
     async def run() -> None:
         host = object.__new__(LiveKitFlowHost)
+        host._flow_control = FlowControlGate()
+        host._flow_control_lock = asyncio.Lock()
+        host._session = _ControlSession()
 
-        async def generate(_prompt: str) -> str:
-            raise RuntimeError("provider unavailable")
-
-        host._generate = generate
-
-        try:
-            await host.evaluate_condition(
+        pending = asyncio.create_task(
+            host.evaluate_condition(
                 "is eligible",
                 AnswerRecord(
                     question_content="Question",
@@ -99,9 +107,14 @@ def test_condition_provider_failure_propagates_to_the_flow_boundary() -> None:
                 ),
                 object(),
             )
-        except RuntimeError as error:
-            assert str(error) == "provider unavailable"
-        else:
-            raise AssertionError("provider failures must not silently choose a condition edge")
+        )
+        await asyncio.sleep(0)
+
+        assert await host.accept_flow_control(kind="probe_question", question="Why?") is False
+        assert await host.accept_flow_control(kind="condition", matched=True) is True
+
+        assert await pending is True
+        assert len(host._session.instructions) == 1
+        assert "merism_flow_control" in host._session.instructions[0]
 
     asyncio.run(run())

@@ -6,11 +6,11 @@ import json
 import time
 from typing import Any
 
-from livekit.agents import AgentSession, llm
-from livekit.plugins import google
+from livekit.agents import AgentSession
 
 from .answer_gate import AnswerGate
 from .flow import AnswerRecord, FlowState, QuestionResult
+from .flow_control import FlowControlGate, FlowControlKind
 from .rpc import parse_ui_submission
 from .stimulus import GeminiLiveStimulusSender
 
@@ -18,22 +18,14 @@ SUBMIT_ANSWER_RPC_METHOD = "merism.submit_answer"
 INTERVIEW_STATE_ATTRIBUTE = "merism.interviewState"
 
 
-def _parse_yes_no(text: str, *, default: bool) -> bool:
-    upper = text.strip().upper()
-    if upper.startswith("YES") or " 是" in text or "满足" in text:
-        return True
-    if upper.startswith("NO") or any(token in text for token in ("不", "没", "否")):
-        return False
-    return default
-
-
 class LiveKitFlowHost:
-    def __init__(self, *, room: Any, session: AgentSession, api_key: str, flow_model: str, runtime_study: dict[str, Any] | None, stimulus_sender: GeminiLiveStimulusSender | None = None) -> None:
+    def __init__(self, *, room: Any, session: AgentSession, runtime_study: dict[str, Any] | None, stimulus_sender: GeminiLiveStimulusSender | None = None) -> None:
         self._room = room
         self._session = session
         self._gate = AnswerGate()
         self._answer_event = asyncio.Event()
-        self._text = google.LLM(model=flow_model, api_key=api_key, temperature=0, max_output_tokens=64)
+        self._flow_control = FlowControlGate()
+        self._flow_control_lock = asyncio.Lock()
         self._questions = _index_runtime_questions(runtime_study)
         self._stimulus_sender = stimulus_sender
         self._started_at = time.time()
@@ -80,11 +72,12 @@ class LiveKitFlowHost:
             return []
         rounds: list[dict[str, str]] = []
         for index in range(int(step.get("maxRounds", 3))):
-            question = (await self._generate(
-                "Generate one concise follow-up interview question only.\n"
+            question = await self._request_probe_question(
+                "Use merism_flow_control exactly once with kind=probe_question and a concise follow-up question. "
+                "Do not speak or write a respondent-facing reply.\n"
                 f"Researcher objective: {instruction}\nQuestion: {source.question_content}\n"
                 f"Answer: {source.respondent_answer}\nPrior rounds: {json.dumps(rounds, ensure_ascii=False)}"
-            )).strip()
+            )
             if not question:
                 break
             answer = await self._speak_and_wait(
@@ -94,20 +87,22 @@ class LiveKitFlowHost:
             rounds.append({"probeQuestion": question, "respondentAnswer": answer.respondent_answer})
             if index + 1 >= int(step.get("maxRounds", 3)) or _respondent_has_no_more(answer.respondent_answer):
                 break
-            judgment = await self._generate(
-                "Return YES only if the probing objective has been fully met; otherwise NO only.\n"
+            if await self._request_condition(
+                "Use merism_flow_control exactly once with kind=condition and matched=true only if "
+                "the probing objective has been fully met; otherwise matched=false. "
+                "Do not speak or write a respondent-facing reply.\n"
                 f"Objective: {instruction}\nAnswer: {source.respondent_answer}\nRounds: {json.dumps(rounds, ensure_ascii=False)}"
-            )
-            if _parse_yes_no(judgment, default=True):
+            ):
                 break
         return rounds
 
     async def evaluate_condition(self, condition: str, answer: AnswerRecord, _state: FlowState) -> bool:
-        value = await self._generate(
-            "Return YES only when the answer directly and clearly satisfies the condition; otherwise NO only.\n"
+        return await self._request_condition(
+            "Use merism_flow_control exactly once with kind=condition and matched=true only when "
+            "the answer directly and clearly satisfies the condition; otherwise matched=false. "
+            "Do not speak or write a respondent-facing reply.\n"
             f"Condition: {condition}\nQuestion: {answer.question_content}\nAnswer: {answer.respondent_answer}"
         )
-        return _parse_yes_no(value, default=False)
 
     async def on_flow_completed(self, _state: FlowState) -> None:
         self._gate.clear()
@@ -166,10 +161,36 @@ class LiveKitFlowHost:
                     payload["currentSectionId"] = question["sectionId"]
         await self._room.local_participant.set_attributes({INTERVIEW_STATE_ATTRIBUTE: json.dumps(payload)})
 
-    async def _generate(self, prompt: str) -> str:
-        ctx = llm.ChatContext.empty()
-        ctx.add_message(role="user", content=prompt)
-        return "".join([chunk async for chunk in self._text.chat(chat_ctx=ctx).to_str_iterable()])
+    async def accept_flow_control(
+        self,
+        *,
+        kind: FlowControlKind,
+        matched: bool | None = None,
+        question: str | None = None,
+    ) -> bool:
+        return self._flow_control.accept(kind=kind, matched=matched, question=question)
+
+    async def _request_condition(self, instructions: str) -> bool:
+        result = await self._request_flow_control("condition", instructions)
+        assert result.matched is not None
+        return result.matched
+
+    async def _request_probe_question(self, instructions: str) -> str:
+        result = await self._request_flow_control("probe_question", instructions)
+        assert result.question is not None
+        return result.question
+
+    async def _request_flow_control(self, kind: FlowControlKind, instructions: str):
+        async with self._flow_control_lock:
+            future = self._flow_control.begin(kind)
+            # Gemini Live owns server-side turn detection and rejects
+            # allow_interruptions=False. The control tool raises StopResponse,
+            # so this private turn still cannot produce a follow-up reply.
+            self._session.generate_reply(instructions=instructions, allow_interruptions=True)
+            try:
+                return await asyncio.wait_for(future, timeout=30)
+            finally:
+                self._flow_control.clear(future)
 
 
 def _index_runtime_questions(study: dict[str, Any] | None) -> dict[str, dict[str, Any]]:

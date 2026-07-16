@@ -5,7 +5,8 @@ Date: 2026-07-16
 ## Status
 
 Accepted. Supersedes ADR-0018's Node-worker decision and the realtime-worker
-portion of ADR-0013. ADR-0013 remains authoritative for Morris.
+portion of ADR-0013. ADR-0013 remains authoritative for Morris. The separate
+Gemini text-adapter portion is superseded by ADR-0020.
 
 ## Context
 
@@ -23,9 +24,8 @@ input, so retaining Node would leave a product-visible modality disconnected.
 - Use `livekit-agents[google,images]` and `google.realtime.RealtimeModel` with
   `RoomOptions(video_input=True)`. LiveKit selects the latest camera or screen
   track, JPEG-encodes sampled frames, and forwards them to Gemini Live.
-- Keep Gemini 2.5 native audio as the default because the graph-controlled
-  interviewer uses programmatic `generate_reply()` calls. A separate
-  `gemini-2.5-flash` text adapter performs bounded condition/probe judgments.
+- Keep Gemini 2.5 native audio as the only realtime model. ADR-0020 defines
+  the same-session function-call handoff for bounded condition/probe judgments.
 - The Python `FlowRunner` owns graph cursor, edges, bounded probe rounds, and
   first-writer-wins between final voice transcript and UI RPC. Gemini never
   selects the next step.

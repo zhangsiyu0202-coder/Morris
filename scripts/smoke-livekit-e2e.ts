@@ -19,9 +19,9 @@
  *        The worker must fetch, decode, and send it to the same Gemini Live
  *        session before it generates that question.
  *   T4. merism.submit_answer RPC for the first question. flow-engine's
- *       ConditionStep is executed transparently (LLM eval, no publish);
- *       either edge lands on the same target here so the smoke is
- *       deterministic regardless of the LLM verdict.
+ *       ConditionStep and one ProbeStep are executed through the same Gemini
+ *       Live function-control session. The probe answer ends the bounded
+ *       loop, while either condition edge lands on the same target.
  *   T5. Continuation: after T4 the client reads the new currentQuestionId
  *       from the attribute and submits again, driving the flow to
  *       completion.
@@ -120,7 +120,7 @@ const draft: SurveyDraft = {
           questionText: "smoke: 请描述一下你现在的工作日常。",
           questionType: "open_ended",
           probeLevel: "standard",
-          probeInstruction: "",
+          probeInstruction: "Ask one concise follow-up about the tools used in that workday.",
           options: [],
           allowSkip: false,
           stimulus: {
@@ -143,7 +143,7 @@ const draft: SurveyDraft = {
           questionText: "smoke: 你最常用的工具是什么?",
           questionType: "open_ended",
           probeLevel: "standard",
-          probeInstruction: "",
+          probeInstruction: "Ask one concise follow-up about why those tools are useful.",
           options: [],
           allowSkip: false,
           branchRules: [],
@@ -469,8 +469,8 @@ async function deleteSmokeArtifacts(): Promise<void> {
 
   let currentQuestionId = firstState.currentQuestionId;
   const answersByQuestion: Record<string, string> = {
-    q1: "smoke e2e: 我在一家互联网公司做软件工程师,每天早上开站会、下午写代码、晚上跑测试。",
-    q2: "smoke e2e: 我最常用的工具是 VS Code + git,配合 zsh 和 tmux。",
+    q_q1: "smoke e2e: 我在一家互联网公司做软件工程师,每天早上开站会、下午写代码、晚上跑测试。",
+    q_q2: "smoke e2e: 我最常用的工具是 VS Code + git,配合 zsh 和 tmux。",
   };
   const MAX_TURNS = 5;
 
@@ -478,7 +478,10 @@ async function deleteSmokeArtifacts(): Promise<void> {
     if (!currentQuestionId) {
       throw new Error(`Turn ${turn}: no currentQuestionId in state (state=${JSON.stringify(readState())})`);
     }
-    const answerText = answersByQuestion[currentQuestionId] ?? `smoke e2e fallback answer for ${currentQuestionId}`;
+    const answerText = answersByQuestion[currentQuestionId]
+      ?? (currentQuestionId.endsWith(":probe")
+        ? "没有更多补充了。"
+        : `smoke e2e fallback answer for ${currentQuestionId}`);
 
     log("T4", `Turn ${turn}: submitting answer for ${currentQuestionId}`);
     const rpcPayload = {

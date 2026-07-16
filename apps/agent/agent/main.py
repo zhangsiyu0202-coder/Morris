@@ -10,6 +10,7 @@ from livekit.agents import Agent, JobContext, WorkerOptions, cli
 
 from .finalize import finalize_interview_session
 from .flow import FlowRunner
+from .flow_control_tool import build_flow_control_tool
 from .health import start_health_server
 from .livekit_host import LiveKitFlowHost
 from .metadata import parse_room_metadata
@@ -18,7 +19,6 @@ from .settings import prepare_google_plugin_environment, resolve_gemini_settings
 from .stimulus import build_stimulus_sender
 
 AGENT_NAME = "merism-gemini-live-video-worker"
-DEFAULT_FLOW_MODEL = "gemini-2.5-flash"
 log = logging.getLogger("agent.main")
 
 
@@ -38,6 +38,7 @@ def _instructions(moderator_instruction: str, *, session_id: str, survey_id: str
             f"Survey ID: {survey_id}",
             "You are conducting a qualitative interview. The application controls question order.",
             "Only ask a question supplied by the application. Never reveal internal IDs or workflow steps.",
+            "The merism_flow_control tool is private. Call it only when an application instruction explicitly requests it.",
         )
     )
 
@@ -60,8 +61,6 @@ async def entrypoint(ctx: JobContext) -> None:
     host = LiveKitFlowHost(
         room=ctx.room,
         session=session,
-        api_key=settings.api_key,
-        flow_model=os.getenv("GEMINI_FLOW_MODEL", DEFAULT_FLOW_MODEL),
         runtime_study=metadata.runtime_study,
         stimulus_sender=build_stimulus_sender(
             session=session,
@@ -69,7 +68,11 @@ async def entrypoint(ctx: JobContext) -> None:
             appwrite_project_id=os.getenv("APPWRITE_PROJECT_ID"),
         ),
     )
-    await session.start(agent=Agent(instructions=instructions), room=ctx.room, room_options=room_options)
+    await session.start(
+        agent=Agent(instructions=instructions, tools=[build_flow_control_tool(host)]),
+        room=ctx.room,
+        room_options=room_options,
+    )
 
     runner = FlowRunner(metadata.flow_config, host)
     flow_task = asyncio.create_task(runner.run(), name=f"merism-flow-{metadata.session_id}")

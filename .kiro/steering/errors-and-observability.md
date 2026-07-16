@@ -147,7 +147,7 @@ A non-`.env.example` hit is a defect.
 
 ## Provider adapter rules (binding)
 
-- Gemini Live is the realtime audio/video provider (ADR-0019); Gemini text handles bounded flow decisions, DeepSeek serves Morris and rollup analysis, and Cohere is used only for post-session finding reranking. A new provider role still requires an ADR.
+- Gemini Live native audio is the realtime audio/video provider and handles bounded flow decisions through a private function-call handoff in the same Live session (ADR-0019, ADR-0020); DeepSeek serves Morris and rollup analysis, and Cohere is used only for post-session finding reranking. A new provider role still requires an ADR.
 - Realtime adapters live in `apps/agent/agent/`; TypeScript provider adapters live beside their owning Function or Morris feature.
 - An adapter implements one provider behind a narrow interface. Swapping providers means writing a new adapter, not editing call sites.
 - Adapters MUST classify failures into `TransientProviderError` vs `PermanentProviderError` so `withRetry` can act.
@@ -240,7 +240,6 @@ LLM 调用全部走 `llmGate` (p-limit 包装), default 最多 8 并发, env `ME
 | `MERISM_FAKE_PROVIDERS` | bool | 严格 `"1"` 启用 (规划中, 未实现) | 替换真 LLM/ASR/TTS provider 为 deterministic fake (live tests 用) | (规划) |
 | `GEMINI_VISUAL_ANALYSIS_ENABLED` | bool | 严格 `"true"` 启用 (ADR-0005) | analyzeSessionVisual Function 是否实际调用 Gemini | `apps/functions/analyzeSessionVisual/src/main.ts` |
 | `GEMINI_LIVE_MODEL` | string | unset → `gemini-2.5-flash-native-audio-preview-12-2025` | Python Gemini Live audio/video model | `apps/agent/agent/settings.py` |
-| `GEMINI_FLOW_MODEL` | string | unset → `gemini-2.5-flash` | Bounded Python flow condition/probe model | `apps/agent/agent/main.py` |
 
 ### 不一致点 (历史保留, 不重构)
 
