@@ -16,7 +16,7 @@ import {
   Query,
   Role,
 } from "node-appwrite";
-import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
+import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
 import {
   buildInterviewRoomMetadataFromDraft,
   SurveyDraftSchema,
@@ -67,6 +67,12 @@ function makeDeps(): IssueDeps {
     env.LIVEKIT_API_KEY,
     env.LIVEKIT_API_SECRET,
   );
+  const dispatch = new AgentDispatchClient(
+    httpUrl,
+    env.LIVEKIT_API_KEY,
+    env.LIVEKIT_API_SECRET,
+  );
+  const agentName = process.env.MERISM_TS_VOICE_AGENT_NAME ?? "merism-mastra-voice-worker";
 
   return {
     livekitUrl: env.LIVEKIT_URL,
@@ -206,6 +212,14 @@ function makeDeps(): IssueDeps {
         emptyTimeout: 60 * 60,
         maxParticipants: 5,
       });
+
+      // Explicit dispatch of the named voice worker (mirrors production
+      // issueLivekitToken createRealDeps). The worker registered with an
+      // agentName, so it is NOT auto-dispatched — it must be dispatched here or
+      // it never joins. Pass the full room metadata (carries flowConfig +
+      // runtimeStudy) as the dispatch metadata, since the worker prefers job
+      // (dispatch) metadata over the room-metadata stub at resolve time.
+      await dispatch.createDispatch(room, agentName, { metadata: finalMetadata });
     },
     async deleteRoom(room) {
       await rooms.deleteRoom(room);

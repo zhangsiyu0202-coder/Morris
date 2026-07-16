@@ -1,62 +1,39 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { initializeLogger, stt } from "@livekit/agents";
+import { initializeLogger } from "@livekit/agents";
 import { AudioFrame } from "@livekit/rtc-node";
 
 import { resolveDashScopeSpeechConfig } from "../src/mastra/dashscope-config";
-import { DashScopeFunAsrRealtimeSTT } from "../src/mastra/dashscope-funasr-stt";
+import { DashScopeFunAsrFlashSTT } from "../src/mastra/dashscope-funasr-flash-stt";
 
 const DEFAULT_PCM_PATH = resolve(process.cwd(), "../../scripts/poc-omni-realtime/outputs/tts_001_16k.pcm");
-const FRAME_SAMPLES = 1600;
-
-function loadPcmFrames(filePath: string) {
-  const bytes = readFileSync(filePath);
-  const samples = new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
-  const frames: AudioFrame[] = [];
-
-  for (let offset = 0; offset < samples.length; offset += FRAME_SAMPLES) {
-    const chunk = samples.slice(offset, Math.min(offset + FRAME_SAMPLES, samples.length));
-    frames.push(new AudioFrame(chunk, 16000, 1, chunk.length));
-  }
-
-  return frames;
-}
 
 async function main() {
   initializeLogger({ pretty: false, level: "silent" });
 
   const pcmPath = process.argv[2] ? resolve(process.argv[2]) : DEFAULT_PCM_PATH;
-  const frames = loadPcmFrames(pcmPath);
-  const sttProvider = new DashScopeFunAsrRealtimeSTT(resolveDashScopeSpeechConfig());
-  const stream = sttProvider.stream();
-  const transcripts: string[] = [];
+  const bytes = readFileSync(pcmPath);
+  const samples = new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
+  // Feed the whole clip as one utterance — in production LiveKit's StreamAdapter
+  // (silero VAD) cuts utterances and calls recognize() per segment.
+  const frame = new AudioFrame(samples, 16000, 1, samples.length);
 
-  for (const frame of frames) {
-    stream.pushFrame(frame);
-  }
-  stream.flush();
-  stream.endInput();
-
-  for await (const event of stream) {
-    if (
-      event.type === stt.SpeechEventType.INTERIM_TRANSCRIPT ||
-      event.type === stt.SpeechEventType.FINAL_TRANSCRIPT
-    ) {
-      const text = event.alternatives[0]?.text?.trim();
-      if (text) {
-        transcripts.push(`${event.type}:${text}`);
-      }
-    }
-  }
+  const config = resolveDashScopeSpeechConfig();
+  const sttProvider = new DashScopeFunAsrFlashSTT(config);
+  const started = Date.now();
+  const event = await sttProvider.recognize(frame);
+  const latencyMs = Date.now() - started;
 
   console.log(
     JSON.stringify(
       {
-        endpoint: resolveDashScopeSpeechConfig().funAsrEndpoint,
+        model: config.funAsrFlashModel,
+        endpoint: config.funAsrFlashHttpEndpoint,
         pcmPath,
-        frameCount: frames.length,
-        transcripts,
+        sampleCount: samples.length,
+        latencyMs,
+        transcript: event.alternatives?.[0]?.text ?? "",
       },
       null,
       2,

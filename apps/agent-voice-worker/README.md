@@ -20,7 +20,7 @@ This worker does three Merism-specific things:
 - builds a session-scoped Mastra agent from required `flowConfig`; `runtimeStudy`
   remains a structural companion for progress and question indexing
 - runs an independent TS speech stack:
-  `FunASR websocket ASR + Qwen realtime TTS + Qwen compat LLM`
+  `Silero VAD + FunASR Flash STT + v1-mini turn detector + Qwen realtime TTS + Qwen compat LLM`
 
 ## Sources
 
@@ -45,7 +45,9 @@ This worker does three Merism-specific things:
 Optional overrides:
 
 - `QWEN_LLM_MODEL` default `qwen-plus`
-- `QWEN_ASR_MODEL` default `paraformer-realtime-v2`
+- `FUN_ASR_FLASH_MODEL` default `fun-asr-flash-2026-06-15`
+- `FUN_ASR_FLASH_HTTP_ENDPOINT` default
+  `https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation`
 - `QWEN_TTS_MODEL` default `qwen3-tts-flash-realtime`
 - `QWEN_TTS_VOICE` default `Cherry`
 - `DASHSCOPE_FUN_ASR_ENDPOINT` default `wss://dashscope.aliyuncs.com/api-ws/v1/inference`
@@ -95,19 +97,15 @@ Verified locally on 2026-07-11:
 - the worker can read and use Merism room metadata from `ctx.room.metadata`
 - `pnpm probe:llm` returns text from DashScope compat `qwen-plus`
 - `pnpm probe:tts` returns PCM frames from `qwen3-tts-flash-realtime`
-- `pnpm probe:stt` returns incremental + final transcripts from
-  `paraformer-realtime-v2`
+- `pnpm probe:stt` returns a final transcript from `fun-asr-flash-2026-06-15`
 
 ## Turn detection
 
 `voice-worker.ts` pins `inference.TurnDetector({ version: "v1-mini" })` from
 `@livekit/agents` (bundled since 1.4.7, no separate plugin or extra). This is
-LiveKit's current audio-native end-of-turn model, distinct from the
-deprecated text-based `MultilingualModel`/`EnglishModel` in
-`@livekit/agents-plugin-livekit` (which needs an HTTP HuggingFace download of
-`livekit/turn-detector` ONNX weights and an STT feed — see "Why FunASR/Qwen
-realtime speech, not the OpenAI-compatible routes" for the class of bug that
-pattern causes).
+LiveKit's current audio-native end-of-turn model; this worker does not install
+the deprecated text-based turn-detector plugin or download its Hugging Face
+weights.
 
 Why `version` is pinned instead of left on auto-select: `inference.TurnDetector`
 without an explicit `version` auto-selects the cloud-hosted `v1` model
@@ -122,22 +120,25 @@ from LiveKit Inference, and falls back to `v1-mini` — but that fallback is
 `version: "v1-mini"` skips the cloud attempt (and its 401) entirely, matching
 LiveKit's own recommendation for any agent not deployed to LiveKit Cloud.
 
-`v1-mini` requires VAD with `min_silence_duration >= 0.25s`; Mastra's worker
-defaults `vad` to `'silero'` (already a dependency here), and Silero's
-default (`0.55s`) already satisfies this — no extra VAD config needed.
+`v1-mini` requires VAD with `min_silence_duration >= 0.25s`; the Silero
+plugin default (`0.55s`) satisfies this. `speech.ts` intentionally omits
+`vad`: `@mastra/livekit` then follows LiveKit's prewarm pattern by loading one
+Silero VAD instance in the worker-process `prewarm` hook and reusing it for
+every session in that process. Do not add a second application-level prewarm
+hook or a FunASR VAD — either would create a competing boundary source.
 
-## Why FunASR/Qwen realtime speech, not the OpenAI-compatible routes
+## Why DashScope speech uses its native routes, not OpenAI-compatible routes
 
 An earlier TS attempt routed ASR/TTS through the wrong protocol layer:
 
 - Qwen LLM works over DashScope's OpenAI-compatible HTTP API
-- `FunASR` realtime ASR uses DashScope's native websocket inference protocol
+- `FunASR Flash` STT uses DashScope's native multimodal-generation HTTP API
 - `Qwen realtime TTS` uses DashScope's native websocket realtime protocol
 
 Sending ASR/TTS traffic to the OpenAI-compatible speech routes is the wrong
 transport and returns 404s for the tested models. This worker's
-`dashscope-funasr-stt.ts` / `dashscope-qwen-tts.ts` speak the native websocket
-protocols directly.
+`dashscope-funasr-flash-stt.ts` / `dashscope-qwen-tts.ts` use their respective
+native protocols directly.
 
 ## Dispatch from `issueLivekitToken`
 
@@ -154,15 +155,6 @@ registered `agentName` (`merism-mastra-voice-worker`, matching
 `liveKitConnectionRoute()` in `src/mastra/index.ts` and `runLiveKitWorker()`
 in `src/mastra/voice-worker.ts`). Leave the env var unset to keep the Python
 worker as the only dispatch target.
-
-If you want the deprecated text turn detector instead (needs a live STT feed
-and an HF model download, not recommended for new setups — see "Turn
-detection" above), switch the worker to `turnDetection: "multilingual"` per
-the Mastra docs and download the model files first:
-
-```bash
-pnpm download:models
-```
 
 After both processes are running, test with the LiveKit Agents Playground:
 

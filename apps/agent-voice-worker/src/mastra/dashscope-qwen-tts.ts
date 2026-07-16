@@ -222,14 +222,25 @@ class DashScopeQwenChunkedStream extends tts.ChunkedStream {
 
         try {
           if (event.type === "session.created") {
+            // Instruction control is honored only by Qwen3-TTS-Instruct-* models
+            // (per Model Studio 实时语音合成 doc §指令控制). Guard on the model name
+            // so overriding QWEN_TTS_MODEL back to a non-instruct model does not
+            // send an `instructions` field the server would reject.
+            const instructions = this.#config.qwenTtsInstructions.trim();
+            const supportsInstructions = this.#config.qwenTtsModel.includes("instruct");
+            const session: Record<string, unknown> = {
+              mode: "server_commit",
+              voice: this.#config.qwenTtsVoice,
+              response_format: "pcm",
+              sample_rate: 24000,
+            };
+            if (supportsInstructions && instructions) {
+              session.instructions = instructions;
+              session.optimize_instructions = true;
+            }
             await sendJson(socket, {
               type: "session.update",
-              session: {
-                mode: "server_commit",
-                voice: this.#config.qwenTtsVoice,
-                response_format: "pcm",
-                sample_rate: 24000,
-              },
+              session,
             });
             await sendJson(socket, {
               type: "input_text_buffer.append",

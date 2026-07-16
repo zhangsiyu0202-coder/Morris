@@ -8,85 +8,30 @@ import {
   type AudioBuffer,
   stt,
 } from "@livekit/agents";
-import type { AudioFrame } from "@livekit/rtc-node";
 import { WebSocket } from "ws";
 
 import type { DashScopeSpeechConfig } from "./dashscope-config.js";
+import {
+  buildFunAsrFinishTask,
+  buildFunAsrRecognitionTask,
+  createDeferred,
+  sendJson,
+  toInt16Pcm,
+  type Deferred,
+  type FunAsrSentence,
+  type FunAsrServerEvent,
+  waitForOpen,
+} from "./dashscope-funasr-protocol.js";
 
-interface FunAsrSentence {
-  begin_time?: number | null;
-  end_time?: number | null;
-  text?: string | null;
-  heartbeat?: boolean | null;
-  sentence_end?: boolean | null;
-}
+type FunAsrTranscriptSentence = FunAsrSentence & { text: string };
 
-interface FunAsrServerEvent {
-  header?: { event?: string };
-  payload?: {
-    output?: { sentence?: FunAsrSentence | null } | null;
-    usage?: { duration?: number | null } | null;
-  } | null;
-}
-
-interface Deferred {
-  promise: Promise<void>;
-  resolve: () => void;
-  reject: (error: Error) => void;
-}
-
-function toInt16Pcm(frame: AudioFrame) {
-  return new Uint8Array(frame.data.buffer, frame.data.byteOffset, frame.data.byteLength);
-}
-
-function createDeferred(): Deferred {
-  let resolve!: () => void;
-  let reject!: (error: Error) => void;
-  return {
-    promise: new Promise<void>((innerResolve, innerReject) => {
-      resolve = innerResolve;
-      reject = innerReject;
-    }),
-    resolve,
-    reject,
-  };
-}
-
-async function waitForOpen(socket: WebSocket) {
-  if (socket.readyState === WebSocket.OPEN) return;
-  await new Promise<void>((resolve, reject) => {
-    const cleanup = () => {
-      socket.off("open", onOpen);
-      socket.off("error", onError);
-    };
-    const onOpen = () => {
-      cleanup();
-      resolve();
-    };
-    const onError = (error: Error) => {
-      cleanup();
-      reject(error);
-    };
-    socket.once("open", onOpen);
-    socket.once("error", onError);
-  });
-}
-
-async function sendJson(socket: WebSocket, payload: object) {
-  await new Promise<void>((resolve, reject) => {
-    socket.send(JSON.stringify(payload), (error?: Error) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve();
-    });
-  });
+function hasTranscript(sentence: FunAsrSentence | null | undefined): sentence is FunAsrTranscriptSentence {
+  return Boolean(sentence && !sentence.heartbeat && sentence.text);
 }
 
 /** Maps DashScope transcripts without letting server VAD commit a LiveKit turn. */
 export function toFunAsrSpeechEvents(
-  sentence: Required<Pick<FunAsrSentence, "text">> & FunAsrSentence,
+  sentence: FunAsrTranscriptSentence,
   language: string,
   duration?: number | null,
 ): stt.SpeechEvent[] {
@@ -133,7 +78,7 @@ export class DashScopeFunAsrRealtimeSTT extends stt.STT {
 
   protected async _recognize(frame: AudioBuffer): Promise<stt.SpeechEvent> {
     const stream = this.stream();
-    const chunks = Array.isArray(frame) ? frame : [frame as AudioFrame];
+    const chunks = Array.isArray(frame) ? frame : [frame];
     for (const chunk of chunks) stream.pushFrame(chunk);
     stream.flush();
     for await (const event of stream) {
@@ -239,32 +184,13 @@ class DashScopeFunAsrSpeechStream extends stt.SpeechStream {
     this.#taskId = randomUUID();
     this.#taskStart = createDeferred();
     this.#taskFinish = createDeferred();
-    await sendJson(this.#socket!, {
-      header: { action: "run-task", task_id: this.#taskId, streaming: "duplex" },
-      payload: {
-        task_group: "audio",
-        task: "asr",
-        function: "recognition",
-        model: this.#config.funAsrModel,
-        parameters: {
-          format: "pcm",
-          sample_rate: 16000,
-          language_hints: [this.#config.language],
-          disfluency_removal_enabled: false,
-          inverse_text_normalization_enabled: true,
-        },
-        input: {},
-      },
-    });
+    await sendJson(this.#socket!, buildFunAsrRecognitionTask(this.#taskId, this.#config));
     await this.#taskStart.promise;
   }
 
   async #finishTask() {
     if (!this.#taskId) return;
-    await sendJson(this.#socket!, {
-      header: { action: "finish-task", task_id: this.#taskId, streaming: "duplex" },
-      payload: { input: {} },
-    });
+    await sendJson(this.#socket!, buildFunAsrFinishTask(this.#taskId));
   }
 
   async #waitForTaskFinished() {
@@ -317,9 +243,9 @@ class DashScopeFunAsrSpeechStream extends stt.SpeechStream {
     }
     if (kind === "result-generated") {
       const sentence = event.payload?.output?.sentence;
-      if (!sentence || sentence.heartbeat || !sentence.text) return;
+      if (!hasTranscript(sentence)) return;
       for (const speechEvent of toFunAsrSpeechEvents(
-        sentence as Required<Pick<FunAsrSentence, "text">> & FunAsrSentence,
+        sentence,
         this.#config.language,
         event.payload?.usage?.duration,
       )) {

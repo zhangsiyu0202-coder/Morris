@@ -6,7 +6,6 @@ import {
   Room,
   RoomEvent,
   Track,
-  type TranscriptionSegment,
 } from "livekit-client"
 import {
   INTERVIEW_STATE_ATTRIBUTE,
@@ -28,21 +27,6 @@ export type TransportPhase =
   | "disconnected"
   | "error"
 
-/** Who produced a transcript segment, from the interviewee's point of view. */
-export type TranscriptSpeaker = "agent" | "you"
-
-/**
- * A single transcript update lifted off the LiveKit transcription stream.
- * Segments arrive interim-then-final under a stable `id`, so the consumer
- * upserts by id rather than appending blindly.
- */
-export interface TranscriptSegmentUpdate {
-  id: string
-  text: string
-  final: boolean
-  speaker: TranscriptSpeaker
-}
-
 /** Snapshot of which local media tracks are currently publishing. */
 export interface LocalMediaState {
   micEnabled: boolean
@@ -54,8 +38,6 @@ export interface InterviewTransportCallbacks {
   onPhase?: (phase: TransportPhase) => void
   onState?: (state: InterviewAgentState) => void
   onError?: (message: string) => void
-  /** A transcript segment (interim or final) from the agent or the local user. */
-  onTranscription?: (update: TranscriptSegmentUpdate) => void
   /** Parsed room metadata, used to derive interview progress. */
   onMetadata?: (metadata: InterviewRoomMetadata) => void
   /** Latest local mic/camera/screenshare publish state. */
@@ -249,9 +231,6 @@ export class InterviewTransport {
       .on(RoomEvent.ParticipantAttributesChanged, (_changed, participant) => {
         this.handleAttributes(participant)
       })
-      .on(RoomEvent.TranscriptionReceived, (segments, participant) => {
-        this.handleTranscription(segments, participant)
-      })
       .on(RoomEvent.RoomMetadataChanged, () => this.emitMetadata())
       .on(RoomEvent.LocalTrackPublished, () => {
         this.emitMediaState()
@@ -267,20 +246,6 @@ export class InterviewTransport {
         this.refreshAgent()
       })
       .on(RoomEvent.Disconnected, () => this.callbacks.onPhase?.("disconnected"))
-  }
-
-  /** Forward each transcription segment, tagging the speaker as agent or local user. */
-  private handleTranscription(segments: TranscriptionSegment[], participant?: Participant): void {
-    if (!this.callbacks.onTranscription) return
-    const speaker: TranscriptSpeaker = participant?.isLocal ? "you" : "agent"
-    for (const segment of segments) {
-      this.callbacks.onTranscription({
-        id: segment.id,
-        text: segment.text,
-        final: segment.final,
-        speaker,
-      })
-    }
   }
 
   private emitMetadata(): void {

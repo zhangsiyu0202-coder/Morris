@@ -3,12 +3,42 @@ import {
   type IssueLivekitTokenResponse,
   IssueLivekitTokenResponseSchema,
 } from "@merism/contracts"
-import { createLogger } from "@merism/observability"
 
 const ENDPOINT = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT
 const PROJECT_ID = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID
 const FUNCTION_ID = process.env.NEXT_PUBLIC_ISSUE_TOKEN_FUNCTION_ID ?? "issueLivekitToken"
 const TOKEN_TIMEOUT_MS = 15_000
+
+interface ExecutionResponseForLogging {
+  status: string
+  responseStatusCode: number
+  responseBody?: string | null
+}
+
+/** Keep diagnostic metadata useful without retaining the issued LiveKit JWT. */
+export function summarizeExecutionResponse(execution: ExecutionResponseForLogging) {
+  return {
+    status: execution.status,
+    httpStatus: execution.responseStatusCode,
+    bodyChars: (execution.responseBody ?? "").length,
+  }
+}
+
+async function issueDevLivekitToken(
+  linkToken: string,
+  alias: string | undefined,
+): Promise<IssueLivekitTokenResponse> {
+  const resp = await fetch("/api/dev-issue-token", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ linkToken, alias }),
+  })
+  const json = await resp.json()
+  if (!resp.ok) throw new Error(json?.error ?? "token_request_failed")
+  const parsed = IssueLivekitTokenResponseSchema.safeParse(json)
+  if (!parsed.success) throw new Error("invalid_token_response")
+  return parsed.data
+}
 
 /** Reject if the promise does not settle within `ms`, so the UI never hangs forever. */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -31,6 +61,16 @@ export async function issueLivekitToken(
   linkToken: string,
   alias?: string,
 ): Promise<IssueLivekitTokenResponse> {
+  // Local dev: the Appwrite Function executes fine server-side, but the browser
+  // Appwrite SDK trips on Appwrite 1.6's execution-response shape — createExecution
+  // can resolve with an unreadable `responseBody`, so the JSON.parse below throws
+  // `invalid_token_response` with no fallback. In dev, call the in-process dev
+  // route directly (it mirrors the Function's pure handler). Production builds
+  // 404 this route, so the safe-by-default contract still holds via the Function.
+  if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
+    return issueDevLivekitToken(linkToken, alias)
+  }
+
   if (!ENDPOINT || !PROJECT_ID) {
     throw new Error("appwrite_not_configured")
   }
@@ -52,46 +92,12 @@ export async function issueLivekitToken(
       TOKEN_TIMEOUT_MS,
     )
   } catch (err: unknown) {
-    createLogger("interview.issue-token").error("SDK createExecution threw", {
-      error: err instanceof Error ? err.message : String(err),
-    })
-    // Local dev fallback: when the Appwrite Function isn't deployed (the
-    // project's docker-compose omits appwrite-executor for foundation-setup),
-    // functions.createExecution throws AppwriteException with code 404 from
-    // the SDK. After we DO deploy the Function, the SDK may also throw on
-    // response parsing because Appwrite 1.6 returns Execution rows without
-    // ``deploymentId`` while the SDK 20.x pydantic-equivalent model
-    // requires it. Both cases want the same fallback. Production builds
-    // 404 the route, so the safe-by-default contract still holds.
-    if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
-      const resp = await fetch("/api/dev-issue-token", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ linkToken, alias }),
-      })
-      const json = await resp.json()
-      if (!resp.ok) throw new Error(json?.error ?? "token_request_failed")
-      const parsed = IssueLivekitTokenResponseSchema.safeParse(json)
-      if (!parsed.success) throw new Error("invalid_token_response")
-      return parsed.data
-    }
     throw err
   }
 
   if (execution.responseStatusCode >= 400) {
-    createLogger("interview.issue-token").error("non-2xx execution", {
-      status: execution.responseStatusCode,
-      body: execution.responseBody,
-    })
     throw new Error(parseError(execution.responseBody))
   }
-
-  createLogger("interview.issue-token").info("execution settled", {
-    status: execution.status,
-    httpStatus: execution.responseStatusCode,
-    bodyChars: (execution.responseBody ?? "").length,
-    bodyHead: (execution.responseBody ?? "").slice(0, 120),
-  })
 
   let json: unknown
   try {
@@ -102,9 +108,6 @@ export async function issueLivekitToken(
 
   const parsed = IssueLivekitTokenResponseSchema.safeParse(json)
   if (!parsed.success) {
-    createLogger("interview.issue-token").error("schema mismatch", {
-      issues: parsed.error.flatten(),
-    })
     throw new Error("invalid_token_response")
   }
   return parsed.data

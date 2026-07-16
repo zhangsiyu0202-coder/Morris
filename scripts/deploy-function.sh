@@ -25,8 +25,9 @@ if [ ! -d "$SRC" ]; then
   echo "no such function: $SRC" >&2
   exit 1
 fi
-if [ ! -f "$SRC/dist/main.js" ]; then
-  echo "no dist/main.js — run 'pnpm -F $(jq -r .name "$SRC/package.json") build' first" >&2
+ENTRYPOINT="$(node -e "const p=require('$SRC/package.json'); process.stdout.write(p.appwriteEntrypoint || 'dist/main.js')")"
+if [ ! -f "$SRC/$ENTRYPOINT" ]; then
+  echo "no $ENTRYPOINT — run 'pnpm -F $(jq -r .name "$SRC/package.json") build' first" >&2
   exit 1
 fi
 
@@ -38,31 +39,38 @@ set +a
 : "${APPWRITE_PROJECT_ID:?}"
 : "${APPWRITE_API_KEY:?}"
 
-# Stage just the bundle + a minimal package.json (deps only) so Appwrite's
-# build runs `npm install` on a small surface, not on the workspace tree.
+# Stage just the bundle + a minimal package.json (remaining external deps only)
+# so Appwrite's build runs `npm install` on a small surface, not on the
+# workspace tree. A Function may declare `appwriteBundledDependencies` for
+# runtime packages already embedded by tsup; keeping those here would make an
+# otherwise self-contained deployment depend on registry access.
 STAGE="$(mktemp -d)"
 trap "rm -rf '$STAGE'" EXIT
-mkdir -p "$STAGE/dist"
-cp "$SRC/dist/main.js" "$STAGE/dist/main.js"
+mkdir -p "$STAGE/$(dirname "$ENTRYPOINT")"
+cp "$SRC/$ENTRYPOINT" "$STAGE/$ENTRYPOINT"
 
 # Strip workspace deps from package.json (they're bundled by tsup) so npm
 # install in the function container doesn't try to resolve them. Keep
 # `dependencies` for runtime SDKs.
 node -e "
   const p = require('$SRC/package.json');
+  const bundled = new Set(p.appwriteBundledDependencies || []);
+  const dependencies = Object.fromEntries(
+    Object.entries(p.dependencies || {}).filter(([name]) => !bundled.has(name)),
+  );
   const minimal = {
     name: p.name.replace(/^@merism\\//, ''),
     version: p.version || '0.0.0',
-    type: p.type || 'module',
-    main: 'dist/main.js',
-    dependencies: p.dependencies || {},
+    type: p.appwritePackageType || p.type || 'module',
+    main: p.appwriteEntrypoint || 'dist/main.js',
+    dependencies,
   };
   require('fs').writeFileSync('$STAGE/package.json', JSON.stringify(minimal, null, 2));
 "
 
 # Tarball.
 TARBALL="$STAGE/code.tar.gz"
-( cd "$STAGE" && tar -czf "$TARBALL" dist package.json )
+( cd "$STAGE" && tar -czf "$TARBALL" "$(dirname "$ENTRYPOINT")" package.json )
 
 # Push deployment via REST. Activate=true so the new build replaces the
 # previous (or first-ever) deployment as soon as it goes live.
@@ -72,6 +80,6 @@ RESP=$(curl -sS -X POST \
   -H "X-Appwrite-Key: $APPWRITE_API_KEY" \
   -F "code=@$TARBALL" \
   -F 'activate=true' \
-  -F 'entrypoint=dist/main.js' \
+  -F "entrypoint=$ENTRYPOINT" \
   "$APPWRITE_ENDPOINT/functions/$FN/deployments")
 echo "$RESP" | python3 -m json.tool 2>/dev/null || echo "$RESP"

@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 import { createLiveKitWorker, runLiveKitWorker } from "@mastra/livekit/worker";
+import { voice } from "@livekit/agents";
 
 import type {
   InterviewRuntimeQuestion,
@@ -16,10 +17,11 @@ import {
 } from "./merism-room-metadata.js";
 import { buildVoiceWorkerSpeechProviders } from "./speech.js";
 import { buildVoiceWorkerTurnDetection } from "./turn-detection.js";
+import { buildVoiceWorkerServerOptions } from "./worker-runtime-options.js";
 import { FlowEngineDriver } from "../interview/flow-driver.js";
 import { registerSubmitAnswerRpc } from "../transport/submit-answer-rpc.js";
 import { createSessionLogger } from "../observability/session-logger.js";
-import { installDrainHandler, startHealthServer } from "../health.js";
+import { installDrainHandler, prepareWorkerHealthServer, startHealthServer } from "../health.js";
 import { finalizeInterviewSession } from "../persistence/finalize-client.js";
 
 /**
@@ -205,6 +207,13 @@ export default createLiveKitWorker({
       onAcceptedAnswer: (answer) => driver.handleUiSubmission(answer),
     });
 
+    // Subscribe to the public AgentSession event, rather than the FunASR
+    // adapter internals. Only final events are persisted by the session
+    // collector; interim hypotheses must never enter the durable transcript.
+    session.on(voice.AgentSessionEventTypes.UserInputTranscribed, (event) => {
+      driver.recordUserTranscript(event);
+    });
+
     // Publish `merism.interviewState` for the first step and fire the
     // flow engine's main loop.
     await driver.begin();
@@ -223,13 +232,16 @@ export default createLiveKitWorker({
       return;
     }
 
-    const snapshot = driver.snapshot;
-    const terminalStatus = snapshot.isComplete ? "completed" : "abandoned";
+    const terminalStatus = driver.snapshot.isComplete ? "completed" : "abandoned";
     await driver.shutdown(terminalStatus);
+    // Take the persistence snapshot after shutdown to include any final STT
+    // event the AgentSession dispatched while its room teardown completed.
+    const snapshot = driver.snapshot;
 
     log.info("agent session ended", {
       terminalStatus,
       answeredCount: Object.keys(snapshot.collectedAnswers).length,
+      transcriptSegmentCount: snapshot.transcript?.segments.length ?? 0,
     });
 
     // One-way append-only persistence per architecture.md § Realtime ↔
@@ -240,6 +252,7 @@ export default createLiveKitWorker({
         sessionId: snapshot.sessionId,
         surveyId: snapshot.surveyId,
         collectedAnswers: snapshot.collectedAnswers,
+        transcript: snapshot.transcript,
         terminalStatus,
         log,
       });
@@ -259,11 +272,13 @@ export default createLiveKitWorker({
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   // Health + drain: install BEFORE runLiveKitWorker so /_livez answers as
   // soon as the process is up, even if the LiveKit worker's own boot fails.
+  prepareWorkerHealthServer();
   startHealthServer();
   installDrainHandler();
 
   runLiveKitWorker({
     entry: import.meta.url,
     agentName: "merism-mastra-voice-worker",
+    serverOptions: buildVoiceWorkerServerOptions(),
   });
 }

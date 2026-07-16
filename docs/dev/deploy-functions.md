@@ -1,6 +1,6 @@
 # Deploying Appwrite Functions to the local stack
 
-Walks through deploying the four Functions in `apps/functions/*` against
+Walks through deploying the five Functions in `apps/functions/*` against
 the local Docker stack. Same procedure works against a remote Appwrite
 instance with the corresponding env values.
 
@@ -85,7 +85,7 @@ For each Function in `apps/functions/<name>/`:
 EP=http://localhost:8080/v1
 PID=merism
 
-for FN in issueLivekitToken analyzeSession analyzeSurvey analyzeSessionVisual; do
+for FN in issueLivekitToken finalizeInterviewSession analyzeSession analyzeSurvey analyzeSessionVisual; do
   curl -s -X POST "$EP/functions" \
     -H "X-Appwrite-Project: $PID" -H "X-Appwrite-Key: $APPWRITE_API_KEY" \
     -H "Content-Type: application/json" \
@@ -96,13 +96,13 @@ done
 pnpm -r --filter './apps/functions/*' build
 
 # 3. push the bundles + minimal package.json to Appwrite
-for FN in issueLivekitToken analyzeSession analyzeSurvey analyzeSessionVisual; do
+for FN in issueLivekitToken finalizeInterviewSession analyzeSession analyzeSurvey analyzeSessionVisual; do
   scripts/deploy-function.sh "$FN"
 done
 
 # 4. push env vars onto each Function (rewrites localhost -> appwrite/livekit
 #    so in-runtime SDK calls reach the right hosts)
-for FN in issueLivekitToken analyzeSession analyzeSurvey analyzeSessionVisual; do
+for FN in issueLivekitToken finalizeInterviewSession analyzeSession analyzeSurvey analyzeSessionVisual; do
   scripts/set-function-vars.sh "$FN"
 done
 

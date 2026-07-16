@@ -16,7 +16,6 @@ import { RoomContext } from "@livekit/components-react"
 import type { LiveInterviewSession } from "@/lib/hooks/use-live-interview"
 import { Brand } from "./pre-interview-flow"
 import { AgentIdleState } from "./agent-idle-state"
-import { LiveTranscript } from "./live-transcript"
 import { QuestionStage } from "./question-stage"
 import { SelfCam } from "./self-cam"
 import { VoiceVisualizer } from "./voice-visualizer"
@@ -36,10 +35,10 @@ interface InterviewRoomShellProps {
  * Dark two-pane interview room shell (visual source: docs/design/interviewer-page).
  *
  * Top bar: brand + client-side elapsed timer + derived progress + (when
- * applicable) a test-mode badge. Left pane: live transcript over the camera
- * self-view. Right pane: the existing contract-driven question stage on a
- * light surface. Bottom bar: media toggles only — push-to-talk is
- * intentionally dropped (voice is always live).
+ * applicable) a test-mode badge. Left pane: agent voice visualizer over the
+ * camera self-view. Right pane: the contract-driven question stage on a
+ * light surface, showing the agent's current question. Bottom bar: media
+ * toggles only — push-to-talk is intentionally dropped (voice is always live).
  */
 export function InterviewRoomShell({ session, linkKind }: InterviewRoomShellProps) {
   const elapsed = useElapsedSeconds()
@@ -105,10 +104,9 @@ export function InterviewRoomShell({ session, linkKind }: InterviewRoomShellProp
           {session.question ? (
             <div className="mx-auto w-full max-w-4xl">
               <QuestionStage question={session.question} onSubmit={handleSubmit} />
-              <LiveTranscript transcript={session.transcript} />
             </div>
           ) : (
-            <AgentIdleState transcript={session.transcript} />
+            <AgentIdleState />
           )}
         </main>
       </div>

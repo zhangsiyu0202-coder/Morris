@@ -38,6 +38,7 @@ import type { SessionLogger } from "../observability/session-logger.js";
 import { InterviewStatePublisher } from "../transport/attribute-publisher.js";
 import { LiveKitFlowHost } from "./livekit-flow-host.js";
 import type { InterviewDriver, InterviewDriverSnapshot } from "./interview-driver.js";
+import { SessionTranscriptCollector, type UserInputTranscribed } from "./transcript-collector.js";
 import {
   initialFlowState,
   runFlow,
@@ -96,6 +97,7 @@ export class FlowEngineDriver implements InterviewDriver {
   #state: FlowState;
   #publisher: InterviewStatePublisher;
   #host: LiveKitFlowHost;
+  #transcript = new SessionTranscriptCollector({ startedAt: Date.now() });
   #runFlowPromise: Promise<FlowState> | null = null;
   #completed = false;
 
@@ -138,6 +140,7 @@ export class FlowEngineDriver implements InterviewDriver {
       currentQuestionId: this.#state.currentStepId ?? undefined,
       isComplete: this.#completed,
       collectedAnswers: collectedAnswersFromFlowState(this.#state),
+      transcript: this.#transcript.snapshot,
     };
   }
 
@@ -187,6 +190,11 @@ export class FlowEngineDriver implements InterviewDriver {
 
   handleUiSubmission(answer: InterviewAnswerPayload): boolean {
     return this.#host.handleUiSubmission(answer);
+  }
+
+  /** Accept one event from LiveKit's public AgentSession transcript stream. */
+  recordUserTranscript(event: UserInputTranscribed): boolean {
+    return this.#transcript.record(event);
   }
 
   async shutdown(terminalStatus: "completed" | "abandoned" | "failed"): Promise<void> {

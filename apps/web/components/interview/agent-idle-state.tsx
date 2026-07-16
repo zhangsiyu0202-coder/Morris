@@ -3,12 +3,6 @@
 import { useVoiceAssistant } from "@livekit/components-react"
 import type { AgentState } from "@livekit/components-react"
 import { AlertCircle, Loader2, Mic, Sparkles } from "lucide-react"
-import type { TranscriptLine } from "@/lib/hooks/use-live-interview"
-import { LiveTranscript } from "./live-transcript"
-
-interface AgentIdleStateProps {
-  transcript: ReadonlyArray<TranscriptLine>
-}
 
 /**
  * "There is no current question to render" — uses LiveKit's canonical agent
@@ -22,7 +16,7 @@ interface AgentIdleStateProps {
  * speaking, etc. Hard-coding "访谈员正在准备问题…" lied during long thinking
  * stretches and during connection failures.
  */
-export function AgentIdleState({ transcript }: AgentIdleStateProps) {
+export function AgentIdleState() {
   const { state } = useVoiceAssistant()
   const view = idleView(state)
   return (
@@ -45,9 +39,6 @@ export function AgentIdleState({ transcript }: AgentIdleStateProps) {
             {view.detail}
           </p>
         ) : null}
-      </div>
-      <div className="w-full">
-        <LiveTranscript transcript={transcript} />
       </div>
     </div>
   )

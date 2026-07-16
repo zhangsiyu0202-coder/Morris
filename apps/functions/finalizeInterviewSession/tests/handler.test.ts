@@ -22,7 +22,11 @@ import {
 
 type Emitted =
   | { kind: "update"; args: unknown }
-  | { kind: "transcript"; sessionId: string }
+  | {
+      kind: "transcript";
+      sessionId: string;
+      body: { segments: Array<{ speaker: string; startMs: number; endMs: number; text: string }>; language: string };
+    }
   | { kind: "usage"; sessionId: string }
   | { kind: "analysis"; sessionId: string };
 
@@ -43,8 +47,8 @@ function makeDeps(store: FakeStore, opts: { nowMs?: number } = {}): FinalizeDeps
       store.session = { ...store.session, state: fields.state };
       store.emitted.push({ kind: "update", args: { id, ...fields } });
     },
-    async upsertTranscript(sessionId) {
-      store.emitted.push({ kind: "transcript", sessionId });
+    async upsertTranscript(sessionId, body) {
+      store.emitted.push({ kind: "transcript", sessionId, body });
     },
     async emitUsageEvent(args) {
       if (store.usageEmittedFor.has(args.sessionId)) {
@@ -219,6 +223,15 @@ describe("P-FIN-03: transcript is persisted iff caller sends segments", () => {
           expect(res.status).toBe(200);
           const transcriptCount = store.emitted.filter((e) => e.kind === "transcript").length;
           expect(transcriptCount).toBe(withTranscript ? 1 : 0);
+          if (withTranscript) {
+            expect(store.emitted.find((e) => e.kind === "transcript")).toMatchObject({
+              sessionId: "s-1",
+              body: {
+                language: "zh",
+                segments: [{ speaker: "respondent", startMs: 0, endMs: 1000, text }],
+              },
+            });
+          }
         },
       ),
     );

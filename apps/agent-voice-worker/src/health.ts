@@ -26,23 +26,28 @@ import { createLogger } from "@merism/observability";
 const DEFAULT_PORT = Number(process.env.HEALTH_PORT ?? "8081");
 const PRESTOP_MARKER = process.env.HEALTH_PRESTOP_MARKER ?? "/tmp/merism-agent-voice-worker.draining";
 
-export function writePrestopMarker(): void {
+export function writePrestopMarker(markerPath: string = PRESTOP_MARKER): void {
   try {
-    mkdirSync(dirname(PRESTOP_MARKER), { recursive: true });
+    mkdirSync(dirname(markerPath), { recursive: true });
   } catch {
     // best-effort — dirname of /tmp is /
   }
-  writeFileSync(PRESTOP_MARKER, `draining-since=${new Date().toISOString()}\n`);
+  writeFileSync(markerPath, `draining-since=${new Date().toISOString()}\n`);
 }
 
-export function clearPrestopMarker(): void {
-  if (existsSync(PRESTOP_MARKER)) {
+export function clearPrestopMarker(markerPath: string = PRESTOP_MARKER): void {
+  if (existsSync(markerPath)) {
     try {
-      unlinkSync(PRESTOP_MARKER);
+      unlinkSync(markerPath);
     } catch {
       // ignore; the file will disappear with the pod
     }
   }
+}
+
+/** Clear a prior process's drain state before this replacement accepts work. */
+export function prepareWorkerHealthServer(markerPath?: string): void {
+  clearPrestopMarker(markerPath);
 }
 
 function isDraining(): boolean {

@@ -11,7 +11,7 @@
  * which driver they hold.
  */
 
-import type { InterviewAnswerPayload } from "@merism/contracts";
+import type { InterviewAnswerPayload, TranscriptSegment } from "@merism/contracts";
 
 /** Snapshot returned by `driver.snapshot` — the shape `finalize-client` consumes. */
 export interface InterviewDriverSnapshot {
@@ -21,6 +21,10 @@ export interface InterviewDriverSnapshot {
   currentQuestionId?: string;
   isComplete: boolean;
   collectedAnswers: Record<string, Record<string, unknown>>;
+  transcript?: {
+    language: string;
+    segments: TranscriptSegment[];
+  };
 }
 
 export interface InterviewDriver {

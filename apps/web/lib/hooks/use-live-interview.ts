@@ -12,18 +12,8 @@ import type {
 import {
   InterviewTransport,
   type LocalMediaState,
-  type TranscriptSegmentUpdate,
-  type TranscriptSpeaker,
   type TransportPhase,
 } from "@/lib/interview/transport"
-
-/** A coalesced transcript line surfaced to the conversation panel. */
-export interface TranscriptLine {
-  id: string
-  text: string
-  final: boolean
-  speaker: TranscriptSpeaker
-}
 
 export interface LiveInterviewSession {
   /** Connection lifecycle of the underlying LiveKit room. */
@@ -36,8 +26,6 @@ export interface LiveInterviewSession {
   completed: boolean
   /** Last error message surfaced by the transport, if any. */
   error: string | null
-  /** Ordered transcript lines (interim + final) from the live conversation. */
-  transcript: TranscriptLine[]
   /** Local mic/camera/screenshare publish snapshot. */
   media: LocalMediaState
   /** Local camera track for self-view rendering, or null when the camera is off. */
@@ -76,15 +64,14 @@ const INITIAL_MEDIA: LocalMediaState = {
  * Connects the structured renderer to a live LiveKit room.
  *
  * This is the production transport boundary: `state` is hydrated from the
- * agent's `merism.interviewState` attribute, `transcript` from the LiveKit
- * transcription stream, and `submitAnswer` invokes the `merism.submit_answer`
- * RPC. The renderer consumes the same `question` shape it does in preview mode.
+ * agent's `merism.interviewState` attribute, and `submitAnswer` invokes the
+ * `merism.submit_answer` RPC. The renderer consumes the same `question` shape
+ * it does in preview mode.
  */
 export function useLiveInterview(args: ConnectArgs | null): LiveInterviewSession {
   const [phase, setPhase] = useState<TransportPhase>("idle")
   const [state, setState] = useState<InterviewAgentState | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [transcript, setTranscript] = useState<TranscriptLine[]>([])
   const [media, setMedia] = useState<LocalMediaState>(INITIAL_MEDIA)
   const [localVideoTrack, setLocalVideoTrack] = useState<LocalVideoTrack | null>(null)
   const [runtimeStudy, setRuntimeStudy] = useState<InterviewRuntimeStudy | null>(null)
@@ -98,7 +85,6 @@ export function useLiveInterview(args: ConnectArgs | null): LiveInterviewSession
       onPhase: setPhase,
       onState: setState,
       onError: setError,
-      onTranscription: (update) => setTranscript((prev) => mergeTranscript(prev, update)),
       onMetadata: (metadata: InterviewRoomMetadata) => setRuntimeStudy(metadata.runtimeStudy ?? null),
       onMediaState: setMedia,
       onLocalVideoTrack: setLocalVideoTrack,
@@ -114,7 +100,6 @@ export function useLiveInterview(args: ConnectArgs | null): LiveInterviewSession
       transportRef.current = null
       void transport.disconnect()
       setPhase("disconnected")
-      setTranscript([])
       setMedia(INITIAL_MEDIA)
       setLocalVideoTrack(null)
       setRoom(null)
@@ -151,7 +136,6 @@ export function useLiveInterview(args: ConnectArgs | null): LiveInterviewSession
       question,
       completed,
       error,
-      transcript,
       media,
       localVideoTrack,
       progress,
@@ -167,7 +151,6 @@ export function useLiveInterview(args: ConnectArgs | null): LiveInterviewSession
       question,
       completed,
       error,
-      transcript,
       media,
       localVideoTrack,
       progress,
@@ -178,15 +161,6 @@ export function useLiveInterview(args: ConnectArgs | null): LiveInterviewSession
       room,
     ],
   )
-}
-
-/** Upsert a transcript segment by id, preserving arrival order. */
-function mergeTranscript(prev: TranscriptLine[], update: TranscriptSegmentUpdate): TranscriptLine[] {
-  const index = prev.findIndex((line) => line.id === update.id)
-  if (index === -1) return [...prev, update]
-  const next = prev.slice()
-  next[index] = update
-  return next
 }
 
 /**

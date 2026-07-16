@@ -1,3 +1,4 @@
+import { FinalizeInterviewSessionResponseSchema, type TranscriptSegment } from "@merism/contracts";
 import type { SessionLogger } from "../observability/session-logger.js";
 
 /**
@@ -12,62 +13,110 @@ import type { SessionLogger } from "../observability/session-logger.js";
  *   - `apps/functions/finalizeInterviewSession/src/main.ts` (SDK wrapper)
  *   - `apps/functions/finalizeInterviewSession/src/deps.ts` (typed effects)
  *
- * Wire-up lands in the same PR as this ADR (iteration 2 of the migration).
- * Until the Function ships, this stub logs and returns without throwing so
- * a session in this transitional state can still exit cleanly.
+ * The worker invokes the Function through Appwrite's authenticated execution
+ * API using the same server configuration it already needs for local runtime.
+ * Do not add a second `MERISM_FINALIZE_*` configuration surface: it drifts
+ * from the Function deployment and can silently skip terminal persistence.
  */
 export interface FinalizeInterviewSessionArgs {
   sessionId: string;
   surveyId: string;
   collectedAnswers: Record<string, Record<string, unknown>>;
+  transcript?: {
+    language: string;
+    segments: TranscriptSegment[];
+  };
   terminalStatus: "completed" | "abandoned" | "failed";
   log: SessionLogger;
 }
 
+interface AppwriteExecution {
+  status?: unknown;
+  responseStatusCode?: unknown;
+  responseBody?: unknown;
+}
+
+function requiredFinalizeConfig(): {
+  endpoint: string;
+  projectId: string;
+  apiKey: string;
+} {
+  const missing = ["APPWRITE_ENDPOINT", "APPWRITE_PROJECT_ID", "APPWRITE_API_KEY"].filter(
+    (name) => !process.env[name],
+  );
+  if (missing.length > 0) {
+    throw new Error(`finalize_not_configured:${missing.join(",")}`);
+  }
+  return {
+    endpoint: process.env.APPWRITE_ENDPOINT!.replace(/\/$/, ""),
+    projectId: process.env.APPWRITE_PROJECT_ID!,
+    apiKey: process.env.APPWRITE_API_KEY!,
+  };
+}
+
 export async function finalizeInterviewSession(args: FinalizeInterviewSessionArgs): Promise<void> {
-  const endpoint = process.env.MERISM_FINALIZE_FUNCTION_URL;
-  if (!endpoint) {
-    args.log.warn("finalize endpoint not configured; skipping persistence", {
+  let config: ReturnType<typeof requiredFinalizeConfig>;
+  try {
+    config = requiredFinalizeConfig();
+  } catch (error) {
+    args.log.error("finalize configuration missing", {
       terminalStatus: args.terminalStatus,
-      answeredCount: Object.keys(args.collectedAnswers).length,
+      error: error instanceof Error ? error.message : "finalize_not_configured",
     });
-    return;
+    throw error;
   }
 
-  const apiKey = process.env.MERISM_FINALIZE_FUNCTION_KEY;
-  if (!apiKey) {
-    args.log.error("finalize endpoint configured but MERISM_FINALIZE_FUNCTION_KEY missing", {
-      terminalStatus: args.terminalStatus,
-    });
-    return;
-  }
-
-  const body = JSON.stringify({
+  const functionBody = JSON.stringify({
     sessionId: args.sessionId,
     surveyId: args.surveyId,
     terminalStatus: args.terminalStatus,
     collectedAnswers: args.collectedAnswers,
+    transcript: args.transcript,
   });
 
-  const response = await fetch(endpoint, {
+  const response = await fetch(`${config.endpoint}/functions/finalizeInterviewSession/executions`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-appwrite-key": apiKey,
+      "X-Appwrite-Project": config.projectId,
+      "X-Appwrite-Key": config.apiKey,
     },
-    body,
+    body: JSON.stringify({
+      body: functionBody,
+      async: false,
+      path: "/",
+      method: "POST",
+    }),
   });
 
   if (!response.ok) {
-    const detail = await response.text().catch(() => "<no body>");
-    throw new Error(
-      `finalizeInterviewSession returned ${response.status}: ${detail.slice(0, 500)}`,
-    );
+    throw new Error(`finalizeInterviewSession execution API returned ${response.status}`);
+  }
+
+  const execution = (await response.json()) as AppwriteExecution;
+  if (execution.status !== "completed" || typeof execution.responseStatusCode !== "number") {
+    throw new Error("finalizeInterviewSession returned an invalid execution response");
+  }
+  if (execution.responseStatusCode >= 400 || typeof execution.responseBody !== "string") {
+    throw new Error(`finalizeInterviewSession returned ${execution.responseStatusCode}`);
+  }
+
+  let responseBody: unknown;
+  try {
+    responseBody = JSON.parse(execution.responseBody);
+  } catch {
+    throw new Error("finalizeInterviewSession returned invalid JSON");
+  }
+  const parsed = FinalizeInterviewSessionResponseSchema.safeParse(responseBody);
+  if (!parsed.success) {
+    throw new Error("finalizeInterviewSession returned an invalid response body");
   }
 
   args.log.info("interview finalized via function", {
     terminalStatus: args.terminalStatus,
     answeredCount: Object.keys(args.collectedAnswers).length,
-    status: response.status,
+    transcriptSegmentCount: args.transcript?.segments.length ?? 0,
+    transcriptPersisted: parsed.data.transcriptPersisted,
+    status: execution.responseStatusCode,
   });
 }

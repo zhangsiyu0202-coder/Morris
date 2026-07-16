@@ -2,7 +2,7 @@
 // only here from env and never returned or logged (Req 3.7).
 import { Client, Databases, Permission, Query, Role } from "node-appwrite";
 import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
-import { buildInterviewRoomMetadataFromDraft } from "@merism/contracts";
+import { buildInterviewRoomMetadataFromDraft, InterviewRoomMetadataSchema } from "@merism/contracts";
 import type { IssueDeps, LinkRecord, SessionInit } from "./handler.js";
 import { buildSurveyDraftFromDocs } from "./survey-draft-mapper.js";
 
@@ -57,6 +57,18 @@ function parseJson<T>(raw: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+/**
+ * Agent jobs are resolved before the worker has synchronized room metadata,
+ * so dispatch metadata must carry the complete validated room contract.
+ */
+export function buildVoiceWorkerDispatchMetadata(roomMetadata: string): string {
+  const metadata = InterviewRoomMetadataSchema.parse(JSON.parse(roomMetadata));
+  if (!metadata.flowConfig) {
+    throw new Error("Voice worker dispatch requires flowConfig");
+  }
+  return JSON.stringify(metadata);
 }
 
 export function createRealDeps(): IssueDeps {
@@ -276,15 +288,7 @@ export function createRealDeps(): IssueDeps {
       // `apps/agent-voice-worker/src/mastra/voice-worker.ts` does under the
       // same `MERISM_TS_VOICE_AGENT_NAME` value.
       await dispatch.createDispatch(room, env.MERISM_TS_VOICE_AGENT_NAME, {
-        metadata: JSON.stringify({
-          threadId: baseMetadata.sessionId ?? room,
-          resourceId: baseMetadata.surveyId ?? room,
-          requestContext: {
-            sessionId: baseMetadata.sessionId ?? room,
-            surveyId: baseMetadata.surveyId ?? null,
-            source: "issueLivekitToken",
-          },
-        }),
+        metadata: buildVoiceWorkerDispatchMetadata(finalMetadata),
       });
     },
 
