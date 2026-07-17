@@ -255,6 +255,55 @@ export const COLLECTIONS: CollectionDef[] = [
     indexes: [{ key: "by_session", type: "key", attributes: ["sessionId"] }],
   },
   {
+    id: "research_evidence",
+    name: "ResearchEvidence",
+    // Internal analysis index. Only the evidence-analysis Function writes it;
+    // document read permissions are pinned to the owning researcher.
+    permissions: SERVER_ONLY,
+    documentSecurity: true,
+    attributes: [
+      { key: "ownerUserId", type: "string", size: 64, required: true },
+      { key: "workspaceId", type: "string", size: 64, required: false },
+      { key: "surveyId", type: "string", size: 64, required: true },
+      { key: "sessionId", type: "string", size: 64, required: true },
+      { key: "transcriptId", type: "string", size: 64, required: true },
+      { key: "segmentIndex", type: "integer", required: true },
+      { key: "questionId", type: "string", size: 64, required: false },
+      { key: "questionText", type: "string", size: 4000, required: false, default: "" },
+      { key: "sourceText", type: "string", size: TEXT_SIZE, required: true },
+      { key: "claim", type: "string", size: 4000, required: true },
+      {
+        key: "claimType",
+        type: "enum",
+        elements: ["pain_point", "need", "motivation", "barrier", "behavior", "contradiction", "other"],
+        required: true,
+      },
+      {
+        key: "stance",
+        type: "enum",
+        elements: ["positive", "negative", "conditional", "neutral"],
+        required: true,
+      },
+      { key: "participantRole", type: "string", size: 256, required: false, default: "" },
+      { key: "participantIndustry", type: "string", size: 256, required: false, default: "" },
+      { key: "participantCompanySize", type: "string", size: 64, required: false, default: "" },
+      { key: "purchaseStatus", type: "string", size: 64, required: false, default: "" },
+      // 1024 Jina floats as a JSON string. Appwrite has no portable vector
+      // index in the supported local stack, so recall reads this controlled
+      // internal corpus and uses deterministic cosine similarity.
+      { key: "embedding", type: "string", size: JSON_SIZE, required: true },
+      { key: "embeddingModel", type: "string", size: 128, required: true },
+      { key: "contentHash", type: "string", size: 64, required: true },
+      { key: "createdAt", type: "datetime", required: true },
+    ],
+    indexes: [
+      { key: "by_survey", type: "key", attributes: ["surveyId"] },
+      { key: "by_session", type: "key", attributes: ["sessionId"] },
+      { key: "by_owner_survey", type: "key", attributes: ["ownerUserId", "surveyId"] },
+      { key: "source_claim_unique", type: "unique", attributes: ["transcriptId", "segmentIndex", "contentHash"] },
+    ],
+  },
+  {
     id: "recordings",
     name: "Recording",
     permissions: SERVER_ONLY,

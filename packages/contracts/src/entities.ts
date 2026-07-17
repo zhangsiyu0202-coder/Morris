@@ -441,6 +441,69 @@ export const TranscriptSchema = z.object({
   finalizedAt: datetime(),
 });
 
+/**
+ * An internally indexed, atomic research claim. This supports evidence recall
+ * for survey analysis; it is not a second report or a researcher knowledge
+ * base. `embedding` is the Appwrite JSON-string bridge for the fixed Jina
+ * vector, owned by research-evidence-discovery.
+ */
+export const ResearchEvidenceClaimTypeSchema = z.enum([
+  "pain_point",
+  "need",
+  "motivation",
+  "barrier",
+  "behavior",
+  "contradiction",
+  "other",
+]);
+export type ResearchEvidenceClaimType = z.infer<typeof ResearchEvidenceClaimTypeSchema>;
+
+export const ResearchEvidenceStanceSchema = z.enum([
+  "positive",
+  "negative",
+  "conditional",
+  "neutral",
+]);
+export type ResearchEvidenceStance = z.infer<typeof ResearchEvidenceStanceSchema>;
+
+export const RESEARCH_EVIDENCE_EMBEDDING_DIMENSIONS = 1024;
+
+const researchEvidenceEmbedding = z.preprocess((val) => {
+  if (typeof val === "string") {
+    try {
+      return JSON.parse(val);
+    } catch {
+      return val;
+    }
+  }
+  return val;
+}, z.array(z.number().finite()).length(RESEARCH_EVIDENCE_EMBEDDING_DIMENSIONS));
+
+export const ResearchEvidenceSchema = z.object({
+  $id: z.string(),
+  ownerUserId: z.string(),
+  workspaceId: z.string().nullish(),
+  surveyId: z.string(),
+  sessionId: z.string(),
+  transcriptId: z.string(),
+  segmentIndex: z.number().int().nonnegative(),
+  questionId: z.string().nullish(),
+  questionText: z.string().trim().max(4_000).default(""),
+  sourceText: z.string().trim().min(1).max(100_000),
+  claim: z.string().trim().min(1).max(4_000),
+  claimType: ResearchEvidenceClaimTypeSchema,
+  stance: ResearchEvidenceStanceSchema,
+  participantRole: z.string().trim().max(256).default(""),
+  participantIndustry: z.string().trim().max(256).default(""),
+  participantCompanySize: z.string().trim().max(64).default(""),
+  purchaseStatus: z.string().trim().max(64).default(""),
+  embedding: researchEvidenceEmbedding,
+  embeddingModel: z.string().trim().min(1).max(128),
+  contentHash: z.string().regex(/^[a-f0-9]{64}$/i),
+  createdAt: datetime(),
+});
+export type ResearchEvidence = z.infer<typeof ResearchEvidenceSchema>;
+
 export const RecordingSchema = z.object({
   $id: z.string(),
   sessionId: z.string(),

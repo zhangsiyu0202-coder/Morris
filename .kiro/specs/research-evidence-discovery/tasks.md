@@ -2,7 +2,7 @@
 
 - [x] Add the Jina embedding provider adapter with validated 1024-dimensional
   query/passage modes, retry classification, and unit tests.
-- [ ] Add `ResearchEvidence` contract and Appwrite collection with deterministic
+- [x] Add `ResearchEvidence` contract and Appwrite collection with deterministic
   source identity and property tests.
 - [ ] Add `analyzeEvidence` Function to segment finalized transcripts, extract
   atomic claims, and index idempotently.
