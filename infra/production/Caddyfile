@@ -1,0 +1,14 @@
+http://merism.fun {
+  @appwrite path /v1/*
+  handle @appwrite {
+    reverse_proxy appwrite:80
+  }
+
+  handle {
+    reverse_proxy web:3000
+  }
+}
+
+livekit.merism.fun {
+  reverse_proxy livekit:7880
+}

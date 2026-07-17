@@ -1,0 +1,149 @@
+x-appwrite-production-env: &appwrite-production-env
+  _APP_ENV: production
+  _APP_DOMAIN: merism.fun
+  _APP_DOMAIN_TARGET: merism.fun
+  _APP_DOMAIN_FUNCTIONS: functions.merism.fun
+  _APP_OPTIONS_ROUTER_PROTECTION: enabled
+  _APP_OPTIONS_FORCE_HTTPS: enabled
+
+services:
+  appwrite:
+    ports: !reset []
+    environment:
+      <<: *appwrite-production-env
+
+  appwrite-realtime:
+    ports: !reset []
+    environment:
+      <<: *appwrite-production-env
+
+  appwrite-worker-databases:
+    environment:
+      <<: *appwrite-production-env
+
+  appwrite-worker-builds:
+    environment:
+      <<: *appwrite-production-env
+
+  appwrite-worker-functions:
+    environment:
+      <<: *appwrite-production-env
+
+  appwrite-task-scheduler-functions:
+    environment:
+      <<: *appwrite-production-env
+
+  appwrite-task-scheduler-executions:
+    environment:
+      <<: *appwrite-production-env
+
+  openruntimes-executor:
+    environment:
+      OPR_EXECUTOR_ENV: production
+
+  openruntimes-proxy:
+    environment:
+      OPR_PROXY_ENV: production
+
+  livekit:
+    command: --bind 0.0.0.0
+    ports: !reset
+      - "7881:7881"
+      - "7882:7882/udp"
+    volumes: !reset
+      - livekit_data:/data
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
+      LIVEKIT_CONFIG: |-
+        port: 7880
+        rtc:
+          tcp_port: 7881
+          udp_port: 7882
+          use_external_ip: true
+        redis:
+          address: redis:6379
+        log_level: info
+
+  livekit-egress:
+    environment:
+      EGRESS_CONFIG_FILE: ""
+      EGRESS_CONFIG_BODY: |-
+        log_level: info
+        api_key: ${LIVEKIT_API_KEY}
+        api_secret: ${LIVEKIT_API_SECRET}
+        ws_url: ws://livekit:7880
+        insecure: true
+        redis:
+          address: redis:6379
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/production/Dockerfile.web
+      args:
+        NEXT_PUBLIC_APPWRITE_ENDPOINT: ${NEXT_PUBLIC_APPWRITE_ENDPOINT}
+        NEXT_PUBLIC_APPWRITE_PROJECT_ID: ${NEXT_PUBLIC_APPWRITE_PROJECT_ID}
+        NEXT_PUBLIC_ISSUE_TOKEN_FUNCTION_ID: ${NEXT_PUBLIC_ISSUE_TOKEN_FUNCTION_ID}
+    restart: unless-stopped
+    environment:
+      APPWRITE_ENDPOINT: http://appwrite/v1
+      APPWRITE_PROJECT_ID: ${APPWRITE_PROJECT_ID}
+      APPWRITE_API_KEY: ${APPWRITE_API_KEY}
+      APP_URL: ${APP_URL}
+      NEXT_PUBLIC_APPWRITE_ENDPOINT: ${NEXT_PUBLIC_APPWRITE_ENDPOINT}
+      NEXT_PUBLIC_APPWRITE_PROJECT_ID: ${NEXT_PUBLIC_APPWRITE_PROJECT_ID}
+      NEXT_PUBLIC_ISSUE_TOKEN_FUNCTION_ID: ${NEXT_PUBLIC_ISSUE_TOKEN_FUNCTION_ID}
+      LITELLM_BASE_URL: http://litellm:4000/v1
+      LITELLM_API_KEY: ${LITELLM_API_KEY}
+      LITELLM_CHAT_MODEL: ${LITELLM_CHAT_MODEL}
+      LITELLM_REASONING_MODEL: ${LITELLM_REASONING_MODEL}
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL}
+      RESEND_FROM_NAME: ${RESEND_FROM_NAME:-Merism}
+      RESEND_REPLY_TO: ${RESEND_REPLY_TO:-${RESEND_FROM_EMAIL}}
+    depends_on:
+      - appwrite
+      - litellm
+
+  agent:
+    build:
+      context: ../..
+      dockerfile: infra/production/Dockerfile.agent
+    restart: unless-stopped
+    environment:
+      LIVEKIT_URL: ws://livekit:7880
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+      APPWRITE_ENDPOINT: http://appwrite/v1
+      APPWRITE_PROJECT_ID: ${APPWRITE_PROJECT_ID}
+      APPWRITE_API_KEY: ${APPWRITE_API_KEY}
+      GEMINI_LIVE_API_KEY: ${GEMINI_LIVE_API_KEY}
+      GEMINI_LIVE_BASE_URL: ${GEMINI_LIVE_BASE_URL}
+      GEMINI_LIVE_MODEL: ${GEMINI_LIVE_MODEL:-gemini-2.5-flash-native-audio-preview-12-2025}
+      MERISM_VOICE_AGENT_NAME: ${MERISM_VOICE_AGENT_NAME:-merism-gemini-live-video-worker}
+      HEALTH_PORT: 8082
+    depends_on:
+      - appwrite
+      - livekit
+
+  caddy:
+    image: caddy:2.8.4-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../production/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      default:
+      merism-edge:
+
+networks:
+  merism-edge:
+    external: true
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -13,7 +13,11 @@ def readiness() -> dict[str, bool]:
     return {
         "appwrite": bool(os.getenv("APPWRITE_ENDPOINT")),
         "livekit": bool(os.getenv("LIVEKIT_URL")),
-        "providers": bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")),
+        "providers": bool(
+            os.getenv("GEMINI_LIVE_API_KEY")
+            or os.getenv("GEMINI_API_KEY")
+            or os.getenv("GOOGLE_API_KEY")
+        ),
     }
 
 

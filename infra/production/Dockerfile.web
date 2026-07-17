@@ -1,0 +1,28 @@
+FROM node:22-alpine
+
+WORKDIR /app
+RUN corepack enable
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages ./packages
+COPY apps/web ./apps/web
+
+RUN pnpm install --frozen-lockfile
+
+# The development checkout links apps/web/.env.local to the repo-root .env.
+# Docker deliberately excludes that secret file, so remove the dangling link
+# and inject only the public build-time settings below.
+RUN rm -f apps/web/.env.local
+
+ARG NEXT_PUBLIC_APPWRITE_ENDPOINT
+ARG NEXT_PUBLIC_APPWRITE_PROJECT_ID
+ARG NEXT_PUBLIC_ISSUE_TOKEN_FUNCTION_ID
+ENV NEXT_PUBLIC_APPWRITE_ENDPOINT=$NEXT_PUBLIC_APPWRITE_ENDPOINT
+ENV NEXT_PUBLIC_APPWRITE_PROJECT_ID=$NEXT_PUBLIC_APPWRITE_PROJECT_ID
+ENV NEXT_PUBLIC_ISSUE_TOKEN_FUNCTION_ID=$NEXT_PUBLIC_ISSUE_TOKEN_FUNCTION_ID
+
+RUN pnpm --filter @merism/web build
+
+ENV NODE_ENV=production
+EXPOSE 3000
+CMD ["pnpm", "--filter", "@merism/web", "start"]
