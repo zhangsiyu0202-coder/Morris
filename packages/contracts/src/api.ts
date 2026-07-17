@@ -3,6 +3,7 @@ import {
   LinkKind,
   ProbeConfigSchema,
   QuestionBlockSchema,
+  RecruitmentCriteriaSchema,
   QuestionType,
   StimulusSchema,
   SurveySectionSchema,
@@ -65,6 +66,62 @@ export const AnalyzeSurveyResponseSchema = z.object({
   reportId: z.string(),
   scope: z.literal("survey"),
 });
+
+/** Server-action boundary for one explicit researcher recruitment send. */
+export const SendRecruitmentInvitationsRequestSchema = z.object({
+  surveyId: z.string().min(1),
+  linkId: z.string().min(1),
+  recipients: z.string().min(1).max(10_000),
+});
+
+export const SaveRecruitmentCriteriaRequestSchema = z.object({
+  surveyId: z.string().min(1),
+  criteria: RecruitmentCriteriaSchema,
+});
+
+export const RecruitmentActionErrorCodeSchema = z.enum([
+  "invalid_input",
+  "not_authenticated",
+  "survey_not_owned",
+  "link_survey_mismatch",
+  "recruitment_criteria_not_saved",
+  "recruitment_target_participant_count_required",
+  "recruitment_requires_production_link",
+  "link_revoked",
+  "link_expired",
+  "link_exhausted",
+  "recipient_required",
+  "invalid_recipient_email",
+  "recipient_limit_exceeded",
+  "app_url_not_configured",
+  "invalid_interview_url",
+  "email_delivery_failed",
+  "internal_error",
+]);
+
+const RecruitmentActionFailureSchema = z.object({
+  ok: z.literal(false),
+  error: RecruitmentActionErrorCodeSchema,
+  traceId: z.string().min(1),
+});
+
+export const SendRecruitmentInvitationsResponseSchema = z.object({
+  total: z.number().int().nonnegative(),
+  sent: z.number().int().nonnegative(),
+  duplicate: z.number().int().nonnegative(),
+  unavailable: z.boolean(),
+  unavailableReason: z.enum(["resend_not_configured", "app_url_not_configured"]).optional(),
+});
+
+export const SaveRecruitmentCriteriaResponseSchema = z.discriminatedUnion("ok", [
+  z.object({ ok: z.literal(true), data: RecruitmentCriteriaSchema }),
+  RecruitmentActionFailureSchema,
+]);
+
+export const SendRecruitmentInvitationsActionResponseSchema = z.discriminatedUnion("ok", [
+  z.object({ ok: z.literal(true), data: SendRecruitmentInvitationsResponseSchema }),
+  RecruitmentActionFailureSchema,
+]);
 
 export const DashboardWidgetCatalogEntrySchema = z.object({
   widgetType: DashboardWidgetType,
@@ -1150,6 +1207,12 @@ export type ProbeRound = z.infer<typeof ProbeRoundSchema>;
 export type ProbeResult = z.infer<typeof ProbeResultSchema>;
 export type AnalyzeSurveyRequest = z.infer<typeof AnalyzeSurveyRequestSchema>;
 export type AnalyzeSurveyResponse = z.infer<typeof AnalyzeSurveyResponseSchema>;
+export type SaveRecruitmentCriteriaRequest = z.infer<typeof SaveRecruitmentCriteriaRequestSchema>;
+export type SaveRecruitmentCriteriaResponse = z.infer<typeof SaveRecruitmentCriteriaResponseSchema>;
+export type SendRecruitmentInvitationsRequest = z.infer<typeof SendRecruitmentInvitationsRequestSchema>;
+export type SendRecruitmentInvitationsResponse = z.infer<typeof SendRecruitmentInvitationsResponseSchema>;
+export type SendRecruitmentInvitationsActionResponse = z.infer<typeof SendRecruitmentInvitationsActionResponseSchema>;
+export type RecruitmentActionErrorCode = z.infer<typeof RecruitmentActionErrorCodeSchema>;
 export type DashboardWidgetCatalogEntry = z.infer<typeof DashboardWidgetCatalogEntrySchema>;
 export type DashboardWidgetRunInput = z.infer<typeof DashboardWidgetRunInputSchema>;
 export type DashboardWidgetResult = z.infer<typeof DashboardWidgetResultSchema>;

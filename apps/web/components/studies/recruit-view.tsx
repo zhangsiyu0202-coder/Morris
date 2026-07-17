@@ -2,19 +2,26 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Link2, Bot, Globe, Copy, Check, PauseCircle, RefreshCw } from "lucide-react";
-import type { InterviewLink } from "@merism/contracts";
+import { Link2, Bot, Mail, Copy, Check, PauseCircle, RefreshCw, TriangleAlert } from "lucide-react";
+import type {
+  InterviewLink,
+  RecruitmentCriteria,
+  SendRecruitmentInvitationsResponse,
+} from "@merism/contracts";
 import { createInterviewLink, revokeInterviewLink } from "@/lib/actions/links";
+import {
+  saveRecruitmentCriteria,
+  sendRecruitmentInvitations,
+} from "@/lib/actions/recruitment";
 
 /**
  * 招募视图 — 真实链接管理。
  *
  * "分享链接" 标签下展示 surveyId 对应的 interview_links 列表,并允许
- * 新建/停用。不包含任何计费、配额、第三方招募面板等概念
- * (见 AGENTS.md 永久排除项)。
+ * 新建/停用，并提供研究员明确触发的邮件邀请（ADR-0021）。
  */
 
-type Choice = "link" | "test" | "external";
+type Choice = "link" | "test" | "email";
 
 const CARDS: {
   id: Choice;
@@ -24,7 +31,7 @@ const CARDS: {
 }[] = [
   { id: "link", icon: Link2, title: "分享链接", desc: "通过匿名链接邀请受访者参与访谈。" },
   { id: "test", icon: Bot, title: "测试访谈", desc: "在正式招募前，自己先体验一遍访谈流程。" },
-  { id: "external", icon: Globe, title: "外部渠道", desc: "对接外部受访渠道。敬请期待。" },
+  { id: "email", icon: Mail, title: "邮件邀请", desc: "按招募条件向手工填写的收件人发送邀请。" },
 ];
 
 const MODE_LABELS: Record<InterviewLink["mode"], string> = {
@@ -348,6 +355,240 @@ function LinkRow({
   );
 }
 
+function invitationErrorMessage(code: string): string {
+  const messages: Record<string, string> = {
+    recruitment_target_participant_count_required: "请先填写招募人数。",
+    recruitment_criteria_not_saved: "请先保存招募条件。",
+    recruitment_requires_production_link: "请选择正式访谈链接，不能使用测试链接。",
+    link_revoked: "所选链接已停用，请选择另一条链接。",
+    link_expired: "所选链接已过期，请选择另一条链接。",
+    link_exhausted: "所选链接已用尽，请创建或选择另一条链接。",
+    recipient_required: "请至少填写一个收件人邮箱。",
+    invalid_recipient_email: "收件人中包含无效邮箱地址。",
+    recipient_limit_exceeded: "一次最多发送给 50 个收件人。",
+    app_url_not_configured: "当前环境未配置站点地址，无法生成访谈链接。",
+  };
+  return messages[code] ?? "操作未完成，请检查填写内容后重试。";
+}
+
+function RecruitmentEmailPanel({
+  surveyId,
+  links,
+  initialCriteria,
+}: {
+  surveyId: string;
+  links: InterviewLink[];
+  initialCriteria: RecruitmentCriteria;
+}) {
+  const router = useRouter();
+  const [criteria, setCriteria] = useState(initialCriteria);
+  const [savedCriteria, setSavedCriteria] = useState(initialCriteria);
+  const [linkId, setLinkId] = useState("");
+  const [recipients, setRecipients] = useState("");
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [sendSummary, setSendSummary] = useState<SendRecruitmentInvitationsResponse | null>(null);
+  const [saving, startSaving] = useTransition();
+  const [sending, startSending] = useTransition();
+  const activeProductionLinks = links.filter(
+    (link) =>
+      link.kind === "production" &&
+      !link.isRevoked &&
+      link.usedCount < link.maxUses &&
+      new Date(link.expiresAt).getTime() > Date.now(),
+  );
+  const hasUnsavedCriteria = JSON.stringify(criteria) !== JSON.stringify(savedCriteria);
+
+  function updateNumber(field: "minAge" | "maxAge" | "targetParticipantCount", value: string) {
+    setCriteria((current) => ({ ...current, [field]: value ? Number(value) : undefined }));
+  }
+
+  function saveCriteria() {
+    setFeedback(null);
+    startSaving(async () => {
+      try {
+        const result = await saveRecruitmentCriteria({ surveyId, criteria });
+        if (!result.ok) {
+          setFeedback(invitationErrorMessage(result.error));
+          return;
+        }
+        setCriteria(result.data);
+        setSavedCriteria(result.data);
+        setFeedback("招募条件已保存。");
+        router.refresh();
+      } catch {
+        setFeedback(invitationErrorMessage("internal_error"));
+      }
+    });
+  }
+
+  function sendInvitations() {
+    setFeedback(null);
+    setSendSummary(null);
+    startSending(async () => {
+      try {
+        const result = await sendRecruitmentInvitations({ surveyId, linkId, recipients });
+        if (!result.ok) {
+          setFeedback(invitationErrorMessage(result.error));
+          return;
+        }
+        setSendSummary(result.data);
+      } catch {
+        setFeedback(invitationErrorMessage("internal_error"));
+      }
+    });
+  }
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <section className="rounded-lg border border-ink-200 bg-ink-0 p-6 shadow-sm" aria-labelledby="criteria-title">
+        <div className="mb-5">
+          <h2 id="criteria-title" className="font-ui text-display-md font-semibold text-ink-900">招募条件</h2>
+          <p className="mt-1 font-ui text-body-sm text-ink-600">
+            这些条件会写入邮件邀请。只保存调研要求，不会保存或导入受访者联系人。
+          </p>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label className="font-ui text-body-sm text-ink-900" htmlFor="recruit-min-age">
+            最小年龄
+            <input
+              id="recruit-min-age"
+              type="number"
+              min={0}
+              max={120}
+              value={criteria.minAge ?? ""}
+              onChange={(event) => updateNumber("minAge", event.target.value)}
+              className="mt-1.5 block w-full rounded border border-ink-200 bg-ink-0 px-3 py-2 font-ui text-body-sm text-ink-900 outline-none focus:border-ink-900"
+            />
+          </label>
+          <label className="font-ui text-body-sm text-ink-900" htmlFor="recruit-max-age">
+            最大年龄
+            <input
+              id="recruit-max-age"
+              type="number"
+              min={0}
+              max={120}
+              value={criteria.maxAge ?? ""}
+              onChange={(event) => updateNumber("maxAge", event.target.value)}
+              className="mt-1.5 block w-full rounded border border-ink-200 bg-ink-0 px-3 py-2 font-ui text-body-sm text-ink-900 outline-none focus:border-ink-900"
+            />
+          </label>
+          <label className="font-ui text-body-sm text-ink-900" htmlFor="recruit-gender">
+            性别要求
+            <input
+              id="recruit-gender"
+              type="text"
+              value={criteria.genderRequirement}
+              onChange={(event) => setCriteria((current) => ({ ...current, genderRequirement: event.target.value }))}
+              placeholder="例如：女性优先，欢迎所有性别报名"
+              className="mt-1.5 block w-full rounded border border-ink-200 bg-ink-0 px-3 py-2 font-ui text-body-sm text-ink-900 outline-none placeholder:text-ink-400 focus:border-ink-900"
+            />
+          </label>
+          <label className="font-ui text-body-sm text-ink-900" htmlFor="recruit-target-count">
+            招募人数 <span aria-hidden="true">*</span>
+            <input
+              id="recruit-target-count"
+              type="number"
+              min={1}
+              value={criteria.targetParticipantCount ?? ""}
+              onChange={(event) => updateNumber("targetParticipantCount", event.target.value)}
+              className="mt-1.5 block w-full rounded border border-ink-200 bg-ink-0 px-3 py-2 font-ui text-body-sm text-ink-900 outline-none focus:border-ink-900"
+            />
+          </label>
+        </div>
+        <label className="mt-4 block font-ui text-body-sm text-ink-900" htmlFor="recruit-allocation">
+          人数分层说明
+          <textarea
+            id="recruit-allocation"
+            value={criteria.participantAllocationNotes}
+            onChange={(event) => setCriteria((current) => ({ ...current, participantAllocationNotes: event.target.value }))}
+            placeholder="例如：一线城市与非一线城市各至少 6 人"
+            rows={3}
+            className="mt-1.5 block w-full resize-y rounded border border-ink-200 bg-ink-0 px-3 py-2 font-ui text-body-sm text-ink-900 outline-none placeholder:text-ink-400 focus:border-ink-900"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={saveCriteria}
+          disabled={saving}
+          className="mt-5 inline-flex h-10 items-center rounded bg-mauve-200 px-4 font-ui text-body-sm font-medium text-ink-900 transition-colors hover:bg-mauve-100 disabled:opacity-50"
+        >
+          {saving ? "保存中…" : "保存招募条件"}
+        </button>
+      </section>
+
+      <section className="rounded-lg border border-ink-200 bg-ink-0 p-6 shadow-sm" aria-labelledby="send-title">
+        <div className="mb-5">
+          <h2 id="send-title" className="font-ui text-display-md font-semibold text-ink-900">发送邮件邀请</h2>
+          <p className="mt-1 font-ui text-body-sm text-ink-600">
+            选择一条仍可使用的正式链接，手工输入邮箱后发送。每位收件人会单独收到邮件，地址不会彼此暴露。
+          </p>
+        </div>
+        <label className="block font-ui text-body-sm text-ink-900" htmlFor="recruit-link">
+          正式访谈链接
+          <select
+            id="recruit-link"
+            value={linkId}
+            onChange={(event) => setLinkId(event.target.value)}
+            className="mt-1.5 flex w-full justify-between rounded border border-ink-200 bg-ink-0 px-3 py-2 font-data text-body-sm text-ink-900 outline-none focus:border-ink-900"
+          >
+            <option value="">请选择链接</option>
+            {activeProductionLinks.map((link) => (
+              <option key={link.$id} value={link.$id}>
+                {link.label || link.token.slice(0, 8)} · {link.usedCount}/{link.maxUses} · 至 {link.expiresAt.slice(0, 10)}
+              </option>
+            ))}
+          </select>
+        </label>
+        {!activeProductionLinks.length && (
+          <p className="mt-2 flex items-start gap-2 font-ui text-body-sm text-ink-600" role="status">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            暂无可用的正式链接。请先在「分享链接」中新建一条未停用、未过期的链接。
+          </p>
+        )}
+        <label className="mt-4 block font-ui text-body-sm text-ink-900" htmlFor="recruit-recipients">
+          收件人邮箱
+          <textarea
+            id="recruit-recipients"
+            value={recipients}
+            onChange={(event) => setRecipients(event.target.value)}
+            placeholder="每行一个邮箱，或用逗号分隔；一次最多 50 个"
+            rows={5}
+            className="mt-1.5 block w-full resize-y rounded border border-ink-200 bg-ink-0 px-3 py-2 font-ui text-body-sm text-ink-900 outline-none placeholder:text-ink-400 focus:border-ink-900"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={sendInvitations}
+          disabled={sending || hasUnsavedCriteria || !linkId || !recipients.trim() || !criteria.targetParticipantCount}
+          className="mt-5 inline-flex h-10 items-center rounded bg-mauve-200 px-4 font-ui text-body-sm font-medium text-ink-900 transition-colors hover:bg-mauve-100 disabled:opacity-50"
+        >
+          {sending ? "发送中…" : "发送邮件邀请"}
+        </button>
+        {hasUnsavedCriteria && (
+          <p className="mt-2 font-ui text-body-sm text-ink-600" role="status">
+            招募条件已修改，请先保存后再发送。
+          </p>
+        )}
+      </section>
+
+      {feedback && (
+        <p className="flex items-start gap-2 rounded border border-ink-200 bg-mauve-50 p-3 font-ui text-body-sm text-ink-900" role="status">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          {feedback}
+        </p>
+      )}
+      {sendSummary && (
+        <p className="flex items-start gap-2 rounded border border-ink-200 bg-mauve-50 p-3 font-ui text-body-sm text-ink-900" role="status">
+          <Check className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          {sendSummary.unavailable
+            ? "Resend 尚未配置或站点地址不可用，因此未发送邮件。"
+            : `已处理 ${sendSummary.total} 位收件人：发送 ${sendSummary.sent} 封，去重跳过 ${sendSummary.duplicate} 封。`}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
@@ -356,10 +597,12 @@ export function RecruitView({
   surveyId,
   initialLinks,
   testLink,
+  initialCriteria,
 }: {
   surveyId: string;
   initialLinks: InterviewLink[];
   testLink: InterviewLink | null;
+  initialCriteria: RecruitmentCriteria;
 }) {
   const router = useRouter();
   const [choice, setChoice] = useState<Choice>("link");
@@ -484,13 +727,8 @@ export function RecruitView({
         </div>
       )}
 
-      {/* 外部渠道 tab */}
-      {choice === "external" && (
-        <div className="grid max-w-xl place-items-center rounded-lg border border-dashed border-ink-200 px-6 py-12 text-center">
-          <Globe className="mb-3 size-7 text-ink-400" strokeWidth={1.5} />
-          <p className="font-display text-display-md text-ink-900">敬请期待</p>
-          <p className="mt-1 font-ui text-body-sm text-ink-400">外部受访渠道对接正在规划中。</p>
-        </div>
+      {choice === "email" && (
+        <RecruitmentEmailPanel surveyId={surveyId} links={links} initialCriteria={initialCriteria} />
       )}
     </div>
   );

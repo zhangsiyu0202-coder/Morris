@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { RecruitmentCriteriaSchema, SurveySchema } from "@merism/contracts";
+import {
+  RecruitmentCriteriaSchema,
+  SaveRecruitmentCriteriaRequestSchema,
+  SendRecruitmentInvitationsActionResponseSchema,
+  SurveySchema,
+} from "@merism/contracts";
 
 describe("contracts: recruitment criteria", () => {
   it("accepts age, gender, target count, and participant allocation notes", () => {
@@ -60,5 +65,20 @@ describe("contracts: recruitment criteria", () => {
       recruitmentCriteria: { targetParticipantCount: 12 },
     });
     expect(survey.recruitmentCriteria.targetParticipantCount).toBe(12);
+  });
+
+  it("requires a traceable, typed outcome at the recruitment action boundary", () => {
+    expect(
+      SaveRecruitmentCriteriaRequestSchema.safeParse({
+        surveyId: "survey_1",
+        criteria: { targetParticipantCount: 12 },
+      }).success,
+    ).toBe(true);
+    expect(
+      SendRecruitmentInvitationsActionResponseSchema.safeParse({
+        ok: false,
+        error: "invalid_input",
+      }).success,
+    ).toBe(false);
   });
 });
