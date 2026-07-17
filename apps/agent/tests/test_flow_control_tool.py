@@ -1,7 +1,7 @@
 import asyncio
 
 import pytest
-from livekit.agents.llm import StopResponse, ToolError
+from livekit.agents.llm import ToolError
 
 from agent.flow_control_tool import build_flow_control_tool
 
@@ -16,14 +16,13 @@ class _Receiver:
         return self.accepted
 
 
-def test_flow_control_tool_hands_the_result_to_the_active_host_without_replying() -> None:
+def test_flow_control_tool_returns_an_acknowledgement_for_the_live_session() -> None:
     async def run() -> None:
         receiver = _Receiver(accepted=True)
         tool = build_flow_control_tool(receiver)
 
         assert tool.id == "merism_flow_control"
-        with pytest.raises(StopResponse):
-            await tool(None, kind="condition", matched=True)
+        assert await tool(None, kind="condition", matched=True) == "flow_control_accepted"
         assert receiver.calls == [{"kind": "condition", "matched": True, "question": None}]
 
     asyncio.run(run())

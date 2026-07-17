@@ -1,5 +1,6 @@
 import asyncio
 
+from google.genai import types
 from livekit.agents.voice.agent_activity import AgentActivity
 
 from agent.runtime import build_gemini_session
@@ -18,6 +19,10 @@ def test_build_gemini_session_enables_live_video_and_both_transcriptions() -> No
 
         assert session is not None
         assert room_options.video_input is not False
+        # The private FlowRunner tool must unblock Gemini after every call
+        # without scheduling a respondent-facing tool reply.
+        assert session.llm._opts.tool_behavior is types.Behavior.NON_BLOCKING
+        assert session.llm._opts.tool_response_scheduling is types.FunctionResponseScheduling.SILENT
 
     asyncio.run(build())
 

@@ -26,6 +26,11 @@ def build_gemini_session(
         modalities=["AUDIO"],
         input_audio_transcription=types.AudioTranscriptionConfig(),
         output_audio_transcription=types.AudioTranscriptionConfig(),
+        # FlowRunner uses one private function tool for bounded decisions.
+        # Its acknowledgement must release Gemini's function-call turn without
+        # scheduling a respondent-facing follow-up generation.
+        tool_behavior=types.Behavior.NON_BLOCKING,
+        tool_response_scheduling=types.FunctionResponseScheduling.SILENT,
         context_window_compression=types.ContextWindowCompressionConfig(
             sliding_window=types.SlidingWindow(),
         ),

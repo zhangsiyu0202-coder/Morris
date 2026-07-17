@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Literal, Protocol
 
 from livekit.agents import RunContext, function_tool
-from livekit.agents.llm import StopResponse, ToolError
+from livekit.agents.llm import ToolError
 
 
 class FlowControlReceiver(Protocol):
@@ -27,7 +27,7 @@ def build_flow_control_tool(receiver: FlowControlReceiver):
         kind: Literal["condition", "probe_question"],
         matched: bool | None = None,
         question: str | None = None,
-    ) -> None:
+    ) -> str:
         accepted = await receiver.accept_flow_control(
             kind=kind,
             matched=matched,
@@ -35,8 +35,10 @@ def build_flow_control_tool(receiver: FlowControlReceiver):
         )
         if not accepted:
             raise ToolError("No matching FlowRunner control request is active.")
-        # The decision is consumed by FlowRunner. Returning StopResponse keeps
-        # Gemini from creating a follow-up spoken reply for this private turn.
-        raise StopResponse()
+        # Gemini must receive a FunctionResponse before the active call is
+        # retired. The runtime configures this private tool as NON_BLOCKING
+        # with SILENT scheduling, so the acknowledgement creates no audible
+        # output.
+        return "flow_control_accepted"
 
     return merism_flow_control
