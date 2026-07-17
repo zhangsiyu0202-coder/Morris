@@ -1,6 +1,6 @@
 # Tasks — research-evidence-discovery
 
-- [ ] Add the Jina embedding provider adapter with validated 1024-dimensional
+- [x] Add the Jina embedding provider adapter with validated 1024-dimensional
   query/passage modes, retry classification, and unit tests.
 - [ ] Add `ResearchEvidence` contract and Appwrite collection with deterministic
   source identity and property tests.
