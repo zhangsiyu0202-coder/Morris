@@ -1,0 +1,14 @@
+[Unit]
+Description=Merism Docker proxy bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/socat TCP-LISTEN:7898,bind=172.24.0.1,reuseaddr,fork TCP:127.0.0.1:57777
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

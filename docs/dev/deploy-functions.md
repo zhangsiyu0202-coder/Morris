@@ -1,6 +1,6 @@
 # Deploying Appwrite Functions to the local stack
 
-Walks through deploying the six Functions in `apps/functions/*` against
+Walks through deploying the seven Functions in `apps/functions/*` against
 the local Docker stack. Same procedure works against a remote Appwrite
 instance with the corresponding env values.
 
@@ -41,6 +41,39 @@ Bring the stack up:
 pnpm stack:up           # starts Appwrite + LiveKit + OpenRuntimes
 pnpm schema:apply       # idempotent collection / bucket setup
 ```
+
+### WSL proxy bridge (only when builds cannot reach npm)
+
+If the host reaches npm through a WSL loopback proxy but Appwrite's isolated
+`runtimes` Docker network times out, install the included systemd bridge. It
+binds only to the Docker gateway `172.24.0.1:7898` and forwards to the local
+proxy at `127.0.0.1:57777`; it is not exposed on the LAN. If a network restart
+changes that local proxy port, update the service's `ExecStart` target, then
+run `sudo systemctl daemon-reload && sudo systemctl restart merism-docker-proxy-bridge`.
+
+```bash
+sudo apt-get install -y socat
+sudo install -m 0644 infra/systemd/merism-docker-proxy-bridge.service \
+  /etc/systemd/system/merism-docker-proxy-bridge.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now merism-docker-proxy-bridge.service
+
+# Verify the build container can reach npm through the bridge.
+docker run --rm --network runtimes \
+  -e HTTP_PROXY=http://172.24.0.1:7898 \
+  -e HTTPS_PROXY=http://172.24.0.1:7898 \
+  node:21-alpine npm ping --registry=https://registry.npmjs.org
+```
+
+Deploy through that proxy only for this local environment:
+
+```bash
+MERISM_NPM_PROXY=http://172.24.0.1:7898 scripts/deploy-function.sh analyzeEvidence
+```
+
+`MERISM_NPM_PROXY` is opt-in. The deploy script writes it solely to the
+temporary `.npmrc` sent to Appwrite's build container; it is not committed and
+is not injected into the Function runtime.
 
 If this is the first time running against a fresh-volumes Appwrite
 (after `pnpm stack:reset`), bootstrap project + API key first:
@@ -101,7 +134,8 @@ for FN in issueLivekitToken finalizeInterviewSession analyzeSession analyzeSurve
 done
 
 # 4. push env vars onto each Function (rewrites localhost -> appwrite/livekit
-#    so in-runtime SDK calls reach the right hosts)
+#    so in-runtime SDK calls reach the right hosts). The script assigns stable
+#    Appwrite variable IDs and marks `*_KEY` / `*_SECRET` values as secrets.
 for FN in issueLivekitToken finalizeInterviewSession analyzeSession analyzeSurvey analyzeSessionVisual analyzeEvidence; do
   scripts/set-function-vars.sh "$FN"
 done

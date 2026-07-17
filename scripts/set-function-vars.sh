@@ -7,7 +7,9 @@
 #
 # Usage: scripts/set-function-vars.sh <functionName> [VAR_NAME ...]
 # Reads the listed vars from .env (or all *_KEY/*_URL/*_API_* vars by default)
-# and pushes them to the function with PUT/POST.
+# and pushes them to the function with PUT/POST. Appwrite requires a distinct
+# variable ID as well as an environment key, so new IDs are deterministic and
+# repeated invocations update variables in place.
 set -euo pipefail
 FN="${1:-}"
 shift || true
@@ -43,7 +45,7 @@ else
   )
 fi
 
-# List existing vars for delete-then-create idempotence.
+# List existing vars for update-or-create idempotence.
 EXISTING=$(curl -s -H "X-Appwrite-Project: $PID" -H "X-Appwrite-Key: $KEY" \
   "$EP/functions/$FN/variables")
 
@@ -56,7 +58,9 @@ for NAME in "${NAMES[@]}"; do
     VAL="$(in_network_endpoint "$VAL")"
   fi
 
-  # Delete any prior value (idempotent).
+  # Appwrite exposes the immutable variable id separately from its environment
+  # key. Reuse it when present; otherwise make a stable valid ID below 36
+  # characters so retries cannot create duplicates.
   EXISTING_ID=$(echo "$EXISTING" | python3 -c "
 import sys, json
 d=json.load(sys.stdin)
@@ -64,16 +68,23 @@ for v in d.get('variables',[]):
     if v.get('key') == '$NAME':
         print(v.get('\$id',''))
         break")
-  if [ -n "$EXISTING_ID" ]; then
-    curl -s -X DELETE -H "X-Appwrite-Project: $PID" -H "X-Appwrite-Key: $KEY" \
-      "$EP/functions/$FN/variables/$EXISTING_ID" > /dev/null
+  SECRET=false
+  if [[ "$NAME" == *_KEY || "$NAME" == *_SECRET ]]; then
+    SECRET=true
   fi
 
-  # Create.
-  RESP=$(curl -s -X POST -H "X-Appwrite-Project: $PID" -H "X-Appwrite-Key: $KEY" \
-    -H "Content-Type: application/json" \
-    -d "$(python3 -c "import json,sys; print(json.dumps({'key':'$NAME','value':sys.argv[1]}))" "$VAL")" \
-    "$EP/functions/$FN/variables")
+  if [ -n "$EXISTING_ID" ]; then
+    RESP=$(curl -s -X PUT -H "X-Appwrite-Project: $PID" -H "X-Appwrite-Key: $KEY" \
+      -H "Content-Type: application/json" \
+      -d "$(python3 -c "import json,sys; print(json.dumps({'key':sys.argv[1],'value':sys.argv[2],'secret':sys.argv[3] == 'true'}))" "$NAME" "$VAL" "$SECRET")" \
+      "$EP/functions/$FN/variables/$EXISTING_ID")
+  else
+    VARIABLE_ID="v_$(printf '%s' "$FN:$NAME" | sha256sum | cut -c1-32)"
+    RESP=$(curl -s -X POST -H "X-Appwrite-Project: $PID" -H "X-Appwrite-Key: $KEY" \
+      -H "Content-Type: application/json" \
+      -d "$(python3 -c "import json,sys; print(json.dumps({'variableId':sys.argv[1],'key':sys.argv[2],'value':sys.argv[3],'secret':sys.argv[4] == 'true'}))" "$VARIABLE_ID" "$NAME" "$VAL" "$SECRET")" \
+      "$EP/functions/$FN/variables")
+  fi
   STATUS=$(echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print('OK' if d.get('\$id') else 'ERR: '+str(d.get('message','')))")
   echo "  $NAME -> $STATUS"
 done

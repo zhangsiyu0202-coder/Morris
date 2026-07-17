@@ -10,6 +10,9 @@
 # Example: scripts/deploy-function.sh issueLivekitToken
 #
 # Reads APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY from .env.
+# Set MERISM_NPM_PROXY only when the Appwrite build container needs an HTTP(S)
+# proxy to download external runtime dependencies. It is written to the staged
+# .npmrc only; it is never added to source control or Function variables.
 
 set -euo pipefail
 
@@ -46,8 +49,15 @@ set +a
 # otherwise self-contained deployment depend on registry access.
 STAGE="$(mktemp -d)"
 trap "rm -rf '$STAGE'" EXIT
-mkdir -p "$STAGE/$(dirname "$ENTRYPOINT")"
-cp "$SRC/$ENTRYPOINT" "$STAGE/$ENTRYPOINT"
+# tsup may emit sibling chunks for dynamic imports. Copy the complete entrypoint
+# directory, not merely main.js, so Node can resolve those ESM chunks at
+# runtime inside Appwrite.
+ENTRYPOINT_DIR="$(dirname "$ENTRYPOINT")"
+if [ "$ENTRYPOINT_DIR" = "." ]; then
+  cp "$SRC/$ENTRYPOINT" "$STAGE/$ENTRYPOINT"
+else
+  cp -R "$SRC/$ENTRYPOINT_DIR" "$STAGE/$ENTRYPOINT_DIR"
+fi
 
 # Strip workspace deps from package.json (they're bundled by tsup) so npm
 # install in the function container doesn't try to resolve them. Keep
@@ -68,9 +78,26 @@ node -e "
   require('fs').writeFileSync('$STAGE/package.json', JSON.stringify(minimal, null, 2));
 "
 
+# Appwrite runs `npm install` inside an isolated build container. When its
+# network cannot reach the registry directly, include an npm-only proxy config
+# in this deployment archive. Keep this opt-in so remote deployments preserve
+# their own egress policy.
+if [ -n "${MERISM_NPM_PROXY:-}" ]; then
+  printf 'proxy=%s\nhttps-proxy=%s\n' "$MERISM_NPM_PROXY" "$MERISM_NPM_PROXY" \
+    > "$STAGE/.npmrc"
+fi
+
 # Tarball.
 TARBALL="$STAGE/code.tar.gz"
-( cd "$STAGE" && tar -czf "$TARBALL" "$(dirname "$ENTRYPOINT")" package.json )
+if [ "$ENTRYPOINT_DIR" = "." ]; then
+  TAR_INPUTS=("$ENTRYPOINT" package.json)
+else
+  TAR_INPUTS=("$ENTRYPOINT_DIR" package.json)
+fi
+if [ -f "$STAGE/.npmrc" ]; then
+  TAR_INPUTS+=(.npmrc)
+fi
+( cd "$STAGE" && tar -czf "$TARBALL" "${TAR_INPUTS[@]}" )
 
 # Push deployment via REST. Activate=true so the new build replaces the
 # previous (or first-ever) deployment as soon as it goes live.
