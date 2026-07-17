@@ -99,6 +99,12 @@ export interface AnalyzeSessionDeps {
    */
   enqueueVisualAnalysis?(sessionId: string): Promise<void>;
   /**
+   * Best-effort async handoff to the evidence index. The index has
+   * deterministic evidence IDs, so a failed execution can be rerun without
+   * duplicating claims. Optional until the operator deploys analyzeEvidence.
+   */
+  enqueueEvidenceAnalysis?(sessionId: string): Promise<void>;
+  /**
    * LLM-based qualityFlags derivation (semantic flags subset). Mechanical
    * flags are derived in `quality-flags.ts` outside this dep; the handler
    * merges both and enforces mutex per design §5.
@@ -326,6 +332,15 @@ export async function analyzeSession(
       await deps.enqueueVisualAnalysis(sessionId);
     } catch {
       // intentional swallow — the durable queued row + reaper will re-drive it.
+    }
+  }
+
+  if (deps.enqueueEvidenceAnalysis) {
+    try {
+      await deps.enqueueEvidenceAnalysis(sessionId);
+    } catch {
+      // Intentional best-effort handoff: the durable completed transcript is
+      // still present and analyzeEvidence can be retried idempotently later.
     }
   }
 

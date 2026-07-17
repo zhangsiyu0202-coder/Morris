@@ -53,6 +53,21 @@ export const AnalyzeSessionResponseSchema = z.object({
   scope: z.enum(["session", "survey"]),
 });
 
+// analyzeEvidence: idempotently turns one completed session transcript into
+// internal ResearchEvidence records. It is not a report surface; the survey
+// analysis Function consumes these records later through recall and rerank.
+export const AnalyzeEvidenceRequestSchema = z.object({
+  sessionId: z.string().min(1),
+});
+
+export const AnalyzeEvidenceResponseSchema = z.object({
+  sessionId: z.string(),
+  indexedCount: z.number().int().nonnegative(),
+});
+
+export type AnalyzeEvidenceRequest = z.infer<typeof AnalyzeEvidenceRequestSchema>;
+export type AnalyzeEvidenceResponse = z.infer<typeof AnalyzeEvidenceResponseSchema>;
+
 // analyzeSurvey: rolls every existing AnalysisReport(scope=session) for one
 // survey into a single AnalysisReport(scope=survey). Triggered by the agent
 // worker on session completion (D1+D4) and by the researcher via the

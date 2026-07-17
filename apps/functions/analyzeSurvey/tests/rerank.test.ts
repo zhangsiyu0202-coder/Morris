@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildRerankCandidates,
+  buildRecallBoundedRerankCandidates,
   validateRerankResults,
 } from "../src/rerank.js";
 
@@ -62,6 +63,28 @@ describe("survey finding rerank policy", () => {
     ])).toEqual([
       { kind: "insight", sourceId: "insight-trust", rank: 1, relevanceScore: 0.92 },
       { kind: "theme", sourceId: "theme-pricing", rank: 2, relevanceScore: 0.72 },
+    ]);
+  });
+
+  it("does not let Cohere see themes absent from Jina recall", () => {
+    const candidates = buildRecallBoundedRerankCandidates({
+      themes: [
+        { id: "theme-recalled", label: "Owner gap", mentions: 2, pct: 100, sentiment: "negative" },
+        { id: "theme-not-recalled", label: "Price", mentions: 1, pct: 50, sentiment: "neutral" },
+      ],
+      themeContexts: [
+        { id: "theme-recalled", label: "Owner gap", description: "No rollout owner.", evidenceRefs: [{ transcriptId: "tx-1", segmentIndex: 1 }] },
+        { id: "theme-not-recalled", label: "Price", description: "Cost concern.", evidenceRefs: [{ transcriptId: "tx-2", segmentIndex: 2 }] },
+      ],
+      insights: [
+        { id: "insight-owner", title: "Ownership", text: "Ownership blocks rollout.", confidence: 0.8, supportingThemeIds: ["theme-recalled"] },
+        { id: "insight-price", title: "Price", text: "Price matters.", confidence: 0.8, supportingThemeIds: ["theme-not-recalled"] },
+      ],
+      recalledRefs: new Set(["tx-1:1"]),
+    });
+    expect(candidates.map((candidate) => candidate.finding)).toEqual([
+      { kind: "theme", sourceId: "theme-recalled" },
+      { kind: "insight", sourceId: "insight-owner" },
     ]);
   });
 

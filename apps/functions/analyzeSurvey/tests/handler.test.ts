@@ -12,6 +12,23 @@ import type {
   ThemeAssignments,
 } from "../src/rollup";
 import type { RerankFindings } from "../src/rerank";
+import type { ResearchEvidence } from "@merism/contracts";
+
+const queryVector = Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0));
+const baseEvidence: ResearchEvidence[] = [
+  {
+    $id: "ev-1", ownerUserId: "user-owner", surveyId: "sv1", sessionId: "sess1", transcriptId: "sess1",
+    segmentIndex: 0, questionText: "", sourceText: "Evidence one", claim: "Owner gap", claimType: "barrier",
+    stance: "negative", participantRole: "", participantIndustry: "", participantCompanySize: "", purchaseStatus: "",
+    embedding: queryVector, embeddingModel: "jina-embeddings-v5-text-small", contentHash: "a".repeat(64), createdAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    $id: "ev-2", ownerUserId: "user-owner", surveyId: "sv1", sessionId: "sess1", transcriptId: "sess1",
+    segmentIndex: 1, questionText: "", sourceText: "Evidence two", claim: "Price sensitivity", claimType: "barrier",
+    stance: "negative", participantRole: "", participantIndustry: "", participantCompanySize: "", purchaseStatus: "",
+    embedding: queryVector, embeddingModel: "jina-embeddings-v5-text-small", contentHash: "b".repeat(64), createdAt: "2026-01-01T00:00:00.000Z",
+  },
+];
 
 const baseSurvey: SurveyContextLite = {
   surveyId: "sv1",
@@ -111,6 +128,8 @@ interface Overrides {
   combine?: (input: any) => Promise<ExtractedThemes>;
   compose?: any;
   rerank?: RerankFindings;
+  evidence?: ResearchEvidence[];
+  embedQuery?: (input: any) => Promise<number[]>;
   upsert?: (args: any) => Promise<{ reportId: string }>;
 }
 
@@ -121,12 +140,16 @@ function makeDeps(overrides: Overrides = {}): AnalyzeSurveyDeps & {
   composeSpy: ReturnType<typeof vi.fn>;
   combineSpy: ReturnType<typeof vi.fn>;
   rerankSpy: ReturnType<typeof vi.fn>;
+  evidenceSpy: ReturnType<typeof vi.fn>;
+  embedQuerySpy: ReturnType<typeof vi.fn>;
 } {
   const upsertSpy = vi.fn(overrides.upsert ?? (async () => ({ reportId: "ar-survey" })));
   const extractSpy = vi.fn(overrides.extract ?? (async () => baseExtracted));
   const assignSpy = vi.fn(overrides.assign ?? (async () => baseAssignments));
   const composeSpy = vi.fn(overrides.compose ?? (async () => baseCompose));
   const rerankSpy = vi.fn(overrides.rerank ?? (async () => []));
+  const evidenceSpy = vi.fn(async () => overrides.evidence ?? baseEvidence);
+  const embedQuerySpy = vi.fn(overrides.embedQuery ?? (async () => queryVector));
   // Wave F: combine 默认 spy — N≤THRESHOLD 走单 chunk 路径时不会被调用,
   // 默认实现取第一份 raw themes 透传。
   const combineSpy = vi.fn(
@@ -145,6 +168,8 @@ function makeDeps(overrides: Overrides = {}): AnalyzeSurveyDeps & {
     composeInsightsWithLLM: composeSpy,
     rerankModel: "cohere-rerank-v4.0-pro",
     rerankFindings: rerankSpy,
+    findSurveyEvidence: evidenceSpy,
+    embedResearchQuery: embedQuerySpy,
     upsertSurveyReport: upsertSpy,
     upsertSpy,
     extractSpy,
@@ -152,6 +177,8 @@ function makeDeps(overrides: Overrides = {}): AnalyzeSurveyDeps & {
     composeSpy,
     combineSpy,
     rerankSpy,
+    evidenceSpy,
+    embedQuerySpy,
   } as any;
 }
 
@@ -296,6 +323,25 @@ describe("analyzeSurvey handler", () => {
     const result = await analyzeSurvey({ surveyId: "sv1" }, deps);
 
     expect(result).toEqual({ status: 500, body: { error: "reranker_unavailable" } });
+    expect(deps.upsertSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects rather than bypassing recall when the Jina query embedding fails", async () => {
+    const deps = makeDeps({
+      assign: async () => ({
+        assignments: [{
+          themeId: "t1",
+          sessionIds: ["sess1"],
+          evidenceRefs: [{ transcriptId: "sess1", segmentIndex: 0 }],
+        }],
+      }),
+      embedQuery: async () => {
+        throw new Error("provider unavailable");
+      },
+    });
+    const result = await analyzeSurvey({ surveyId: "sv1" }, deps);
+    expect(result).toEqual({ status: 500, body: { error: "evidence_recall_unavailable" } });
+    expect(deps.rerankSpy).not.toHaveBeenCalled();
     expect(deps.upsertSpy).not.toHaveBeenCalled();
   });
 

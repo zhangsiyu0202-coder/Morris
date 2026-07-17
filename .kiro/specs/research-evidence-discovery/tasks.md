@@ -4,7 +4,7 @@
   query/passage modes, retry classification, and unit tests.
 - [x] Add `ResearchEvidence` contract and Appwrite collection with deterministic
   source identity and property tests.
-- [ ] Add `analyzeEvidence` Function to segment finalized transcripts, extract
+- [x] Add `analyzeEvidence` Function to segment finalized transcripts, extract
   atomic claims, and index idempotently.
 - [ ] Add deterministic vector recall, bounded Cohere rerank, and finding
   support/counter-evidence checks to the survey analysis path.

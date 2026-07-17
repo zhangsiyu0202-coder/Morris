@@ -210,6 +210,7 @@ LLM 调用全部走 `llmGate` (p-limit 包装), default 最多 8 并发, env `ME
 | `apps/web/lib/actions/notebooks.ts::createNotebook` | withLLMCall | `action.notebooks.generateReport` |
 | `apps/web/lib/actions/guide-ai.ts::generateGuide / expandSection` | withLLMCall | `action.guide-ai.<fn>` |
 | `apps/functions/analyzeSession/src/deps.ts` (text-pass + quality-flags) | withLLMCall | `function.analyzeSession.<phase>` |
+| `apps/functions/analyzeEvidence/src/deps.ts` (atomic-claim extraction) | withLLMCall | `function.analyzeEvidence.extract-claims` |
 | `apps/functions/analyzeSurvey/src/deps.ts` (extract / assign / combine / compose) | withLLMCall | `function.analyzeSurvey.<phase>` |
 | `apps/web/lib/conversations/title.ts::generateConversationTitle` | withLLMCall | `morris.title.generate` |
 

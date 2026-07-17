@@ -54,6 +54,7 @@ const EXEMPT_PREFIXES = [
   // field-name guard below still runs.
   "apps/functions/analyzeSession/",
   "apps/functions/analyzeSurvey/",
+  "apps/functions/analyzeEvidence/",
   // The Python Gemini Live worker only speaks to the
   // finalizeInterviewSession Function boundary for persistence.
   "apps/agent/",

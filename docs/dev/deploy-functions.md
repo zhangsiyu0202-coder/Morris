@@ -1,6 +1,6 @@
 # Deploying Appwrite Functions to the local stack
 
-Walks through deploying the five Functions in `apps/functions/*` against
+Walks through deploying the six Functions in `apps/functions/*` against
 the local Docker stack. Same procedure works against a remote Appwrite
 instance with the corresponding env values.
 
@@ -85,7 +85,7 @@ For each Function in `apps/functions/<name>/`:
 EP=http://localhost:8080/v1
 PID=merism
 
-for FN in issueLivekitToken finalizeInterviewSession analyzeSession analyzeSurvey analyzeSessionVisual; do
+for FN in issueLivekitToken finalizeInterviewSession analyzeSession analyzeSurvey analyzeSessionVisual analyzeEvidence; do
   curl -s -X POST "$EP/functions" \
     -H "X-Appwrite-Project: $PID" -H "X-Appwrite-Key: $APPWRITE_API_KEY" \
     -H "Content-Type: application/json" \
@@ -96,17 +96,25 @@ done
 pnpm -r --filter './apps/functions/*' build
 
 # 3. push the bundles + minimal package.json to Appwrite
-for FN in issueLivekitToken finalizeInterviewSession analyzeSession analyzeSurvey analyzeSessionVisual; do
+for FN in issueLivekitToken finalizeInterviewSession analyzeSession analyzeSurvey analyzeSessionVisual analyzeEvidence; do
   scripts/deploy-function.sh "$FN"
 done
 
 # 4. push env vars onto each Function (rewrites localhost -> appwrite/livekit
 #    so in-runtime SDK calls reach the right hosts)
-for FN in issueLivekitToken finalizeInterviewSession analyzeSession analyzeSurvey analyzeSessionVisual; do
+for FN in issueLivekitToken finalizeInterviewSession analyzeSession analyzeSurvey analyzeSessionVisual analyzeEvidence; do
   scripts/set-function-vars.sh "$FN"
 done
 
-# 5. issueLivekitToken needs a separate LIVEKIT_INTERNAL_URL var so the
+# 5. Enable completed-session → evidence-index handoff. The index itself uses
+# APPWRITE_*, DEEPSEEK_*, and AIHUBMIX_* values pushed above. It defaults to
+# https://api.inferera.com when AIHUBMIX_BASE_URL is not set.
+curl -s -X POST "$EP/functions/analyzeSession/variables" \
+  -H "X-Appwrite-Project: $PID" -H "X-Appwrite-Key: $APPWRITE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"key":"ANALYZE_EVIDENCE_FUNCTION_ID","value":"analyzeEvidence"}'
+
+# 6. issueLivekitToken needs a separate LIVEKIT_INTERNAL_URL var so the
 #    Function's RoomServiceClient reaches LiveKit at ws://livekit:7880
 #    while the response body still tells the browser ws://localhost:7880
 curl -s -X POST "$EP/functions/issueLivekitToken/variables" \
@@ -118,9 +126,9 @@ curl -s -X POST "$EP/functions/issueLivekitToken/variables" \
 ## Verify
 
 ```bash
-# 1. all four built (status=ready, buildSize > 1 MB confirms node_modules included)
+# 1. all deployed Functions built (status=ready, buildSize > 1 MB confirms node_modules included)
 . .env
-for FN in issueLivekitToken analyzeSession analyzeSurvey analyzeSessionVisual; do
+for FN in issueLivekitToken analyzeSession analyzeSurvey analyzeSessionVisual analyzeEvidence; do
   curl -s -H "X-Appwrite-Project: $APPWRITE_PROJECT_ID" -H "X-Appwrite-Key: $APPWRITE_API_KEY" \
     "$APPWRITE_ENDPOINT/functions/$FN/deployments" | \
     python3 -c "import sys,json; d=json.load(sys.stdin); dep=d['deployments'][0]; print(f'$FN status={dep[\"status\"]} buildSize={dep[\"buildSize\"]}')"

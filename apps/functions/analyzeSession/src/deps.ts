@@ -75,6 +75,7 @@ export function createRealDeps(): AnalyzeSessionDeps {
   const db = new Databases(client);
   const storageFunctions = new Functions(client);
   const visualFunctionId = process.env.ANALYZE_SESSION_VISUAL_FUNCTION_ID;
+  const evidenceFunctionId = process.env.ANALYZE_EVIDENCE_FUNCTION_ID;
   const deepseek = createDeepSeek({
     apiKey: env.DEEPSEEK_API_KEY,
     ...(env.DEEPSEEK_BASE_URL ? { baseURL: env.DEEPSEEK_BASE_URL } : {}),
@@ -150,6 +151,18 @@ export function createRealDeps(): AnalyzeSessionDeps {
               visualFunctionId,
               JSON.stringify({ sessionId }),
               true, // async: don't block the text path on the video pass
+            );
+          },
+        }
+      : {}),
+
+    ...(evidenceFunctionId
+      ? {
+          async enqueueEvidenceAnalysis(sessionId: string): Promise<void> {
+            await storageFunctions.createExecution(
+              evidenceFunctionId,
+              JSON.stringify({ sessionId }),
+              true, // async: claims/embeddings never block text report delivery
             );
           },
         }

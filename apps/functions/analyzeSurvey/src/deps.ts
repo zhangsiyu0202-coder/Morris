@@ -3,6 +3,7 @@ import { Client, Databases, ID, Permission, Query, Role } from "node-appwrite";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { generateText, Output } from "ai";
 import { withLLMCall, createLogger } from "@merism/observability";
+import { ResearchEvidenceSchema } from "@merism/contracts";
 import type {
   AnalyzeSurveyDeps,
   AssignThemesInput,
@@ -36,6 +37,7 @@ import {
 } from "./rollup.js";
 import { ROLLUP_LLM_TEMPERATURE } from "./constants.js";
 import { createAiHubMixReranker } from "./reranker.js";
+import { createAiHubMixJinaEmbedder } from "./embedder.js";
 
 const DB = "merism";
 
@@ -101,10 +103,29 @@ export function createRealDeps(): AnalyzeSurveyDeps {
     baseUrl: env.AIHUBMIX_BASE_URL,
     model: rerankModel,
   });
+  const embedResearchQuery = createAiHubMixJinaEmbedder({
+    apiKey: env.AIHUBMIX_API_KEY,
+    baseUrl: env.AIHUBMIX_BASE_URL,
+  });
 
   return {
     now: () => Date.now(),
     rerankModel,
+    embedResearchQuery,
+
+    async findSurveyEvidence(surveyId) {
+      const evidence = [];
+      const pageSize = 100;
+      for (let offset = 0; ; offset += pageSize) {
+        const result = await db.listDocuments(DB, "research_evidence", [
+          Query.equal("surveyId", surveyId),
+          Query.limit(pageSize),
+          Query.offset(offset),
+        ]);
+        evidence.push(...result.documents.map((document) => ResearchEvidenceSchema.parse(document)));
+        if (result.documents.length < pageSize) return evidence;
+      }
+    },
 
     async findSurveyContext(surveyId: string): Promise<SurveyContextLite | null> {
       try {

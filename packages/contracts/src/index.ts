@@ -12,6 +12,8 @@ export * from "./flow-engine.js";
 export type {
   AnalyzeSessionRequest,
   AnalyzeSessionResponse,
+  AnalyzeEvidenceRequest,
+  AnalyzeEvidenceResponse,
   AnalysisReportInput,
   AnalysisReportOutput,
   BuildInterviewRoomMetadataInput,

@@ -100,6 +100,25 @@ export function buildRerankCandidates(input: BuildRerankCandidatesInput): Rerank
   return [...themes, ...insights];
 }
 
+/**
+ * Reranking is only allowed after dense recall. Keep a theme eligible only
+ * when at least one existing report ref appears in the recalled evidence set;
+ * linked insights follow those surviving themes.
+ */
+export function buildRecallBoundedRerankCandidates(input: BuildRerankCandidatesInput & {
+  recalledRefs: ReadonlySet<string>;
+}): RerankCandidateRecord[] {
+  return buildRerankCandidates({
+    ...input,
+    themeContexts: input.themeContexts.map((context) => ({
+      ...context,
+      evidenceRefs: context.evidenceRefs.filter((ref) =>
+        input.recalledRefs.has(`${ref.transcriptId}:${ref.segmentIndex}`),
+      ),
+    })),
+  });
+}
+
 /** Converts provider results into a complete, stable persisted ranking. */
 export function validateRerankResults(
   candidates: readonly RerankCandidateRecord[],

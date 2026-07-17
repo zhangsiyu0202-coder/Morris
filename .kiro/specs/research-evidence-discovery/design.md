@@ -29,9 +29,9 @@ evidence index is an internal analysis input, not a second report surface.
 ## Provider contracts
 
 Jina uses the OpenAI-compatible embeddings request shape routed through
-`AIHUBMIX_BASE_URL` when set. The adapter defaults only to the configured
-AIHubMix URL; the deployment configuration must use `https://api.inferera.com`
-when the primary route is unavailable. It sends model
+`AIHUBMIX_BASE_URL` when set. The adapter defaults to
+`https://api.inferera.com`, the operator-selected fallback route, when the
+deployment does not override it. It sends model
 `jina-embeddings-v5-text-small`, `dimensions: 1024`, and one of the two task
 modes required by REQ-2.
 

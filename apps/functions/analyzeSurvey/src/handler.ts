@@ -15,6 +15,7 @@ import {
   AnalyzeSurveyRequestSchema,
   type AnalyzeSurveyResponse,
   type GenerationMeta,
+  type ResearchEvidence,
   type SurveyAnalysisReportOutput,
   type SurveyQuestionStat,
 } from "@merism/contracts";
@@ -45,9 +46,11 @@ import {
 import { PROMPT_VERSION } from "./prompts/version.js";
 import {
   buildFindingRerankQuery,
-  buildRerankCandidates,
+  buildRecallBoundedRerankCandidates,
   type RerankFindings,
 } from "./rerank.js";
+import { recallEvidence, type RecallableEvidence } from "./evidence-recall.js";
+import { JINA_EMBEDDING_MODEL, type JinaEmbeddingTask } from "./embedder.js";
 
 export interface SessionDigest {
   sessionId: string;
@@ -119,6 +122,9 @@ export interface AnalyzeSurveyDeps {
   findSurveyContext(surveyId: string): Promise<SurveyContextLite | null>;
   findCompletedSessions(surveyId: string): Promise<SessionDigest[]>;
   findSessionReports(sessionIds: string[]): Promise<SessionLevelReport[]>;
+  /** Internal atomic-claim corpus for deterministic dense recall. */
+  findSurveyEvidence?(surveyId: string): Promise<ResearchEvidence[]>;
+  embedResearchQuery?(input: { text: string; task: JinaEmbeddingTask }): Promise<number[]>;
   // analysis-report-v2 R4 三阶段 LLM (替代原单段 rollupWithLLM):
   extractThemesWithLLM(input: ExtractThemesInput): Promise<ExtractedThemes>;
   assignThemesWithLLM(input: AssignThemesInput): Promise<ThemeAssignments>;
@@ -297,19 +303,44 @@ export async function analyzeSurvey(
     summary: compose.questionSummaries[stat.questionId] ?? stat.summary,
   }));
 
-  const rerankCandidates = buildRerankCandidates({
-    themes: themesFinal,
-    themeContexts: enriched.themeContexts,
-    insights: compose.insights,
+  const rerankQuery = buildFindingRerankQuery({
+    surveyTitle: survey.title,
+    researchIntent: survey.researchIntent ?? "",
   });
+  let rerankCandidates: ReturnType<typeof buildRecallBoundedRerankCandidates> = [];
+  if (deps.findSurveyEvidence && deps.embedResearchQuery) {
+    try {
+      const evidence = await deps.findSurveyEvidence(surveyId);
+      const hasReportEvidenceRefs = enriched.themeContexts.some((context) => context.evidenceRefs.length > 0);
+      if (evidence.length > 0 && hasReportEvidenceRefs) {
+        const queryEmbedding = await deps.embedResearchQuery({
+          text: rerankQuery,
+          task: "retrieval.query",
+        });
+        const recalled = recallEvidence({
+          queryEmbedding,
+          embeddingModel: JINA_EMBEDDING_MODEL,
+          evidence: evidence as RecallableEvidence[],
+          limit: Math.min(200, evidence.length),
+        });
+        rerankCandidates = buildRecallBoundedRerankCandidates({
+          themes: themesFinal,
+          themeContexts: enriched.themeContexts,
+          insights: compose.insights,
+          recalledRefs: new Set(
+            recalled.map((result) => `${result.evidence.transcriptId}:${result.evidence.segmentIndex}`),
+          ),
+        });
+      }
+    } catch {
+      return { status: 500, body: { error: "evidence_recall_unavailable" } };
+    }
+  }
   let rankedFindings: NonNullable<SurveyAnalysisReportOutput["rankedFindings"]> = [];
   if (rerankCandidates.length > 0) {
     try {
       rankedFindings = await deps.rerankFindings({
-        query: buildFindingRerankQuery({
-          surveyTitle: survey.title,
-          researchIntent: survey.researchIntent,
-        }),
+        query: rerankQuery,
         candidates: rerankCandidates,
       });
     } catch {

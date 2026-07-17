@@ -77,6 +77,7 @@ interface DepsOverrides {
   survey?: SurveyContext | null;
   llm?: () => Promise<AnalysisReportOutput>;
   enqueue?: () => Promise<void>;
+  enqueueEvidence?: () => Promise<void>;
   upsert?: (args: any) => Promise<{ reportId: string }>;
 }
 
@@ -84,6 +85,7 @@ function makeDeps(overrides: DepsOverrides = {}): AnalyzeSessionDeps & {
   upsertSpy: ReturnType<typeof vi.fn>;
   llmSpy: ReturnType<typeof vi.fn>;
   enqueueSpy: ReturnType<typeof vi.fn>;
+  enqueueEvidenceSpy: ReturnType<typeof vi.fn>;
   ensureSpy: ReturnType<typeof vi.fn>;
 } {
   const upsertSpy = vi.fn(
@@ -91,6 +93,7 @@ function makeDeps(overrides: DepsOverrides = {}): AnalyzeSessionDeps & {
   );
   const llmSpy = vi.fn(overrides.llm ?? (async () => baseLlmOutput));
   const enqueueSpy = vi.fn(overrides.enqueue ?? (async () => undefined));
+  const enqueueEvidenceSpy = vi.fn(overrides.enqueueEvidence ?? (async () => undefined));
   const ensureSpy = vi.fn(async () => undefined);
   return {
     now: () => Date.UTC(2026, 5, 6, 0, 0, 0),
@@ -102,10 +105,12 @@ function makeDeps(overrides: DepsOverrides = {}): AnalyzeSessionDeps & {
     analyzeWithLLM: llmSpy,
     ensureVisualJobQueued: ensureSpy,
     enqueueVisualAnalysis: enqueueSpy,
+    enqueueEvidenceAnalysis: enqueueEvidenceSpy,
     upsertSessionReport: upsertSpy,
     upsertSpy,
     llmSpy,
     enqueueSpy,
+    enqueueEvidenceSpy,
     ensureSpy,
   } as any;
 }
@@ -223,6 +228,13 @@ describe("analyzeSession handler", () => {
     expect(result.status).toBe(200);
     expect(result.body).toMatchObject({ reportId: "ar-new", scope: "session" });
     expect(deps.upsertSpy).toHaveBeenCalled();
+  });
+
+  it("hands completed sessions to the idempotent evidence index after report persistence", async () => {
+    const deps = makeDeps();
+    const result = await analyzeSession({ sessionId: "sess1" }, deps);
+    expect(result.status).toBe(200);
+    expect(deps.enqueueEvidenceSpy).toHaveBeenCalledWith("sess1");
   });
 
   it("is idempotent at the deps boundary: same sessionId resolves to same report row", async () => {
