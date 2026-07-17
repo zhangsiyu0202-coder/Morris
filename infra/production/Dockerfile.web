@@ -9,6 +9,8 @@ COPY apps/web ./apps/web
 
 RUN pnpm install --frozen-lockfile
 
+COPY apps/functions ./apps/functions
+
 # The development checkout links apps/web/.env.local to the repo-root .env.
 # Docker deliberately excludes that secret file, so remove the dangling link
 # and inject only the public build-time settings below.
