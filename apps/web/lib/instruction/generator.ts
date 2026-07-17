@@ -15,7 +15,7 @@
  *   - Few-shot example (one hand-written reference)
  *   - Low temperature for stable output
  *
- * Model: DeepSeek (Morris side per steering; the interview-worker Qwen
+ * Model: LiteLLM-routed DeepSeek (Morris side per steering; the interview-worker Qwen
  * stays for the ASR/TTS/interview chain). Observability goes through
  * `withLLMCall` scope `action.instruction.generate` per
  * `errors-and-observability.md::LLM call observability`.
@@ -25,10 +25,11 @@
 
 import { generateText } from "ai";
 import { withLLMCall, createLogger } from "@merism/observability";
-import { createDeepSeek } from "@ai-sdk/deepseek";
+import { createLiteLlmProvider } from "@merism/llm";
 
-const deepseek = createDeepSeek({
-  apiKey: process.env.DEEPSEEK_API_KEY ?? process.env.AI_GATEWAY_API_KEY,
+const litellm = createLiteLlmProvider({
+  baseUrl: process.env.LITELLM_BASE_URL ?? "http://localhost:4000/v1",
+  apiKey: process.env.LITELLM_API_KEY ?? "",
 });
 
 // ---------------------------------------------------------------------------
@@ -143,11 +144,11 @@ export async function generateInstructionBaseline(
     {
       scope: "action.instruction.generate",
       traceId,
-      defaultModel: "deepseek-chat",
+      defaultModel: process.env.LITELLM_CHAT_MODEL ?? "deepseek-v4-flash",
     },
     () =>
       generateText({
-        model: deepseek("deepseek-chat"),
+        model: litellm(process.env.LITELLM_CHAT_MODEL ?? "deepseek-v4-flash"),
         maxRetries: 2,
         // Low temperature stabilizes the section structure. Higher would
         // start reordering or renaming sections which breaks downstream

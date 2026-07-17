@@ -134,8 +134,10 @@ for FN in issueLivekitToken finalizeInterviewSession analyzeSession analyzeSurve
 done
 
 # 4. push env vars onto each Function (rewrites localhost -> appwrite/livekit
-#    so in-runtime SDK calls reach the right hosts). The script assigns stable
-#    Appwrite variable IDs and marks `*_KEY` / `*_SECRET` values as secrets.
+#    and LiteLLM so in-runtime SDK calls reach the right hosts). The script
+#    assigns stable Appwrite variable IDs and marks `*_KEY` / `*_SECRET` values
+#    as secrets. For the three text-analysis Functions it uses a narrow,
+#    LiteLLM-only set and removes obsolete direct `DEEPSEEK_*` variables.
 for FN in issueLivekitToken finalizeInterviewSession analyzeSession analyzeSurvey analyzeSessionVisual analyzeEvidence; do
   scripts/set-function-vars.sh "$FN"
 done

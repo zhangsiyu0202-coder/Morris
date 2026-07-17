@@ -32,8 +32,8 @@ vi.mock("@merism/observability", () => ({
   }),
 }));
 
-vi.mock("@ai-sdk/deepseek", () => ({
-  createDeepSeek: () => (modelId: string) => ({ modelId }),
+vi.mock("@merism/llm", () => ({
+  createLiteLlmProvider: () => (modelId: string) => ({ modelId }),
 }));
 
 // Import AFTER the mocks so the module resolves the stubs.

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Client, Databases, Permission, Query, Role } from "node-appwrite";
-import { createDeepSeek } from "@ai-sdk/deepseek";
+import { createLiteLlmProvider } from "@merism/llm";
 import { generateText, Output } from "ai";
 import { createLogger, withLLMCall } from "@merism/observability";
 import {
@@ -17,9 +17,9 @@ interface Env {
   APPWRITE_ENDPOINT: string;
   APPWRITE_PROJECT_ID: string;
   APPWRITE_API_KEY: string;
-  DEEPSEEK_API_KEY: string;
-  DEEPSEEK_MODEL?: string;
-  DEEPSEEK_BASE_URL?: string;
+  LITELLM_API_KEY: string;
+  LITELLM_BASE_URL: string;
+  LITELLM_MODEL?: string;
   AIHUBMIX_API_KEY: string;
   AIHUBMIX_BASE_URL?: string;
 }
@@ -35,9 +35,9 @@ function requireEnv(): Env {
     APPWRITE_ENDPOINT: req("APPWRITE_ENDPOINT"),
     APPWRITE_PROJECT_ID: req("APPWRITE_PROJECT_ID"),
     APPWRITE_API_KEY: req("APPWRITE_API_KEY"),
-    DEEPSEEK_API_KEY: req("DEEPSEEK_API_KEY"),
-    DEEPSEEK_MODEL: process.env.DEEPSEEK_MODEL,
-    DEEPSEEK_BASE_URL: process.env.DEEPSEEK_BASE_URL,
+    LITELLM_API_KEY: req("LITELLM_API_KEY"),
+    LITELLM_BASE_URL: req("LITELLM_BASE_URL"),
+    LITELLM_MODEL: process.env.LITELLM_MODEL,
     AIHUBMIX_API_KEY: req("AIHUBMIX_API_KEY"),
     AIHUBMIX_BASE_URL: process.env.AIHUBMIX_BASE_URL,
   };
@@ -75,11 +75,8 @@ export function createRealDeps(): AnalyzeEvidenceDeps {
     .setProject(env.APPWRITE_PROJECT_ID)
     .setKey(env.APPWRITE_API_KEY);
   const db = new Databases(client);
-  const deepseek = createDeepSeek({
-    apiKey: env.DEEPSEEK_API_KEY,
-    ...(env.DEEPSEEK_BASE_URL ? { baseURL: env.DEEPSEEK_BASE_URL } : {}),
-  });
-  const modelName = env.DEEPSEEK_MODEL ?? "deepseek-chat";
+  const litellm = createLiteLlmProvider({ apiKey: env.LITELLM_API_KEY, baseUrl: env.LITELLM_BASE_URL });
+  const modelName = env.LITELLM_MODEL ?? "deepseek-v4-flash";
   const embedEvidence = createAiHubMixJinaEmbedder({
     apiKey: env.AIHUBMIX_API_KEY,
     baseUrl: env.AIHUBMIX_BASE_URL,
@@ -145,7 +142,7 @@ export function createRealDeps(): AnalyzeEvidenceDeps {
           defaultModel: modelName,
         },
         () => generateText({
-          model: deepseek(modelName),
+          model: litellm(modelName),
           maxRetries: 2,
           experimental_output: Output.object({ schema: EvidenceExtractionOutputSchema }),
           system: EXTRACT_ATOMIC_CLAIMS_SYSTEM,

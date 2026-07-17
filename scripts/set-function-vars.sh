@@ -28,9 +28,33 @@ in_network_endpoint() {
   echo "${1/http:\/\/localhost:8080/http:\/\/appwrite\/v1}" | sed 's|/v1/v1|/v1|'
 }
 
-# Pick the var names from argv; if none, pick a sensible default set.
+# Pick the var names from argv; if none, pick a sensible default set. Analysis
+# Functions use LiteLLM for text generation and must not receive a direct
+# DeepSeek credential that could bypass the gateway.
+REMOVE_NAMES=()
 if [ "$#" -gt 0 ]; then
   NAMES=("$@")
+elif [[ "$FN" == "analyzeEvidence" ]]; then
+  NAMES=(
+    APPWRITE_ENDPOINT APPWRITE_PROJECT_ID APPWRITE_API_KEY
+    LITELLM_API_KEY LITELLM_BASE_URL LITELLM_MODEL
+    AIHUBMIX_API_KEY AIHUBMIX_BASE_URL
+  )
+  REMOVE_NAMES=(DEEPSEEK_API_KEY DEEPSEEK_MODEL DEEPSEEK_BASE_URL)
+elif [[ "$FN" == "analyzeSession" ]]; then
+  NAMES=(
+    APPWRITE_ENDPOINT APPWRITE_PROJECT_ID APPWRITE_API_KEY
+    LITELLM_API_KEY LITELLM_BASE_URL LITELLM_MODEL
+    ANALYZE_EVIDENCE_FUNCTION_ID ANALYZE_SESSION_VISUAL_FUNCTION_ID
+  )
+  REMOVE_NAMES=(DEEPSEEK_API_KEY DEEPSEEK_MODEL DEEPSEEK_BASE_URL)
+elif [[ "$FN" == "analyzeSurvey" ]]; then
+  NAMES=(
+    APPWRITE_ENDPOINT APPWRITE_PROJECT_ID APPWRITE_API_KEY
+    LITELLM_API_KEY LITELLM_BASE_URL LITELLM_MODEL
+    AIHUBMIX_API_KEY AIHUBMIX_BASE_URL ANALYSIS_RERANK_MODEL
+  )
+  REMOVE_NAMES=(DEEPSEEK_API_KEY DEEPSEEK_MODEL DEEPSEEK_BASE_URL)
 else
   NAMES=(
     APPWRITE_ENDPOINT APPWRITE_PROJECT_ID APPWRITE_API_KEY
@@ -56,6 +80,8 @@ for NAME in "${NAMES[@]}"; do
   # Network-rewrite for endpoint vars.
   if [[ "$NAME" == "APPWRITE_ENDPOINT" || "$NAME" == "APPWRITE_FUNCTION_API_ENDPOINT" ]]; then
     VAL="$(in_network_endpoint "$VAL")"
+  elif [[ "$NAME" == "LITELLM_BASE_URL" ]]; then
+    VAL="${VAL/http:\/\/localhost:4000/http:\/\/litellm:4000}"
   fi
 
   # Appwrite exposes the immutable variable id separately from its environment
@@ -87,4 +113,21 @@ for v in d.get('variables',[]):
   fi
   STATUS=$(echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print('OK' if d.get('\$id') else 'ERR: '+str(d.get('message','')))")
   echo "  $NAME -> $STATUS"
+done
+
+# Legacy analysis deployments may still hold direct DeepSeek variables from
+# before the LiteLLM cutover. Delete only those known obsolete variables; no
+# unrelated Function configuration is pruned.
+for NAME in "${REMOVE_NAMES[@]}"; do
+  EXISTING_ID=$(echo "$EXISTING" | python3 -c "
+import sys, json
+d=json.load(sys.stdin)
+for v in d.get('variables',[]):
+    if v.get('key') == '$NAME':
+        print(v.get('\$id',''))
+        break")
+  [ -z "$EXISTING_ID" ] && continue
+  curl -s -X DELETE -H "X-Appwrite-Project: $PID" -H "X-Appwrite-Key: $KEY" \
+    "$EP/functions/$FN/variables/$EXISTING_ID" >/dev/null
+  echo "  $NAME -> removed (LiteLLM-only)"
 done

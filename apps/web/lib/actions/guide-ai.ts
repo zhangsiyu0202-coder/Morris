@@ -2,7 +2,7 @@
 
 import { generateText, Output } from "ai";
 import { withLLMCall, createLogger } from "@merism/observability";
-import { createDeepSeek } from "@ai-sdk/deepseek";
+import { createLiteLlmProvider } from "@merism/llm";
 import { z } from "zod";
 import {
   QUESTION_TYPES,
@@ -11,9 +11,10 @@ import {
   localId,
 } from "@/lib/guide";
 
-// 与 Morris AI / 洞察引擎一致:直连 DeepSeek。
-const deepseek = createDeepSeek({
-  apiKey: process.env.DEEPSEEK_API_KEY ?? process.env.AI_GATEWAY_API_KEY,
+// 与 Morris AI / 洞察引擎一致:经 LiteLLM 调用 DeepSeek。
+const litellm = createLiteLlmProvider({
+  baseUrl: process.env.LITELLM_BASE_URL ?? "http://localhost:4000/v1",
+  apiKey: process.env.LITELLM_API_KEY ?? "",
 });
 
 // AI 输出的问题结构(不含本地 id,落地时再补)。
@@ -83,11 +84,11 @@ export async function generateGuide(input: {
       {
         scope: "action.guide-ai.generateGuide",
         traceId: log.traceId,
-        defaultModel: "deepseek-chat",
+        defaultModel: process.env.LITELLM_CHAT_MODEL ?? "deepseek-v4-flash",
       },
       () =>
         generateText({
-          model: deepseek("deepseek-chat"),
+          model: litellm(process.env.LITELLM_CHAT_MODEL ?? "deepseek-v4-flash"),
           maxRetries: 2,
           experimental_output: Output.object({ schema: aiGuideSchema }),
           system: GUIDE_SYSTEM,
@@ -120,11 +121,11 @@ export async function expandSection(input: {
       {
         scope: "action.guide-ai.expandSection",
         traceId: log.traceId,
-        defaultModel: "deepseek-chat",
+        defaultModel: process.env.LITELLM_CHAT_MODEL ?? "deepseek-v4-flash",
       },
       () =>
         generateText({
-          model: deepseek("deepseek-chat"),
+          model: litellm(process.env.LITELLM_CHAT_MODEL ?? "deepseek-v4-flash"),
           maxRetries: 2,
           experimental_output: Output.object({
             schema: z.object({ questions: z.array(aiQuestionSchema).min(1).max(4) }),

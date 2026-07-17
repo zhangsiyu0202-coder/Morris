@@ -1,6 +1,6 @@
-// Real deps: Appwrite Server SDK + DeepSeek via @ai-sdk/deepseek.
+// Real deps: Appwrite Server SDK + LiteLLM Proxy via OpenAI-compatible API.
 import { Client, Databases, ID, Permission, Query, Role } from "node-appwrite";
-import { createDeepSeek } from "@ai-sdk/deepseek";
+import { createLiteLlmProvider } from "@merism/llm";
 import { generateText, Output } from "ai";
 import { withLLMCall, createLogger } from "@merism/observability";
 import { ResearchEvidenceSchema } from "@merism/contracts";
@@ -45,9 +45,9 @@ interface Env {
   APPWRITE_ENDPOINT: string;
   APPWRITE_PROJECT_ID: string;
   APPWRITE_API_KEY: string;
-  DEEPSEEK_API_KEY: string;
-  DEEPSEEK_MODEL?: string;
-  DEEPSEEK_BASE_URL?: string;
+  LITELLM_API_KEY: string;
+  LITELLM_BASE_URL: string;
+  LITELLM_MODEL?: string;
   AIHUBMIX_API_KEY: string;
   AIHUBMIX_BASE_URL?: string;
   ANALYSIS_RERANK_MODEL?: string;
@@ -64,9 +64,9 @@ function requireEnv(): Env {
     APPWRITE_ENDPOINT: req("APPWRITE_ENDPOINT"),
     APPWRITE_PROJECT_ID: req("APPWRITE_PROJECT_ID"),
     APPWRITE_API_KEY: req("APPWRITE_API_KEY"),
-    DEEPSEEK_API_KEY: req("DEEPSEEK_API_KEY"),
-    DEEPSEEK_MODEL: process.env.DEEPSEEK_MODEL,
-    DEEPSEEK_BASE_URL: process.env.DEEPSEEK_BASE_URL,
+    LITELLM_API_KEY: req("LITELLM_API_KEY"),
+    LITELLM_BASE_URL: req("LITELLM_BASE_URL"),
+    LITELLM_MODEL: process.env.LITELLM_MODEL,
     AIHUBMIX_API_KEY: req("AIHUBMIX_API_KEY"),
     AIHUBMIX_BASE_URL: process.env.AIHUBMIX_BASE_URL,
     ANALYSIS_RERANK_MODEL: process.env.ANALYSIS_RERANK_MODEL,
@@ -92,11 +92,8 @@ export function createRealDeps(): AnalyzeSurveyDeps {
     .setProject(env.APPWRITE_PROJECT_ID)
     .setKey(env.APPWRITE_API_KEY);
   const db = new Databases(client);
-  const deepseek = createDeepSeek({
-    apiKey: env.DEEPSEEK_API_KEY,
-    ...(env.DEEPSEEK_BASE_URL ? { baseURL: env.DEEPSEEK_BASE_URL } : {}),
-  });
-  const modelName = env.DEEPSEEK_MODEL ?? "deepseek-chat";
+  const litellm = createLiteLlmProvider({ apiKey: env.LITELLM_API_KEY, baseUrl: env.LITELLM_BASE_URL });
+  const modelName = env.LITELLM_MODEL ?? "deepseek-v4-flash";
   const rerankModel = env.ANALYSIS_RERANK_MODEL ?? "cohere-rerank-v4.0-fast";
   const reranker = createAiHubMixReranker({
     apiKey: env.AIHUBMIX_API_KEY,
@@ -239,7 +236,7 @@ export function createRealDeps(): AnalyzeSurveyDeps {
         },
         () =>
           generateText({
-            model: deepseek(modelName),
+            model: litellm(modelName),
             temperature: ROLLUP_LLM_TEMPERATURE,
             maxRetries: 2,
             experimental_output: Output.object({ schema: ExtractedThemesListSchema }),
@@ -260,7 +257,7 @@ export function createRealDeps(): AnalyzeSurveyDeps {
         },
         () =>
           generateText({
-            model: deepseek(modelName),
+            model: litellm(modelName),
             temperature: ROLLUP_LLM_TEMPERATURE,
             maxRetries: 2,
             experimental_output: Output.object({ schema: ThemeAssignmentListSchema }),
@@ -283,7 +280,7 @@ export function createRealDeps(): AnalyzeSurveyDeps {
         },
         () =>
           generateText({
-            model: deepseek(modelName),
+            model: litellm(modelName),
             temperature: ROLLUP_LLM_TEMPERATURE,
             maxRetries: 2,
             experimental_output: Output.object({ schema: ExtractedThemesListSchema }),
@@ -328,7 +325,7 @@ export function createRealDeps(): AnalyzeSurveyDeps {
         },
         () =>
           generateText({
-            model: deepseek(modelName),
+            model: litellm(modelName),
             temperature: ROLLUP_LLM_TEMPERATURE,
             maxRetries: 2,
             experimental_output: Output.object({ schema: ComposeInsightsOutputSchema }),

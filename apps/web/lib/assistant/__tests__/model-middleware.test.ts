@@ -34,7 +34,7 @@ describe("Layer 3 — middleware end-to-end with MockLanguageModelV3", () => {
     installCapture();
     const mockModel = new MockLanguageModelV3({
       provider: "deepseek",
-      modelId: "deepseek-chat",
+      modelId: "deepseek-v4-flash",
       doGenerate: (async () => ({
         finishReason: "stop" as const,
         usage: { inputTokens: 120, outputTokens: 35, totalTokens: 155 },
@@ -47,7 +47,7 @@ describe("Layer 3 — middleware end-to-end with MockLanguageModelV3", () => {
       middleware: llmObservabilityMiddleware({
         scope: "morris.toolloop",
         traceId: "fixed-test-trace",
-        defaultModel: "deepseek-chat",
+        defaultModel: "deepseek-v4-flash",
       }) as never,
     });
 
@@ -69,7 +69,7 @@ describe("Layer 3 — middleware end-to-end with MockLanguageModelV3", () => {
     installCapture();
     const mockModel = new MockLanguageModelV3({
       provider: "deepseek",
-      modelId: "deepseek-chat",
+      modelId: "deepseek-v4-flash",
       doGenerate: async () => {
         throw new Error("provider blew up");
       },
@@ -79,7 +79,7 @@ describe("Layer 3 — middleware end-to-end with MockLanguageModelV3", () => {
       middleware: llmObservabilityMiddleware({
         scope: "morris.toolloop",
         traceId: "err-trace",
-        defaultModel: "deepseek-chat",
+        defaultModel: "deepseek-v4-flash",
       }) as never,
     });
 

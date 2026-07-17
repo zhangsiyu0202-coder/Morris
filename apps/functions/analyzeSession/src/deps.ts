@@ -1,6 +1,6 @@
-// Real deps: Appwrite Server SDK + DeepSeek via @ai-sdk/deepseek.
+// Real deps: Appwrite Server SDK + LiteLLM Proxy via OpenAI-compatible API.
 import { Client, Databases, Functions, ID, Permission, Query, Role } from "node-appwrite";
-import { createDeepSeek } from "@ai-sdk/deepseek";
+import { createLiteLlmProvider } from "@merism/llm";
 import { generateText, Output } from "ai";
 import { withLLMCall, createLogger } from "@merism/observability";
 import {
@@ -35,9 +35,9 @@ interface Env {
   APPWRITE_ENDPOINT: string;
   APPWRITE_PROJECT_ID: string;
   APPWRITE_API_KEY: string;
-  DEEPSEEK_API_KEY: string;
-  DEEPSEEK_MODEL?: string;
-  DEEPSEEK_BASE_URL?: string;
+  LITELLM_API_KEY: string;
+  LITELLM_BASE_URL: string;
+  LITELLM_MODEL?: string;
 }
 
 function req(k: string): string {
@@ -51,9 +51,9 @@ function requireEnv(): Env {
     APPWRITE_ENDPOINT: req("APPWRITE_ENDPOINT"),
     APPWRITE_PROJECT_ID: req("APPWRITE_PROJECT_ID"),
     APPWRITE_API_KEY: req("APPWRITE_API_KEY"),
-    DEEPSEEK_API_KEY: req("DEEPSEEK_API_KEY"),
-    DEEPSEEK_MODEL: process.env.DEEPSEEK_MODEL,
-    DEEPSEEK_BASE_URL: process.env.DEEPSEEK_BASE_URL,
+    LITELLM_API_KEY: req("LITELLM_API_KEY"),
+    LITELLM_BASE_URL: req("LITELLM_BASE_URL"),
+    LITELLM_MODEL: process.env.LITELLM_MODEL,
   };
 }
 
@@ -76,12 +76,8 @@ export function createRealDeps(): AnalyzeSessionDeps {
   const storageFunctions = new Functions(client);
   const visualFunctionId = process.env.ANALYZE_SESSION_VISUAL_FUNCTION_ID;
   const evidenceFunctionId = process.env.ANALYZE_EVIDENCE_FUNCTION_ID;
-  const deepseek = createDeepSeek({
-    apiKey: env.DEEPSEEK_API_KEY,
-    ...(env.DEEPSEEK_BASE_URL ? { baseURL: env.DEEPSEEK_BASE_URL } : {}),
-  });
-  const modelName = env.DEEPSEEK_MODEL ?? "deepseek-chat";
-  const deepseekModel = deepseek(modelName);
+  const litellm = createLiteLlmProvider({ apiKey: env.LITELLM_API_KEY, baseUrl: env.LITELLM_BASE_URL });
+  const analysisModel = litellm(env.LITELLM_MODEL ?? "deepseek-v4-flash");
 
   return {
     now: () => Date.now(),
@@ -272,11 +268,11 @@ export function createRealDeps(): AnalyzeSessionDeps {
         {
           scope: "function.analyzeSession.text-pass",
           traceId: log.traceId,
-          defaultModel: "deepseek-chat",
+          defaultModel: env.LITELLM_MODEL ?? "deepseek-v4-flash",
         },
         () =>
           generateText({
-            model: deepseekModel,
+            model: analysisModel,
             maxRetries: 2,
             experimental_output: Output.object({ schema: AnalysisReportOutputSchema }),
             system: SESSION_ANALYZE_SYSTEM,
@@ -295,11 +291,11 @@ export function createRealDeps(): AnalyzeSessionDeps {
         {
           scope: "function.analyzeSession.quality-flags",
           traceId: log.traceId,
-          defaultModel: "deepseek-chat",
+          defaultModel: env.LITELLM_MODEL ?? "deepseek-v4-flash",
         },
         () =>
           generateText({
-            model: deepseekModel,
+            model: analysisModel,
             temperature: SESSION_QUALITY_FLAG_LLM_TEMPERATURE,
             maxRetries: 1,
             experimental_output: Output.object({ schema: QualityFlagsLLMOutputSchema }),

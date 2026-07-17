@@ -1,0 +1,16 @@
+# LiteLLM Proxy exposes only the current official DeepSeek model identifiers.
+# Provider credentials remain in the container environment and are never sent
+# to the browser or Appwrite Functions.
+#
+# DeepSeek documents `deepseek-chat` and `deepseek-reasoner` as compatibility
+# aliases that retire on 2026-07-24. Merism uses only the official V4-Flash
+# model identifier below; no V4-Pro deployment is configured.
+model_list:
+  - model_name: deepseek-v4-flash
+    litellm_params:
+      model: deepseek/deepseek-v4-flash
+      api_key: os.environ/DEEPSEEK_API_KEY
+      api_base: os.environ/DEEPSEEK_BASE_URL
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

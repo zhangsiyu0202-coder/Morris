@@ -135,7 +135,7 @@ describe("buildGenerationMeta", () => {
       promptVersion: "survey.v2.0",
       attemptCount: 1,
       hallucinationRatio: 0,
-      models: { extract: "deepseek-chat", assign: "deepseek-chat", compose: "deepseek-chat" },
+      models: { extract: "deepseek-v4-flash", assign: "deepseek-v4-flash", compose: "deepseek-v4-flash" },
     });
     expect(m.promptVersion).toBe("survey.v2.0");
     expect(m.attemptCount).toBe(1);

@@ -35,11 +35,9 @@ import type { AgentContext } from "./agent-context";
  * scoped to the signed-in researcher's identity. The route handler resolves
  * `ownerUserId` from the Appwrite cookie session and passes it here.
  *
- * LLM is fixed to DeepSeek (`deepseek-chat`). The old `deepseek-reasoner`
- * downgrade path (via `prepareStep` in AI SDK 6) does not have a direct
- * counterpart in Mastra Agent; it will be reintroduced in a follow-up if
- * the metric proves the downgrade materially improves tool-error recovery
- * (see docs/adr/0013 § follow-ups).
+ * LLM is fixed to DeepSeek V4-Flash through the internal LiteLLM gateway.
+ * Mastra does not choose a second model for tool-error recovery; workflow
+ * behavior changes without changing the model identity.
  *
  * Tool approval (HITL): Mastra Agent supports it natively via each tool's
  * `needsApprovalFn` field on `ToolAction`. The AI SDK 6 `tool({ needsApproval })`

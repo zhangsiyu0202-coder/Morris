@@ -286,8 +286,8 @@ export async function analyzeSession(
     attemptCount,
     hallucinationRatio: hallucinationCheck!.ratio,
     createdWith: [
-      { stage: "session-main", model: "deepseek-chat" },
-      { stage: "quality-flags", model: "deepseek-chat" },
+      { stage: "session-main", model: "deepseek-v4-flash" },
+      { stage: "quality-flags", model: "deepseek-v4-flash" },
     ],
   };
 

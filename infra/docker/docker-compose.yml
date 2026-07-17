@@ -32,6 +32,24 @@ services:
       timeout: 5s
       retries: 10
 
+  litellm:
+    image: docker.litellm.ai/berriai/litellm@sha256:177c71b596e3290798adec693528a4ed043fe47dbe219f5f71d2bc3750c85061
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml"]
+    ports:
+      - "127.0.0.1:4000:4000"
+    networks:
+      default:
+      runtimes:
+        aliases:
+          - litellm
+    environment:
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?DEEPSEEK_API_KEY is required for LiteLLM}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY is required for LiteLLM}
+    volumes:
+      - ../litellm/config.yaml:/app/config.yaml:ro
+
   appwrite:
     image: appwrite/appwrite:1.6.0
     restart: unless-stopped

@@ -2,7 +2,7 @@
 
 import { generateText, Output } from "ai";
 import { withLLMCall, createLogger } from "@merism/observability";
-import { createDeepSeek } from "@ai-sdk/deepseek";
+import { createLiteLlmProvider } from "@merism/llm";
 import { Client, Databases } from "node-appwrite";
 import { revalidatePath } from "next/cache";
 import { type Notebook, notebookReportSchema } from "@merism/contracts";
@@ -20,9 +20,10 @@ import {
 } from "@/lib/queries";
 import { saveNotebookFromMarkdown } from "@/lib/server/notebooks";
 
-// 与 Morris AI 一致:直连 DeepSeek 官方,不引入其它供应商。
-const deepseek = createDeepSeek({
-  apiKey: process.env.DEEPSEEK_API_KEY ?? process.env.AI_GATEWAY_API_KEY,
+// 与 Morris AI 一致:经 LiteLLM 调用 DeepSeek，供应商凭据只保留在 proxy。
+const litellm = createLiteLlmProvider({
+  baseUrl: process.env.LITELLM_BASE_URL ?? "http://localhost:4000/v1",
+  apiKey: process.env.LITELLM_API_KEY ?? "",
 });
 
 const ANALYSIS_INSTRUCTIONS = `你是 Morris 的研究洞察引擎。用户已完成一项调研,针对该调研提出一个聚焦问题。
@@ -162,11 +163,11 @@ export async function createNotebook(input: {
       {
         scope: "action.notebooks.generateReport",
         traceId: log.traceId,
-        defaultModel: "deepseek-chat",
+        defaultModel: process.env.LITELLM_CHAT_MODEL ?? "deepseek-v4-flash",
       },
       () =>
         generateText({
-          model: deepseek("deepseek-chat"),
+          model: litellm(process.env.LITELLM_CHAT_MODEL ?? "deepseek-v4-flash"),
           maxRetries: 2,
           experimental_output: Output.object({ schema: notebookReportSchema }),
           system: ANALYSIS_INSTRUCTIONS,

@@ -9,13 +9,14 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ai-sdk/deepseek": "^2.0.35",
+    "@ai-sdk/openai-compatible": "2.0.60",
     "ai": "^6.0.196",
     "node-appwrite": "^14.1.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@merism/contracts": "workspace:*",
+    "@merism/llm": "workspace:*",
     "@merism/observability": "workspace:*",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
