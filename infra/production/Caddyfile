@@ -1,7 +1,11 @@
 http://merism.fun {
   @appwrite path /v1/*
   handle @appwrite {
-    reverse_proxy appwrite:80
+    reverse_proxy appwrite:80 {
+      # Cloudflare Tunnel terminates the public TLS connection before this
+      # HTTP hop. Preserve that fact for Appwrite's force-HTTPS middleware.
+      header_up X-Forwarded-Proto https
+    }
   }
 
   handle {

@@ -4,7 +4,9 @@ x-appwrite-production-env: &appwrite-production-env
   _APP_DOMAIN_TARGET: merism.fun
   _APP_DOMAIN_FUNCTIONS: functions.merism.fun
   _APP_OPTIONS_ROUTER_PROTECTION: enabled
-  _APP_OPTIONS_FORCE_HTTPS: enabled
+  # TLS terminates at Cloudflare/Caddy. Appwrite receives only the internal
+  # HTTP hop and does not trust forwarded protocol headers in v1.6.
+  _APP_OPTIONS_FORCE_HTTPS: disabled
 
 services:
   appwrite:
