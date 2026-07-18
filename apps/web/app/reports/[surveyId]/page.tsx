@@ -19,7 +19,7 @@ import { RegenerateButton } from "./regenerate-button";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "分析报告 · MerismV2",
+  title: "分析报告 · Merism",
 };
 
 export default async function ReportDetailPage({

@@ -4,7 +4,7 @@ import { AuthShell } from "@/components/auth/ui";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "验证邮箱 · MerismV2",
+  title: "验证邮箱 · Merism",
 };
 
 export default async function VerifyEmailPage({

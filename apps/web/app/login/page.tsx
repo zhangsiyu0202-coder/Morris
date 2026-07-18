@@ -6,7 +6,7 @@ import { getCurrentResearcher } from "@/lib/auth/current-user";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "登录 · MerismV2",
+  title: "登录 · Merism",
 };
 
 function safeCallback(raw: string | undefined): string {
@@ -18,9 +18,9 @@ function safeCallback(raw: string | undefined): string {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ callbackUrl?: string }>;
+  searchParams: Promise<{ callbackUrl?: string; portal?: string }>;
 }) {
-  const { callbackUrl } = await searchParams;
+  const { callbackUrl, portal } = await searchParams;
   const target = safeCallback(callbackUrl);
 
   const researcher = await getCurrentResearcher();
@@ -28,7 +28,10 @@ export default async function LoginPage({
 
   return (
     <AuthShell>
-      <LoginForm callbackUrl={target} />
+      <LoginForm
+        callbackUrl={target}
+        initialError={portal === "session_expired" ? "登录已过期，请重新登录。" : ""}
+      />
     </AuthShell>
   );
 }

@@ -6,7 +6,7 @@ import { getPendingOtpEmail } from "@/lib/auth/actions";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "输入验证码 · MerismV2",
+  title: "输入验证码 · Merism",
 };
 
 function safeCallback(raw: string | undefined): string {

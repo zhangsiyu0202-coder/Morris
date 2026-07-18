@@ -6,7 +6,7 @@ import { getCurrentResearcher } from "@/lib/auth/current-user";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "注册 · MerismV2",
+  title: "注册 · Merism",
 };
 
 export default async function SignupPage({

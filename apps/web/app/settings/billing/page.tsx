@@ -5,7 +5,7 @@ import { requireResearcher } from "@/lib/auth/current-user";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Workspace 账单 · MerismV2",
+  title: "Workspace 账单 · Merism",
 };
 
 export default async function WorkspaceBillingPage() {

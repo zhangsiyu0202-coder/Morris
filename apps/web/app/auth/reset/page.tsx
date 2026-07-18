@@ -4,7 +4,7 @@ import { AuthShell } from "@/components/auth/ui";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "设置新密码 · MerismV2",
+  title: "设置新密码 · Merism",
 };
 
 export default async function ResetPasswordPage({

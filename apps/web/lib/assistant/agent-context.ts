@@ -20,7 +20,7 @@
  */
 
 export interface AgentContext {
-  /** 项目代号, 固定 "MerismV2"。 */
+  /** 项目名称, 固定 "Merism"。 */
   projectName: string;
   /** 研究员姓名; 未登录或 Account.get 失败时退化为 "研究员"。 */
   userFullName: string;
@@ -32,7 +32,7 @@ export interface AgentContext {
   urlPatterns: string;
 }
 
-const PROJECT_NAME = "MerismV2";
+const PROJECT_NAME = "Merism";
 const FALLBACK_USER_NAME = "研究员";
 
 /**
@@ -110,7 +110,7 @@ export function renderAgentContext(ctx: AgentContext): string {
   const safeEmail = ctx.userEmail
     ? sanitizeField(ctx.userEmail, "")
     : undefined;
-  const safeProject = sanitizeField(ctx.projectName, "MerismV2");
+  const safeProject = sanitizeField(ctx.projectName, "Merism");
   const safeDateTime = sanitizeField(ctx.currentDateTime, "");
   const researcherLine = safeEmail
     ? `- 研究员: ${safeName} (${safeEmail})`

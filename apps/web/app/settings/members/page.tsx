@@ -5,7 +5,7 @@ import { requireResearcher } from "@/lib/auth/current-user";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Workspace 成员 · MerismV2",
+  title: "Workspace 成员 · Merism",
 };
 
 export default async function WorkspaceMembersPage() {

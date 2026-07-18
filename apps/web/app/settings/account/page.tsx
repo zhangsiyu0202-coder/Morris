@@ -4,7 +4,7 @@ import { requireResearcher } from "@/lib/auth/current-user";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "账户设置 · MerismV2",
+  title: "账户设置 · Merism",
 };
 
 export default async function AccountSettingsPage() {

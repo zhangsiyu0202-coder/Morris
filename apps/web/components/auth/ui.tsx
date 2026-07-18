@@ -24,9 +24,9 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
     <main className="flex min-h-dvh items-center justify-center bg-mauve-50 px-4 py-12">
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
-          <p className="font-decor text-body-lg text-ink-900">MerismV2</p>
+          <p className="font-decor text-body-lg text-ink-900">Merism</p>
           <p className="mt-1 font-ui text-caption uppercase tracking-wider text-ink-400">
-            研究者工作台
+            AI 定性研究平台
           </p>
         </div>
         <div className="rounded-xl bg-ink-0 p-8 shadow-sm">{children}</div>

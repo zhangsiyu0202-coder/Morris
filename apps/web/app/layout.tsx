@@ -43,8 +43,8 @@ const inknut = Inknut_Antiqua({
 });
 
 export const metadata: Metadata = {
-  title: "MerismV2 · 访谈进行中",
-  description: "AI 语音访谈受访端 · 结构化题目辅助渲染",
+  title: "Merism · AI 定性研究平台",
+  description: "从研究设计、匿名 AI 访谈到证据回看的一体化定性研究平台。",
 };
 
 export const viewport: Viewport = {
