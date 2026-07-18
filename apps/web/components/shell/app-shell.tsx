@@ -7,7 +7,7 @@ import { AssistantDock } from "@/components/assistant/assistant-dock";
 import { Sidebar, type SidebarStudy } from "./sidebar";
 
 // 不显示研究者 chrome (Sidebar + Morris dock) 的全屏路由。
-// "/" 与 "/interview" 均为受访者端访谈页,面向匿名外部受访者,
+// "/" 是公开产品首页，"/interview" 是匿名受访者端访谈页；两者都
 //   绝不能挂研究者主菜单或 Morris (会泄露 studies、且 Morris 工具要求
 //   研究者会话, 在 interviewee 上下文中调用必 401)。
 // "/login" "/signup" "/auth/*" 为研究者认证页,登录前不应出现工作台 chrome。
