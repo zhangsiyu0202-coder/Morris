@@ -17,6 +17,9 @@ a direct route into the workspace.
   redirect signed-out visitors to `/login?callbackUrl=/home`.
 - The page explains the researcher workflow: design a study, run anonymous
   AI-led interviews, then review evidence-backed findings.
+- The page gives prospective researchers enough detail to understand how a
+  research brief guides the interview and how a conclusion returns to a direct
+  interview quote.
 - `/interview?link=...` remains the anonymous interviewee entry point and is
   not linked as a generic product CTA.
 - The layout is responsive at 320px, 768px, 1024px, and 1440px, uses only
@@ -34,4 +37,3 @@ a direct route into the workspace.
 - Typecheck: `pnpm -F @merism/web typecheck`
 - Lint: `pnpm -F @merism/web lint`
 - Production build: `pnpm -F @merism/web build`
-

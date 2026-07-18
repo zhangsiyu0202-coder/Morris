@@ -8,6 +8,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import { ProductCanvas } from "./product-canvas";
+import { EvidenceStory } from "./evidence-story";
+import { ResearchBrief } from "./research-brief";
 
 const focusRingClass =
   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-900";
@@ -47,6 +49,9 @@ export function MarketingHome() {
           </a>
           <a className={`transition-colors hover:text-ink-900 ${focusRingClass}`} href="#product">
             产品体验
+          </a>
+          <a className={`transition-colors hover:text-ink-900 ${focusRingClass}`} href="#evidence">
+            证据链
           </a>
         </nav>
 
@@ -103,6 +108,8 @@ export function MarketingHome() {
         <ProductCanvas />
       </section>
 
+      <ResearchBrief />
+
       <section id="workflow" className="border-y border-ink-200 bg-ink-0">
         <div className="mx-auto w-full max-w-7xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
           <div className="max-w-2xl">
@@ -130,6 +137,8 @@ export function MarketingHome() {
           </ol>
         </div>
       </section>
+
+      <EvidenceStory />
 
       <section id="product" className="mx-auto w-full max-w-7xl px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
         <div className="rounded-xl bg-mauve-200 px-6 py-10 shadow-sm sm:px-10 sm:py-12 lg:flex lg:items-end lg:justify-between lg:gap-12">

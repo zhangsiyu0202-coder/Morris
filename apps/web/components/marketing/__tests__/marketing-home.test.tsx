@@ -21,6 +21,8 @@ describe("MarketingHome", () => {
     expect(screen.getByText("设计研究")).toBeTruthy();
     expect(screen.getByText("进行访谈")).toBeTruthy();
     expect(screen.getByText("理解证据")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "先建立一份能指导真实对话的研究说明。" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "每一条判断，都能回到证据。" })).toBeTruthy();
     expect(screen.queryByText("预览题型")).toBeNull();
   });
 });

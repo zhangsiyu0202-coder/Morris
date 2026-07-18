@@ -5,6 +5,8 @@ test("public homepage exposes the product and authentication routes", async ({ p
 
   await expect(page.getByRole("banner")).toBeVisible();
   await expect(page.getByRole("heading", { level: 1, name: /让每一次访谈/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "先建立一份能指导真实对话的研究说明。" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "每一条判断，都能回到证据。" })).toBeVisible();
   await expect(page.getByRole("link", { name: "登录" })).toHaveAttribute("href", "/login");
   await expect(page.getByRole("link", { name: "注册" })).toHaveAttribute("href", "/signup");
   await expect(page.getByRole("link", { name: "进入产品" }).first()).toHaveAttribute("href", "/home");

@@ -24,8 +24,12 @@ are never rendered to visitors.
 3. **Product canvas** — A non-interactive visual of the real workflow:
    study brief → live interview → evidence-backed report. This avoids making
    a mock product interface look functional.
-4. **Three-step workflow** — Clear copy for plan, conduct, and understand.
-5. **Closing CTA** — Repeats the product-entry and registration paths without
+4. **Research brief** — Shows how a research intent becomes an explicit,
+   executable interview guide rather than an opaque prompt.
+5. **Three-step workflow** — Clear copy for plan, conduct, and understand.
+6. **Evidence story** — Demonstrates that a theme can lead back to a direct,
+   attributable interview quote.
+7. **Closing CTA** — Repeats the product-entry and registration paths without
    inventing pricing or team concepts.
 
 ## Visual rules
@@ -56,4 +60,3 @@ monochrome brand treatment.
 - Run Web lint, typecheck, and production build.
 - Inspect the route in a browser at desktop and mobile widths; verify all links
   can receive keyboard focus and no mock interview copy remains.
-
