@@ -32,7 +32,7 @@
   },
   "devDependencies": {
     "@merism/contracts": "workspace:*",
-    "@types/node": "^22.10.2",
+    "@types/node": "^22.20.1",
     "dependency-cruiser": "18.0.0",
     "fast-check": "^3.23.2",
     "livekit-server-sdk": "^2.9.0",
