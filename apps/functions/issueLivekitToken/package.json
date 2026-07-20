@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "livekit-server-sdk": "^2.9.0",
+    "livekit-server-sdk": "^2.17.0",
     "node-appwrite": "^14.1.0"
   },
   "devDependencies": {
